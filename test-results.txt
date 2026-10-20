@@ -28,4 +28,17 @@ PASS: binary FBX signature recognized (not content validation)
 PASS: plugin types load against release assemblies
 PASS: native exporter signature available
 PASS: plugin registration attributes load
-TOTAL PASS: 30
+PASS: native normal-map DDS format accepted
+PASS: unknown DDS format is rejected before native silent fallback
+PASS: unsupported texture layout rejected
+PASS: swizzled payload not mislabeled as normal DDS
+PASS: valid original texture filename preserved
+PASS: reserved Windows texture name handled
+PASS: external material cycles and shared references deduplicate
+PASS: unknown material values retained without semantic inference
+PASS: missing material reference logged in graph
+PASS: one failing property does not discard material capture
+PASS: resource metadata preserves unsigned ID as hex string
+PASS: DX10 DDS header validation accepts matching dimensions
+PASS: DDS dimension mismatch reported
+TOTAL PASS: 43

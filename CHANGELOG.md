@@ -1,3 +1,12 @@
+# 0.2.0 — textures and source materials
+
+- Adds automatic material pass after geometry and a materials-only command for existing manifests.
+- Captures material/shader/preset/variation graph, raw parameters, LOD0 section-slot mapping and vertex declarations.
+- Exports deduplicated original DDS textures through Frosty's native functionality; preserves source payloads and hashes.
+- Records unsupported data and unresolved semantics without guessing packed channels or UV selection.
+- Leaves the 0.1.2 geometry export routine and Blender geometry importer unchanged.
+- Validated actual Murciélago references/textures, 43 C# checks and two real geometry regression exports. See TESTING.md for incomplete tests and the pre-existing rear-fender polygon discrepancy.
+
 # 0.1.2
 
 - Keep `.fbx` as the final extension of the temporary file so the native SDK does not append an unexpected extension.

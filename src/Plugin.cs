@@ -18,10 +18,10 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("UnboundBatchExport")]
-[assembly: AssemblyVersion("0.1.2.0")]
+[assembly: AssemblyVersion("0.2.0.0")]
 [assembly: PluginDisplayName("Unbound Vehicle Batch Export (experimental)")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("0.1.2.0")]
+[assembly: PluginVersion("0.2.0.0")]
 [assembly: RegisterMenuExtension(typeof(UnboundBatchExport.ExportMenu))]
 
 namespace UnboundBatchExport
@@ -52,7 +52,7 @@ namespace UnboundBatchExport
                             finally { try { batch.Save(); } catch (Exception ex) { fatal = ex; } }
                         }, true, task => batch.Cancel = true);
                         MessageBox.Show((fatal == null ? "Export run finished. " : "Run failed: " + fatal.Message + "\n") +
-                            batch.Manifest.Meshes.Count(x => x.Status == "exported") + " exported; " + batch.Manifest.Errors.Count + " errors.\nReview manifest.json, including skipped meshes.\n" + target,
+                            batch.Manifest.Meshes.Count(x => x.Status == "exported") + " meshes exported; " + batch.Manifest.Errors.Count + " geometry/run errors.\nReview manifest.json for skips and materials.json/materials.log for texture results.\n" + target,
                             "Unbound batch export");
                     }
                 }
@@ -82,7 +82,7 @@ namespace UnboundBatchExport
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "0.1.2";
+        public string PluginVersion = "0.2.0";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
@@ -214,6 +214,18 @@ namespace UnboundBatchExport
                 try { Export(record,task); }
                 catch(Exception ex) { record.Status="failed"; record.Error=ex.ToString(); Manifest.Errors.Add(record.Asset + ": " + ex.Message); }
                 Save();
+            }
+            if(!Cancel)
+            {
+                var materialRun=new MaterialRun(output,prefix);
+                try {
+                    foreach(var record in Manifest.Meshes) {
+                        if(Cancel) {materialRun.Cancel=true;break;}
+                        task.Update("Materials: "+record.Asset);
+                        materialRun.Process(record);materialRun.Save();
+                    }
+                } catch(Exception ex) {materialRun.Issue("run",ex);}
+                finally {materialRun.Save(true);}
             }
             Manifest.Cancelled=Cancel;
             foreach(var record in Manifest.Meshes.Where(r=>r.Status=="pending")) record.Status="cancelled";

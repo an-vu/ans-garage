@@ -2,33 +2,34 @@
   "Release": "v1.0.7_26.10.12",
   "ReleaseCommit": "5fdef53c0e17cd8ed04a56a31bbd4f108b2854ba",
   "InspectedBranchCommit": "d73a3c6799025aa183da447e5defcf2a38f0786c",
-  "BuiltUtc": "2026-10-19T17:14:15.8078636Z",
+  "BuiltUtc": "2026-10-20T11:39:18.056130+00:00",
   "Compiler": "14.8.10001.0 built by: bd501acdc000004",
   "Dependencies": [
     {
-      "File": "editor.zip",
-      "SHA256": "9FFEB58A1D3EBD28B5DDC58E458AD6F13CA70D340FC766BDEE9AF68AC7923FD5"
-    },
-    {
       "File": "FrostyCore.dll",
-      "SHA256": "32AA5AA0B363C83B82D74C99362316F427134A29A3005FFBECD7FC01E0392772"
+      "SHA256": "32aa5aa0b363c83b82d74c99362316f427134a29a3005ffbecd7fc01e0392772"
     },
     {
       "File": "FrostySdk.dll",
-      "SHA256": "ED7AF321B9D6A434E11B5082CC16FCF80B2539A1793493EA7CBF6587222744BA"
+      "SHA256": "ed7af321b9d6a434e11b5082cc16fcf80b2539a1793493ea7cbf6587222744ba"
     },
     {
       "File": "FrostyControls.dll",
-      "SHA256": "646887746BA51579E1E78563B822DE137F785FD4652B221500F8295D731A3B1A"
+      "SHA256": "646887746ba51579e1e78563b822de137f785fd4652b221500f8295d731a3b1a"
     },
     {
-      "File": "MeshSetPlugin.dll",
-      "SHA256": "3830D649948F935BA93E98DD617A98B6DF7A6EDC6D0CEAFDB7CE8434F05B3D13"
+      "File": "Plugins/MeshSetPlugin.dll",
+      "SHA256": "3830d649948f935ba93e98dd617a98b6df7a6edc6d0ceafdb7ce8434f05b3d13"
+    },
+    {
+      "File": "Plugins/TexturePlugin.dll",
+      "SHA256": "9304730b33d70edf390e09157a84a20e1130a6d1851fdbc56175663940a14ac8"
     },
     {
       "File": "Newtonsoft.Json.dll",
-      "SHA256": "7F912B28A07C226E0BE3ACFB2F57F050538ABA0100FA1F0BF2C39F1A1F1DA814"
+      "SHA256": "7f912b28a07c226e0be3acfb2f57f050538aba0100fa1f0bf2c39f1a1f1da814"
     }
   ],
-  "PluginVersion": "0.1.2"
+  "PluginVersion": "0.2.0",
+  "PluginSHA256": "a14eebdf3175c86207e346e748af8da82f9d5cf098200bb1746ea08aa751e37e"
 }

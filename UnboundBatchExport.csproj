@@ -15,6 +15,7 @@
     <Reference Include="FrostySdk"><HintPath>$(FrostyDir)\FrostySdk.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="FrostyControls"><HintPath>$(FrostyDir)\FrostyControls.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="MeshSetPlugin"><HintPath>$(FrostyDir)\Plugins\MeshSetPlugin.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TexturePlugin"><HintPath>$(FrostyDir)\Plugins\TexturePlugin.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Newtonsoft.Json"><HintPath>$(FrostyDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Microsoft.CSharp" />
   </ItemGroup>

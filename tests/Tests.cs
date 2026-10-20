@@ -6,6 +6,7 @@ using FrostySdk;
 using FrostySdk.Ebx;
 using FrostySdk.IO;
 using UnboundBatchExport;
+using Newtonsoft.Json.Linq;
 
 public class FakeEbxObject
 {
@@ -13,6 +14,12 @@ public class FakeEbxObject
     public AssetClassGuid GetInstanceGuid() { return guid; }
     public void SetInstanceGuid(AssetClassGuid value) { guid=value; }
 }
+public class GraphFixture : FakeEbxObject
+{
+    public PointerRef Link { get; set; }
+    public string UnknownPackedMeaning { get; set; }
+}
+public class FaultyFixture {public string Problem {get {throw new Exception("fixture getter failure");}}}
 public static class Tests
 {
     static int passed;
@@ -76,5 +83,39 @@ public static class Tests
         Check(assembly.GetTypes().Length>0,"plugin types load against release assemblies");
         Check(typeof(MeshSetPlugin.FBXExporter).GetMethod("ExportFBX").GetParameters().Length==10,"native exporter signature available");
         Check(assembly.GetCustomAttributes(false).Length>0,"plugin registration attributes load");
+        Check(TextureTools.Supported("BC5_UNORM","TT_2d","Streaming"),"native normal-map DDS format accepted");
+        Check(!TextureTools.Supported("UNKNOWN","TT_2d",""),"unknown DDS format is rejected before native silent fallback");
+        Check(!TextureTools.Supported("BC1_UNORM","TT_CubeArray",""),"unsupported texture layout rejected");
+        Check(!TextureTools.Supported("BC1_UNORM","TT_2d","SwizzledData"),"swizzled payload not mislabeled as normal DDS");
+        Check(TextureTools.FileName("Car_Original_N")=="Car_Original_N","valid original texture filename preserved");
+        Check(TextureTools.FileName("CON")!="" && TextureTools.FileName("CON")!="CON","reserved Windows texture name handled");
+        var a=new GraphFixture();var b=new GraphFixture();
+        var assetA=new EbxAsset(a);var assetB=new EbxAsset(b);
+        Guid ga=Guid.NewGuid(),gb=Guid.NewGuid();
+        a.Link=new PointerRef(new EbxImportReference {FileGuid=gb,ClassGuid=b.GetInstanceGuid().ExportedGuid});
+        b.Link=new PointerRef(new EbxImportReference {FileGuid=ga,ClassGuid=a.GetInstanceGuid().ExportedGuid});
+        a.UnknownPackedMeaning="unknown stays raw";
+        var run=new MaterialRun(Path.GetTempPath(),"fixture",g=>g==ga?assetA:g==gb?assetB:null,g=>null);
+        var pointer=new PointerRef(new EbxImportReference {FileGuid=ga,ClassGuid=a.GetInstanceGuid().ExportedGuid});
+        var first=run.Reference(pointer,ga,"root");
+        run.Reference(pointer,ga,"second");
+        Check(((JArray)run.Document["Nodes"]).Count==2,"external material cycles and shared references deduplicate");
+        Check((string)run.Document["Nodes"][0]["Raw"]["UnknownPackedMeaning"]=="unknown stays raw","unknown material values retained without semantic inference");
+        Check(run.Reference(new PointerRef(Guid.NewGuid()),ga,"missing")["Unresolved"]!=null,"missing material reference logged in graph");
+        Check(run.Capture(new FaultyFixture(),ga,"fault")["Problem"]["ReadError"]!=null,"one failing property does not discard material capture");
+        var raw=run.Capture(new ResourceRef(resourceId),ga,"rid");
+        Check((string)raw["Hex"]=="fedcba9876543210","resource metadata preserves unsigned ID as hex string");
+        string dds=Path.GetTempFileName();
+        try {
+            using(var w=new BinaryWriter(File.Create(dds))) {
+                var header=new byte[148]; w.Write(header);
+                w.BaseStream.Position=0;w.Write(0x20534444U);w.Write(124);
+                w.BaseStream.Position=12;w.Write(2);w.Write(4);
+                w.BaseStream.Position=76;w.Write(32);w.BaseStream.Position=84;w.Write(0x30315844U);
+                w.BaseStream.Position=128;w.Write(71);w.BaseStream.Position=148;w.Write(new byte[8]);
+            }
+            TextureTools.ValidateDds(dds,4,2);Check(true,"DX10 DDS header validation accepts matching dimensions");
+            Throws(()=>TextureTools.ValidateDds(dds,3,2),"DDS dimension mismatch reported");
+        } finally {File.Delete(dds);}
     }
 }

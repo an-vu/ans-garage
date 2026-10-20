@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $FrostyDir = (Resolve-Path -LiteralPath $FrostyDir).Path
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $framework = Split-Path $compiler
-$refs = @('FrostyCore.dll','FrostySdk.dll','FrostyControls.dll','Plugins\MeshSetPlugin.dll','Newtonsoft.Json.dll') | ForEach-Object { Join-Path $FrostyDir $_ }
+$refs = @('FrostyCore.dll','FrostySdk.dll','FrostyControls.dll','Plugins\MeshSetPlugin.dll','Plugins\TexturePlugin.dll','Newtonsoft.Json.dll') | ForEach-Object { Join-Path $FrostyDir $_ }
 $refs += @('System.dll','System.Core.dll','System.Windows.Forms.dll','System.Drawing.dll','Microsoft.CSharp.dll','WPF\WindowsBase.dll','WPF\PresentationCore.dll','WPF\PresentationFramework.dll','System.Xaml.dll') | ForEach-Object { Join-Path $framework $_ }
 foreach ($ref in $refs) { if (!(Test-Path -LiteralPath $ref)) { throw "Missing dependency: $ref" } }
 $destination = Join-Path $PSScriptRoot 'plugin'
@@ -14,3 +14,4 @@ $arguments += Get-ChildItem (Join-Path $PSScriptRoot 'src') -Filter *.cs | ForEa
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
 Write-Output "Built $destination\UnboundBatchExport.dll"
+
