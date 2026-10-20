@@ -3,6 +3,10 @@ PASS: path boundary avoids adjacent vehicle
 PASS: empty scope never selects entire game
 PASS: filesystem name sanitization
 PASS: deterministic distinct identities
+PASS: unknown dependency table retains slow discovery path
+PASS: out-of-folder database retained by actual mesh dependency
+PASS: unrelated populated import table avoids decompression
+PASS: in-scope database retained regardless of dependency table
 PASS: temporary export retains native FBX extension
 PASS: pending FBX is distinct in same destination directory
 PASS: boxed real SDK ResourceRef preserves full unsigned 64-bit ID
@@ -41,4 +45,4 @@ PASS: one failing property does not discard material capture
 PASS: resource metadata preserves unsigned ID as hex string
 PASS: DX10 DDS header validation accepts matching dimensions
 PASS: DDS dimension mismatch reported
-TOTAL PASS: 43
+TOTAL PASS: 47

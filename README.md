@@ -1,76 +1,63 @@
-# Unbound Vehicle Batch Export 0.2.0
+# Unbound Vehicle Batch Export 0.4.0
 
-C# x64 plugin for HarGabt Frosty Editor **1.0.7, v1.0.7_26.10.12**, targeting NFS Unbound.
+C# x64 plugin for HarGabt Frosty Editor **1.0.7, v1.0.7_26.10.12**, plus a Blender 4.0+ add-on. Tested in Blender 5.2.2 LTS.
 
-Extends the working 0.1.2 geometry exporter with automatic original DDS extraction and a raw material/reference manifest. Includes compiled plugin, C# source, build script, tests and the existing geometry-only Blender helper. No game assets or Frosty dependencies are included in this plugin package.
+Extends the existing geometry exporter with authored assembly data, shared tires/brakes, original DDS extraction, source material slots, face assignments and UV provenance. **This is not a finished vehicle surface-shader reconstruction.** Unknown sampling and shader behavior remain unresolved; the supplied Principled templates are inactive.
 
-## Install or update
+The package contains the DLL, C#/Python source, build scripts and tests. It contains no game assets, game keys or Frosty dependencies. The separate Murciélago scene/output folder contains the local validation results.
 
-1. Close Frosty Editor.
-2. Copy `plugin/UnboundBatchExport.dll` into your editor's `Plugins` directory, replacing the previous version.
-3. Keep the release's `MeshSetPlugin.dll`, `TexturePlugin.dll`, core assemblies and `ThirdParty` dependencies installed. This plugin uses those existing exporters.
-4. Restart Frosty and load NFS Unbound. Let SDK/cache initialization finish.
+## Install
 
-Tested dependency build: HarGabt v1.0.7_26.10.12. Other builds are not certified. Remove this DLL while Frosty is closed to uninstall.
+1. Close Frosty. Copy `plugin/UnboundBatchExport.dll` into its `Plugins` directory, replacing the previous DLL.
+2. Keep Frosty's original `MeshSetPlugin.dll`, `TexturePlugin.dll`, core assemblies and `ThirdParty` files. The plugin reuses their exporters.
+3. Restart Frosty and load NFS Unbound. Use a clean project for vanilla data; modified project assets are otherwise respected.
+4. In Blender, disable the older single-file Unbound add-on. Install **UnboundBlender-0.4.0.zip** using Preferences → Add-ons → Install from Disk, then enable **Unbound Batch Manifest**.
 
-## Add materials to an existing export
+Do not install just `import_unbound_batch.py`: this release also needs `unbound_assembly.py` and `unbound_materials.py`. Alternatively, keep all three files together and run `import_unbound_batch.py` in Blender's Text Editor for that session.
 
-Choose **Tools → Unbound materials for existing export...**, then select its `manifest.json`.
+## New export
 
-For this Murciélago, select `C:\Users\anvu1\Desktop\Murcielago-Recovered\manifest.json`. This reads the already recorded meshes and database rows without rerunning the broad discovery scan or FBX export. It writes `materials.json`, `materials.log` and `textures/` beside that manifest. Existing files at those material output paths are replaced on a rerun.
-
-The separate `Murcielago-Materials` delivery already contains the completed extraction for that export. Copy its contents into `Murcielago-Recovered` to make its relative FBX and texture paths resolve together. It contains no replacement FBX or `.blend`.
-
-## New vehicle export
-
-Choose **Tools → Unbound vehicle batch export...**. Supply the asset folder prefix with `/` separators; the tested scope is:
+Choose **Tools → Unbound vehicle batch export...**. Enter a specific asset folder using `/`, for example:
 
 `vehicles/player/car_lamborghini_murcielagosv_2010`
 
-An exact database or mesh asset path also works. Skeleton path is optional for rigid/composite meshes; a skinned mesh needs its exact compatible skeleton asset path. The plugin does not guess it.
+Leave the skeleton path empty for this tested rigid/composite vehicle. Skinned meshes still require an explicit compatible skeleton; none is guessed. Choose an output parent folder. A unique run folder is created.
 
-Choose a short output parent folder. A unique run folder is created. The existing geometry pass runs first, followed automatically by materials/textures. Inspect both `manifest.json` (geometry failures/skips) and `materials.json`/`materials.log` (material issues). Cancellation stops between operations; native exports cannot be interrupted safely.
+The batch discovers meshes/material database rows, captures assembly references, exports LOD0 FBX and original DDS textures, and writes `manifest.json`, `assembly.json`, `materials.json` and logs. Shared resources are deduplicated. Cached EBX import tables avoid decoding unrelated material databases; unknown dependency tables retain the original scan path.
 
-Exports use the current Frosty project state, including modifications. Use a clean project for vanilla assets.
+In Blender, choose **File → Import → Unbound batch manifest (.json)** and select `manifest.json`. With companion files present, the importer restores source slots, records UV mappings and builds the assembly. Use **3D View → N sidebar → Unbound** for body-part presets/variants. Material-row controls affect selected instances and preserve shared geometry.
 
-## Material extraction
+## Existing exports and scenes
 
-- Resolves mesh material slots and `MeshVariationDb_Win32` assignment/override references by exact object identity.
-- Captures shader and preset references, texture/vector/bool/conditional/array parameters and unknown public fields.
-- Preserves base materials and variation layers separately, without guessing a final shader.
-- Exports shared texture resources once, to `textures/<resource-id>/<original-name>.dds`.
-- Retains full asset names, EBX/object/resource/chunk identifiers, mip metadata, flags and source payload hashes.
-- Preserves packed channels unchanged. Also retains the original texture payload as `.texture-data.bin`; it is not a standalone image.
-- Uses Frosty's `TextureExporter` and validates DDS headers. For 2D images the DDS payload must exactly match the source texture bytes.
-- Reports unsupported formats/layouts, missing references and traversal limits. Raw payload is kept when it can be read.
+- **Tools → Unbound assembly for existing export...** extends a manifest with referenced shared meshes, assembly metadata and refreshed material/texture data. Work on a copy to preserve the previous manifest.
+- **Tools → Unbound materials for existing export...** refreshes material/texture outputs; existing FBX is not rewritten.
+- **File → Import → Assemble existing Unbound meshes** uses `assembly.json` with already imported meshes. Import the updated manifest first if shared tire/brake geometry is absent.
+- **File → Import → Restore Unbound material slots** reads `materials.json` and native FBX files to verify object/section identity. Existing `unbound_mesh_id` properties are required. Pre-existing user material slots not created by this add-on are preserved and reported.
 
-Material status is `completed`, `completed_with_issues`, `cancelled` or `in_progress`. An empty log means no reported extraction issues; it does not mean every compiled shader feature was decoded.
+The supplied `merci-material-slots.blend` is a separate assembled copy of the baseline, with material assignments restored and referenced DDS images packed for inspection. **It will not show finished paint, glass or rubber shading.** Surface outputs are deliberately disconnected; inspect geometry in Solid mode and source data in the Shader Editor. The original desktop `merci.blend` was not overwritten.
 
-DDS is implemented; PNG conversion is not. Actual Murciélago testing covers 2D BC1/BC3/BC5/BC7 textures. Other whitelisted formats and cube/volume/array layouts are experimental. Cube arrays and swizzled data are rejected rather than exported with a misleading DDS header.
+## Support and limits
 
-## Geometry and Blender
+- Original FBX geometry, transforms, hierarchy, UVs, normals, colors, attributes, armatures and groups are retained. No destructive merge or simplification.
+- Original material-slot order and uniform face assignment within each source section are restored.
+- Root database overrides use material object identity; nested presets and case-insensitive parameter overrides are supported. Explicit material variants use database GUID and row.
+- Source vertex-usage → Blender UV-layer mapping includes auxiliary UV attributes. **Texture sampling UVs remain unknown for the tested Murciélago bindings.**
+- Original DDS and packed channels are preserved. Named tire channel meanings are recorded where shader parameter names explicitly state them.
+- Seven reusable Principled groups exist for paint, glass, rubber, metal, plastic, carbon and lights. They have no invented family constants and are **templates, not validated game shaders**.
+- General `T_Material` packing, normal decoding/handedness, layered paint, glass/refraction, carbon weave and runtime light/dirt/wetness behavior are unresolved.
+- Four wheel rest centers use authored transforms. The interpretation of `Rotate` and tire dimensional fitting are experimental. Runtime suspension, rim sizing and tire deformation are not reproduced.
+- Item membership and source presets are supported; arbitrary customization restriction/offset evaluation is incomplete.
+- The complete GUI menu → finished-export workflow has not been verified. Successful backend and Blender checks are documented in `TESTING.md`.
+- Other vehicles use the same algorithms; all-vehicle compatibility has not been proven.
 
-The 0.1.2 FBX export routine is unchanged: binary FBX, first LOD, native hierarchy and transforms, no recentering or transform application. Non-rigid scale/shear/reflection transforms remain rejected to avoid upstream transform loss. Database variants reuse geometry and are not complete assembled vehicle configurations.
-
-**Frosty's existing FBX path disables FBX materials.** Your `merci.blend` has 280 mesh objects and zero Blender material slots. Phase 2 preserves this geometry behavior and records original Frostbite slot indices in `materials.json`; it does not create Blender slots or shaders yet.
-
-The existing `blender/import_unbound_batch.py` imports geometry through **File → Import → Unbound batch manifest (.json)**. It does not read `materials.json`. There is no need to rerun it on your existing scene to use this delivery.
-
-Use `MeshId` and relative `Fbx` to join the two manifests. Section records retain source index, original node name, LOD parent and native FBX child ordinal. Names can repeat; Blender-generated `.001` suffixes are not stable identities. A future importer must preserve the native section association at import time rather than rely on Blender object ordering.
-
-See `MATERIALS.md` for the schema and API findings; `TESTING.md` distinguishes verified results from limitations.
+See `MATERIAL-RECONSTRUCTION.md`, `ASSEMBLY.md`, `MATERIALS.md` and `TESTING.md` for evidence and limitations.
 
 ## Build and test
-
-From this package directory:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -FrostyDir 'C:\Tools\FrostyEditor'
 powershell -ExecutionPolicy Bypass -File .\tests\run-tests.ps1 -FrostyDir 'C:\Tools\FrostyEditor'
+python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Uses the Windows .NET Framework compiler, x64, C# 5-compatible source, no NuGet packages. Output: `plugin/UnboundBatchExport.dll`. These commands do not install the plugin.
-
-The included `.csproj` is an alternative for an installed .NET SDK/Framework targeting pack; that build route was not tested.
-
-Source: `src/Plugin.cs` is geometry/discovery and integration; `src/Materials.cs` is material graph/DDS export; `src/Core.cs` is shared validation. Original plugin source is MIT licensed. See `BUILD-INFO.json` for dependency fingerprints.
+The tested build uses the Windows .NET Framework compiler, x64, C# 5-compatible source, without NuGet. The optional SDK-style `.csproj` build route is untested. Dependency/source fingerprints are in `BUILD-INFO.json`.

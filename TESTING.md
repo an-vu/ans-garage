@@ -1,40 +1,74 @@
-# Phase 2 validation — 2026-10-20
+# Version 0.4.0 validation — 2026-10-20
 
-## Tested
+Tested against the user's installed HarGabt Frosty **1.0.7 v1.0.7_26.10.12**, generated Unbound SDK, local game data and Blender **5.2.2 LTS** (`d13f752e3b9c`). These results supersede the Phase 2 report. Production logic has no Murciélago asset IDs or wheel offsets.
 
-- Compiled 0.2.0 against the user's installed HarGabt Frosty v1.0.7_26.10.12 assemblies using the Windows x64 .NET Framework compiler.
-- **4 Python manifest/path checks passed** using a writable workspace temporary directory.
-- **43 C# checks passed**, including existing 30 geometry/reference tests and 13 material graph, unknown-property, missing-reference, DDS and filename checks. Full output: `test-results.txt`.
-- Used the same plugin `MaterialRun` against actual locally installed NFS Unbound data through a read-only headless Frosty SDK harness. Loaded 254,876 EBX entries; processed the user's existing Murciélago manifest.
-- **97 mesh assets**, **311 original slots**, **291 database rows**, **933 material variation assignments**. All assignments matched base slots by source object identity.
-- Traversed **1,313 nodes**: 311 MeshMaterial, 933 MeshMaterialVariation, 22 ShaderGraph, 12 SurfaceShaderPreset, 35 TextureAsset.
-- **35 unique DDS textures, zero extraction issues**. All are 2D; every DDS pixel/mip payload matches original source texture data byte for byte. Exact formats: BC1_UNORM 15, BC1_SRGB 11, BC3_SRGB 2, BC3_UNORM 2, BC5_UNORM 3, BC7_UNORM 2.
-- Source material coverage includes body paint, glass, headlight/taillight parts, carbon and plastic. This confirms source-reference coverage, not rendered appearance. No rubber/tyre-labelled sections were found in this scope; rubber is unverified.
-- Read `merci.blend` in Blender **5.2.2 LTS** without saving: **280 mesh objects, zero material slots**. The existing native exporter disables material creation.
-- Re-exported the real rigid boot part and composite main car through the unchanged native FBX path. Fresh Blender imports match original FBXs in vertices, polygons, UV values, world matrices, parenting, skin weights, bone rest/pose matrices and material slots. Comparison normalizes only Blender-generated numeric mesh name suffixes and object ordering; repeated source glass names receive different suffixes on separate imports.
+## Verified
 
-## Retained discrepancy
+| Check | Result |
+|---|---|
+| Windows x64 .NET Framework build | Successful; exact dependencies/source fingerprints in `BUILD-INFO.json` |
+| C# unit checks | **47 passed**, including existing geometry tests, material/reference handling and database dependency filtering |
+| Python unit tests | **15 passed**, including preset/override rules, identity mismatches, ambiguous roots, UV encounter order and unknown channel handling |
+| Actual production `Batch.Run`, through a headless Frosty SDK harness | **102 FBX exports, 78 unique DDS textures, zero reported export, material extraction or assembly issues** |
+| Fresh FBX → automatic slots → assembly in Blender | **291 checks passed**, zero import failures |
+| Existing `merci.blend` → assembly | **2,439 checks passed**, zero failures |
+| Existing assembly → material slots and explicit material-row switching | **3,610 checks passed**, zero failures |
+| Packaged add-on ZIP → Blender import operator | **12 checks passed**; imported all 102 FBXs, restored slots and assembled the vehicle |
 
-The full source-to-saved-Blender audit reports **1,164 passing checks and 1 failing polygon-count check**. Rear-fender section M_Opaque_PlasticRoughBlack_Max reports 1,192 source primitives versus 1,186 Blender polygons. A fresh import of the original pre-Phase-2 FBX also produces 1,186, establishing that this difference predates Phase 2. The exact cause has not been established; it is not silently waived.
+The full export used `vehicles/player/car_lamborghini_murcielagosv_2010`, an empty skeleton path and a new output directory. The production native geometry export method is unchanged from 0.2.0; `tests/validation/native-export-preservation.json` records its source hash.
 
-All 97 section counts/mesh associations and material-slot references were inspected; source-to-Blender polygon totals differ only for that rear fender. This does not prove per-object material assignment in a future importer when section names repeat.
+The database dependency filter considered 26,382 databases, skipped 26,285 with unrelated known import tables and decoded 97. It recovered the same **102 mesh identities and 552 database-row/variation tuples** as the earlier complete scan and assembly discovery. Empty dependency tables retain the original scan path.
 
-The separate materials delivery contains `validation.json`, `geometry-validation.json` and `texture-bindings.json` with detailed evidence. Validation scripts used for that dataset are in `tests/validation/`; they document local test paths and prerequisites and are not installation steps.
+Material extraction captured **317 original slots** and **1,867 graph nodes**: 317 MeshMaterial, 1,434 MeshMaterialVariation, 78 TextureAsset, 26 ShaderGraph and 12 SurfaceShaderPreset. The default resolved states reference 43 of the 78 textures; other textures belong to captured variations. Source metadata identifies 48 exported textures as sRGB and leaves 30 unspecified.
 
-## Not tested / not implemented
+## Geometry and material assignment
 
-- The new menu command and full combined geometry-plus-material UI run have not been clicked end to end in Frosty. The production material class was executed against real data; two native geometry exports were exercised separately.
-- Did not freshly re-export all 97 FBXs, test other vehicles, modified projects, absent game keys/caches, every cancellation timing, or every failure/retry scenario.
-- DDS cube/volume/2D-array paths and additional whitelisted pixel formats are experimental and untested with game assets. Cube arrays and swizzled textures are deliberately unsupported. PNG conversion is not implemented.
-- No visual comparison against Frosty's rendered preview or in-game rendering; no Blender shader reconstruction, slot creation or texture-loading test in Blender.
-- ShaderBlockDepot/compiled shader bindings, runtime-global textures, final override evaluation, packed-channel semantics and implicit UV associations are unresolved. The 35-texture total is for reachable EBX material references, not a claim to include every texture the game renderer might bind.
-- Skinned meshes with explicit skeletons, animation, complete vehicle assembly transforms and physical-scale measurement remain outside this validation.
-- Other editor releases and the .csproj/dotnet build route are untested.
+All **593 mesh objects**, including the retained source library and assembly instances, received source slot identities and section-derived polygon indices. Different source variations can use object-linked materials while sharing geometry. The Blender operator for explicit database-row selection was exercised and checked not to change an unselected instance or face indices.
 
-The original game, recovery export and merci.blend were read without modification. Extracted output was written to a separate workspace directory. No plugin was installed into the user's running editor.
+The material pass preserved vertex positions, topology, all other mesh attributes, UV layers, vertex colors, custom corner normals, vertex groups/weights, shared mesh datablocks, local transforms and parents. Attribute hashes intentionally exclude only `material_index`, which this feature restores. No UV coordinate values are rewritten.
 
-## Reproduce the unit tests
+Fresh FBXs were compared with the original 97 FBXs and five previously recovered shared meshes. Geometry, topology, UVs, colors, model properties and hierarchy connections match exactly after ignoring generated FBX object IDs. Native normal/tangent/binormal decoding varies slightly across runs: maximum component differences were approximately `1.19e-7`, `1.33e-6`, and `1.30e-6`, respectively. Only those vectors use a `1e-5` comparison tolerance. The material-pass preservation checks on an existing Blender scene remain exact.
 
-Run `build.ps1` then `tests/run-tests.ps1` with `-FrostyDir` pointing to the target installation. Live-data validation additionally requires the user's own game, generated SDK, cache and key; none are included in this package.
+All 78 fresh DDS file hashes match the earlier extracted textures. Blender loaded the textures referenced by resolved materials without decode errors. Referenced images in `merci-material-slots.blend` are packed for inspection.
 
-Harness note: an additional geometry rerun initially reused an existing test output folder and correctly refused to overwrite an FBX. A fresh test folder was used for the final successful two-mesh regression. The production batch command already creates unique run folders.
+## Rubber coverage and wheels
+
+Four assembled tire objects, plus their retained source object, resolve to the actual `cs_pbr_tire_max_lookdev` shader. Channel names explicitly identify RGB color/alpha smoothness and RG normal/alpha AO; other channel meanings are not invented. This verifies tire material coverage, not a rendered rubber appearance or every possible rubber submaterial in generic opaque shaders.
+
+Four authored rest centers, parent controls, source transforms and original body alignment passed assembly checks. Related sections stay in their mesh assemblies. Variant visibility and source presets were exercised. Workbench geometry previews were inspected for overall placement. The interpretation of `Rotate` and tire dimensional fitting remains experimental, as described in `ASSEMBLY.md`.
+
+## Six rear-fender polygons: resolved
+
+The `fendersr_seta_mesh` plastic section has 1,192 FBX triangles and 1,186 Blender polygons. Exactly six FBX triangles repeat a vertex index:
+
+```
+1027 1027 1028
+1027 1028 1028
+1028 1028 1029
+1028 1029 1029
+1029 1029 1027
+1029 1027 1027
+```
+
+They are zero-area primitives. Blender discards them on import. Every remaining face-index sequence matches; the other three sections match completely. **No nondegenerate surface was lost.** The FBX remains unchanged. Exact indices and source polygon ordinals are in the separate output's `rear-fender-audit.json`.
+
+## What is not verified or complete
+
+- **Full Frosty GUI menu → completed export is not verified.** A scratch editor host loaded the plugin and actual assets, but its startup/modal state prevented a reliable automated menu run. The successful full batch used the production backend with a test-only progress-window fixture. This is not equivalent to clicking the menu end to end.
+- Blender add-on registration and operators were tested in background Blender. Interactive Preferences installation, file-picker behavior and sidebar drawing were not visually verified.
+- **No reconstructed material has a connected surface output.** The seven Principled groups are inactive templates. Paint/glass/light/carbon/metal/plastic/rubber appearance has not been validated against Frosty or the game.
+- Source vertex-usage to FBX UV-layer mapping is implemented. The tested material data does not identify actual texture sampling UVs. No default UV0 fallback is connected.
+- Compiled shader permutations, generic packed-channel meanings, normal decoding, paint composition, glass IOR/refraction, carbon weave, runtime/global textures and light/dirt/wetness behavior remain unresolved. Unknown values are retained.
+- Rendered material validation, all-vehicle compatibility, modified projects, explicit skeletal animation, all failure/retry cases and cancellation timing are untested. A BMW M3 E46 discovery-only check found four wheel records without assembly issues; it was not exported or assembled in Blender.
+- DDS cube/volume/array paths and additional formats remain experimental. PNG conversion is not implemented.
+- Other Frosty releases, Blender versions and the optional `.csproj` build route are untested.
+
+Blender emitted an inability to write a system thumbnail during the saved-scene check; scene saving and all validation checks completed. Native FBX import also emits `NoMappingInformation` material warnings because Frosty omits FBX materials; the subsequent material pass supplies slots from source metadata.
+
+## Evidence and reproduction
+
+The separate `Murcielago-Assembly` output contains `blender-validation.json`, `material-validation.json`, `fresh-pipeline-validation.json`, `material-reconstruction.json`, `rear-fender-audit.json`, manifests, original DDS files and saved scenes. `tests/validation/` contains development harnesses and a compact release summary. These live-data checks need the user's own game, SDK, key and cache, which are not distributed with the plugin.
+
+Run `build.ps1`, `tests/run-tests.ps1`, and `python -m unittest discover -s tests -p 'test_*.py' -v` for the ordinary build/unit checks. See `tests/validation/README.md` for the live-data harness prerequisites.
+
+The original desktop `merci.blend`, original export folder, game and installed Frosty plugin were not overwritten. Work was performed in separate workspace outputs.

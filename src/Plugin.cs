@@ -18,10 +18,10 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("UnboundBatchExport")]
-[assembly: AssemblyVersion("0.2.0.0")]
+[assembly: AssemblyVersion("0.4.0.0")]
 [assembly: PluginDisplayName("Unbound Vehicle Batch Export (experimental)")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("0.2.0.0")]
+[assembly: PluginVersion("0.4.0.0")]
 [assembly: RegisterMenuExtension(typeof(UnboundBatchExport.ExportMenu))]
 
 namespace UnboundBatchExport
@@ -71,7 +71,7 @@ namespace UnboundBatchExport
             Text="Unbound vehicle batch export"; Width=640; Height=290; FormBorderStyle=FormBorderStyle.FixedDialog; MaximizeBox=false; MinimizeBox=false;
             Controls.Add(new Label { Left=16, Top=16, Width=600, Text="Exact vehicle folder / asset path from Frosty's Data Explorer (required):" }); Controls.Add(Prefix);
             Controls.Add(new Label { Left=16, Top=82, Width=600, Text="Skeleton asset path (optional; skinned meshes are skipped if empty):" }); Controls.Add(Skeleton);
-            Controls.Add(new Label { Left=16, Top=145, Width=600, Height=48, Text="LOD0, binary FBX 2014, meters, hierarchy retained. Current loaded asset state.\nVariants are catalogued; textures and complete vehicle assembly are not reconstructed." });
+            Controls.Add(new Label { Left=16, Top=145, Width=600, Height=48, Text="LOD0, binary FBX 2014, meters, hierarchy retained. Current loaded asset state.\nTextures and authored assembly data are extracted. Shader reconstruction remains partial." });
             var go = new Button { Text="Export...", Left=410, Top=208, Width=95 };
             go.Click += (s,e) => { if (Core.Normalize(Prefix.Text).Length == 0) { MessageBox.Show("Enter a specific vehicle folder or asset path."); return; } DialogResult=DialogResult.OK; };
             var cancel = new Button { Text="Cancel", Left=515, Top=208, Width=90, DialogResult=DialogResult.Cancel };
@@ -82,7 +82,7 @@ namespace UnboundBatchExport
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "0.2.0";
+        public string PluginVersion = "0.4.0";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
@@ -90,6 +90,7 @@ namespace UnboundBatchExport
         public string Units = "Meters";
         public bool Cancelled;
         public int DatabasesScanned;
+        public int DatabasesConsidered, DatabasesSkippedByDependencies;
         public List<MeshRecord> Meshes = new List<MeshRecord>();
         public List<string> Errors = new List<string>();
     }
@@ -158,13 +159,25 @@ namespace UnboundBatchExport
             return new { Kind=p.Type.ToString(), FileGuid=p.External.FileGuid, ClassGuid=p.External.ClassGuid,
                 InternalType=p.Internal == null ? null : p.Internal.GetType().Name };
         }
+        public static bool DatabaseMayReferenceScope(EbxAssetEntry database,string scope,HashSet<Guid> scopedFiles)
+        {
+            if(Core.InScope(database.Name,scope))return true;
+            // SDK import tables include every external PointerRef file. Modified
+            // assets expose their current dependencies through this same API.
+            // Empty lists may mean unavailable metadata, so retain the slow path.
+            var dependencies=database.EnumerateDependencies().ToList();
+            return dependencies.Count==0 || dependencies.Any(g=>scopedFiles.Contains(g));
+        }
         public void Run(FrostyTaskWindow task)
         {
             Directory.CreateDirectory(output);
             var entries=App.AssetManager.EnumerateEbx().OrderBy(e=>e.Name,StringComparer.OrdinalIgnoreCase).ToList();
+            var scopedFiles=new HashSet<Guid>(entries.Where(e=>Core.InScope(e.Name,prefix)).Select(e=>e.Guid));
             foreach (var db in entries.Where(e => e.Type == "MeshVariationDatabase" || e.Filename.IndexOf("MeshVariationDb_Win32",StringComparison.OrdinalIgnoreCase)>=0))
             {
                 if(Cancel) break;
+                Manifest.DatabasesConsidered++;
+                if(!DatabaseMayReferenceScope(db,prefix,scopedFiles)) {Manifest.DatabasesSkippedByDependencies++;continue;}
                 task.Update("Reading " + db.Name);
                 try
                 {
@@ -206,6 +219,11 @@ namespace UnboundBatchExport
                 if(Cancel) break;
                 try { var asset=App.AssetManager.GetEbx(entry); Add(entry,asset.RootObject,asset.RootInstanceGuid); }
                 catch(Exception ex) { Manifest.Errors.Add(entry.Name + ": " + ex.Message); }
+            }
+            AssemblyRun assembly=null;
+            if(!Cancel) {
+                try {assembly=new AssemblyRun(Manifest,output) {CancellationRequested=()=>Cancel};assembly.Run();}
+                catch(Exception ex) {if(assembly!=null){assembly.Issue("run",ex.Message);assembly.Save();}Manifest.Errors.Add("Assembly: "+ex.Message);}
             }
             Save();
             foreach(var record in Manifest.Meshes)
@@ -266,6 +284,12 @@ namespace UnboundBatchExport
                 File.Move(partial,file); record.Fbx=relative; record.Status="exported";
             }
             finally { if(File.Exists(partial)) File.Delete(partial); }
+        }
+        public void ExportAdditional(MeshRecord record,FrostyTaskWindow task)
+        {
+            if(record.Status=="exported")return;
+            try {Export(record,task);}
+            catch(Exception ex) {record.Status="failed";record.Error=ex.ToString();Manifest.Errors.Add(record.Asset+": "+ex.Message);}
         }
         public static ulong GetResourceId(object value)
         {

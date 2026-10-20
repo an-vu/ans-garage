@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Variants are reference collections, not reconstructed material appearances.
 """
 bl_info = {"name": "Unbound Batch Manifest", "author": "An Vu",
-           "version": (0, 1, 0), "blender": (3, 6, 0), "category": "Import-Export"}
+           "version": (0, 4, 0), "blender": (4, 0, 0), "category": "Import-Export"}
 
 import json
 from pathlib import Path
@@ -33,7 +33,25 @@ def safe_fbx(root, relative):
     return path
 
 
-def import_manifest(filepath):
+def assembly_module():
+    import importlib.util
+    module_path = Path(__file__).with_name("unbound_assembly.py")
+    spec = importlib.util.spec_from_file_location("unbound_assembly", module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def materials_module():
+    import importlib.util
+    module_path = Path(__file__).with_name("unbound_materials.py")
+    spec = importlib.util.spec_from_file_location("unbound_materials", module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def import_manifest(filepath, assemble=True, materials=True):
     import bpy
     path = Path(filepath).resolve()
     manifest = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -55,6 +73,7 @@ def import_manifest(filepath):
     variants.hide_render = True
     variant_collections = {}
     failures = []
+    imported_objects = []
     count = 0
     for mesh in records:
         before = set(bpy.data.objects)
@@ -81,6 +100,7 @@ def import_manifest(filepath):
                     if old != part:
                         old.objects.unlink(obj)
                 obj["unbound_mesh_id"] = mesh["Id"]
+            imported_objects.extend(added)
             for variant in mesh.get("Variants", []):
                 key = (variant["DatabaseGuid"], variant["Hash"])
                 if key not in variant_collections:
@@ -99,13 +119,27 @@ def import_manifest(filepath):
             failures.append(mesh["Asset"] + ": " + str(exc))
     report = bpy.data.texts.new("Unbound import report")
     report.write("Imported %d/%d meshes\n" % (count, len(records)) + "\n".join(failures))
+    if materials and path.with_name("materials.json").is_file():
+        try:
+            material_report = materials_module().reconstruct(path, imported_objects)
+            failures.extend("Materials: " + x["Issue"] for x in material_report["Issues"]
+                            if x.get("Severity") == "assignment_failed")
+        except Exception as exc:
+            failures.append("Materials: " + str(exc))
+            report.write("\nMaterials: " + str(exc))
+    if assemble and path.with_name("assembly.json").is_file() and not failures:
+        try:
+            assembly_module().assemble_existing(path)
+        except Exception as exc:
+            failures.append("Assembly: " + str(exc))
+            report.write("\nAssembly: " + str(exc))
     return count, failures
 
 
 def register():
     import bpy
     from bpy_extras.io_utils import ImportHelper
-    from bpy.props import StringProperty
+    from bpy.props import StringProperty, IntProperty
 
     class IMPORT_SCENE_OT_unbound_batch(bpy.types.Operator, ImportHelper):
         bl_idname = "import_scene.unbound_batch"
@@ -124,19 +158,138 @@ def register():
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
+    class IMPORT_SCENE_OT_unbound_assembly(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.unbound_assembly"
+        bl_label = "Assemble existing Unbound meshes"
+        bl_options = {"REGISTER", "UNDO"}
+        filename_ext = ".json"
+        filter_glob: StringProperty(default="manifest.json", options={"HIDDEN"})
+        def execute(self, context):
+            try:
+                assembly_module().assemble_existing(self.filepath)
+                self.report({"INFO"}, "Assembly created. See Unbound Vehicle sidebar and assembly report.")
+                return {"FINISHED"}
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+
+    class IMPORT_SCENE_OT_unbound_materials(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.unbound_materials"
+        bl_label = "Restore Unbound material slots"
+        bl_options = {"REGISTER", "UNDO"}
+        filename_ext = ".json"
+        filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
+        def execute(self, context):
+            try:
+                result = materials_module().reconstruct(self.filepath)
+                failed = sum(x.get("Severity") == "assignment_failed" for x in result["Issues"])
+                self.report({"WARNING" if failed else "INFO"},
+                            "%d objects assigned; %d failures. See material reconstruction report." % (len(result["Objects"]), failed))
+                return {"FINISHED"}
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+
+    class OBJECT_OT_unbound_variant(bpy.types.Operator):
+        bl_idname = "object.unbound_variant"
+        bl_label = "Switch Unbound variant"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty()
+        group: StringProperty()
+        option: StringProperty()
+        preset: StringProperty()
+        def execute(self, context):
+            try:
+                collection = bpy.data.collections[self.root]
+                if self.preset:
+                    assembly_module().apply_preset(collection, self.preset)
+                else:
+                    assembly_module().set_variant(collection, self.group, self.option)
+                return {"FINISHED"}
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+
+    class OBJECT_OT_unbound_material_variant(bpy.types.Operator):
+        bl_idname = "object.unbound_material_variant"
+        bl_label = "Select source material database row"
+        bl_options = {"REGISTER", "UNDO"}
+        database_guid: StringProperty()
+        row: IntProperty()
+        def execute(self, context):
+            try:
+                obj = context.active_object
+                if not obj or not obj.get("unbound_materials_path"):
+                    raise ValueError("Select a mesh with restored Unbound material slots")
+                materials_module().apply_material_variant(obj["unbound_materials_path"],
+                    obj["unbound_mesh_id"], self.database_guid, self.row, context.selected_objects)
+                self.report({"INFO"}, "Source material row selected on selected instances. Shader appearance remains unresolved.")
+                return {"FINISHED"}
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+
+    class VIEW3D_PT_unbound_vehicle(bpy.types.Panel):
+        bl_label = "Unbound Vehicle"
+        bl_idname = "VIEW3D_PT_unbound_vehicle"
+        bl_space_type = "VIEW_3D"
+        bl_region_type = "UI"
+        bl_category = "Unbound"
+        def draw(self, context):
+            for root in context.scene.collection.children:
+                if not root.get("unbound_assembly_path"):
+                    continue
+                box = self.layout.box()
+                box.label(text=root.name)
+                box.label(text="Authored rest pose")
+                for preset in json.loads(root["unbound_presets_json"]):
+                    label = "Stock" if preset == "Stock" else preset.rsplit("_template_", 1)[-1].replace("_", " ")
+                    op = box.operator("object.unbound_variant", text="Preset: " + label)
+                    op.root, op.preset = root.name, preset
+                for group in root.children:
+                    key = group.get("unbound_choice_group")
+                    if not key:
+                        continue
+                    box.prop(group, '["show_variants"]', text=key)
+                    if group["show_variants"]:
+                        for variant in group.children:
+                            if "unbound_option" not in variant:
+                                continue
+                            op = box.operator("object.unbound_variant", text=variant.name,
+                                              depress=not variant.hide_viewport)
+                            op.root, op.group, op.option = root.name, key, variant["unbound_option"]
+                box.label(text="See Unbound assembly report for limits")
+            obj = context.active_object
+            if obj and obj.get("unbound_materials_path"):
+                box = self.layout.box()
+                box.label(text="Original material slots restored")
+                box.label(text="Surface shader is unresolved")
+                box.prop(obj, '["unbound_show_material_rows"]', text="Source material variants")
+                if obj["unbound_show_material_rows"]:
+                    for row in json.loads(obj["unbound_material_variants_json"]):
+                        op = box.operator("object.unbound_material_variant",
+                            text=row["Hash"] + " / " + row["DatabaseGuid"][:8] + ":" + str(row["Row"]))
+                        op.database_guid, op.row = row["DatabaseGuid"], row["Row"]
+
     def menu(self, context):
         self.layout.operator(IMPORT_SCENE_OT_unbound_batch.bl_idname, text="Unbound batch manifest (.json)")
+        self.layout.operator(IMPORT_SCENE_OT_unbound_assembly.bl_idname, text="Assemble existing Unbound meshes")
+        self.layout.operator(IMPORT_SCENE_OT_unbound_materials.bl_idname, text="Restore Unbound material slots")
 
-    global _registered_class, _menu
-    _registered_class, _menu = IMPORT_SCENE_OT_unbound_batch, menu
-    bpy.utils.register_class(_registered_class)
+    global _registered_classes, _menu
+    _registered_classes = [IMPORT_SCENE_OT_unbound_batch, IMPORT_SCENE_OT_unbound_assembly, IMPORT_SCENE_OT_unbound_materials,
+                           OBJECT_OT_unbound_variant, OBJECT_OT_unbound_material_variant, VIEW3D_PT_unbound_vehicle]
+    _menu = menu
+    for cls in _registered_classes:
+        bpy.utils.register_class(cls)
     bpy.types.TOPBAR_MT_file_import.append(_menu)
 
 
 def unregister():
     import bpy
     bpy.types.TOPBAR_MT_file_import.remove(_menu)
-    bpy.utils.unregister_class(_registered_class)
+    for cls in reversed(_registered_classes):
+        bpy.utils.unregister_class(cls)
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ namespace UnboundBatchExport
             output=directory;
             loader=load ?? (g=> { var e=App.AssetManager.GetEbxEntry(g); return e==null?null:App.AssetManager.GetEbx(e); });
             entryLookup=lookup ?? (g=>App.AssetManager.GetEbxEntry(g));
-            Document=new JObject {{"Schema", 1}, {"PluginVersion", "0.2.0"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
+            Document=new JObject {{"Schema", 1}, {"PluginVersion", "0.4.0"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
         }
         public void Issue(string path,Exception ex) { Issue(path,ex.GetType().Name+": "+ex.Message); }
         public void Issue(string path,string message) { issues.Add(new JObject {{"Path", path}, {"Message", message}}); }
@@ -171,6 +171,31 @@ namespace UnboundBatchExport
                         }
                         var sec=new JObject {{"SectionIndex", sectionIndex++}, {"Name", section.Name}, {"FbxNodeName", section.Name}, {"MaterialSlot", section.MaterialId}, {"Renderable", set.Lods[0].IsSectionRenderable(section)}, {"PrimitiveCount", section.PrimitiveCount}, {"UvAttributes", uv}, {"Lod", 0}};
                         sec["VertexAttributes"]=attributes;
+                        // Match FBXExporter.FBXExportSubObject's actual traversal.
+                        // TexCoord suffix is NOT the exported UV layer ordinal.
+                        var bindings=new JArray();var seenUsages=new HashSet<string>();
+                        var decl=section.GeometryDeclDesc[0];
+                        for(int streamIndex=0;streamIndex<decl.Streams.Length;streamIndex++) {
+                            int stride=decl.Streams[streamIndex].VertexStride,currentStride=0;
+                            if(stride==0)continue;
+                            foreach(var element in decl.Elements) {
+                                string usage=element.Usage.ToString();
+                                if(usage=="Unknown" || element.StreamIndex!=streamIndex || currentStride>=stride)continue;
+                                bool regular=usage.Length==9 && usage.StartsWith("TexCoord") && usage[8]>='0' && usage[8]<='7';
+                                bool handled=new[]{"Pos","BinormalSign","Normal","Binormal","Tangent","TangentSpace","Color0","Color1","DisplacementMapTexCoord"}.Contains(usage);
+                                string format=element.Format.ToString();
+                                bool extra=!handled&&(format=="Half2"||format=="Float2"||format=="Short2N");
+                                if((regular || usage=="RadiosityTexCoord" || extra) && seenUsages.Add(usage)) {
+                                    int ordinal=bindings.Count;
+                                    bindings.Add(new JObject {{"SourceUsage",usage},{"BlenderLayer",regular?"UVChannel"+ordinal:usage},
+                                        {"Evidence","Native Frosty FBXExporter stream/declaration traversal"},
+                                        {"ValueConversion",regular||usage=="RadiosityTexCoord"?"(U, 1-V)":"Native auxiliary attribute conversion; no V flip"}});
+                                }
+                                currentStride+=element.Size;
+                            }
+                        }
+                        sec["FbxUvBindings"]=bindings;
+                        sec["MaterialAssignmentPolicy"]="Each native FBX section is a separate mesh; all its faces use this MaterialSlot. No per-face array is inferred across sections.";
                         sec["FbxLodParent"]=set.Lods[0].ShortName;
                         sec["FbxChildOrdinal"]=set.Lods[0].IsSectionRenderable(section)?(JToken)new JValue(exportedIndex++):JValue.CreateNull();
                         sec["MatchingNote"]="Names may repeat; match MeshId + LOD parent + child ordinal, not Blender's globally suffixed name alone.";

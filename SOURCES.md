@@ -19,3 +19,13 @@ Phase 2 additionally inspected these local upstream source files at the branch c
 - Generated `Profiles/NFSUnboundSDK.dll`: actual Unbound Material/Shader/Texture/variation row field definitions.
 
 The generated SDK and game data were read locally; they are not redistributed.
+
+Version 0.4 additionally inspected:
+
+- `FrostySdk/Managers/Entries/EbxAssetEntry.cs`: current/modified dependency enumeration used to exclude unrelated databases safely.
+- `Plugins/MeshSetPlugin/Fbx/FBXExporter.cs`: section ordering, material omission and exact UV-layer creation/encounter order.
+- `FrostyCmd/ShaderDbDump.cs`: legacy shader database reader; not treated as a working Unbound compiled-shader decoder.
+- Blender's installed `scripts/addons_core/io_scene_fbx/parse_fbx.py` and `import_fbx.py`: native FBX tree parsing and degenerate-face import behavior.
+- Live Unbound `RaceVehicleBlueprint`, customization components/tags, `RaceWheelComponentData`, item and blueprint-bundle pointers: authored wheel rest positions and shared mesh relationships.
+
+Source observations are separated from experimental engine interpretations in `ASSEMBLY.md` and `MATERIAL-RECONSTRUCTION.md`.

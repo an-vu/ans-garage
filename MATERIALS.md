@@ -8,11 +8,11 @@ Inspected the local HarGabt source and actual release assemblies, plus the gener
 
 Frosty's normal variation cache loader returns early for Unbound. This plugin reads the database entries directly. Actual Unbound row materials contain `Material`, `MaterialVariation`, `SurfaceShaderGuid` and `SurfaceShaderId`; shader parameters reside in the referenced material/variation objects. Each stored database row is rechecked against the mesh object identity and variation hash before use.
 
-`SurfaceShaderInstanceDataStruct` carries Shader, SurfaceShaderName, TextureParameters, VectorParameters, BoolParameters, ConditionalParameters and VectorArrayParameters. `SurfaceShaderPreset.ShaderPreset` forms another layer. Frosty's render code recursively loads presets, applies named parameters case-insensitively and treats shader replacement differently from inheritance. This release preserves these source layers separately instead of claiming an evaluated final material.
+`SurfaceShaderInstanceDataStruct` carries Shader, SurfaceShaderName, TextureParameters, VectorParameters, BoolParameters, ConditionalParameters and VectorArrayParameters. `SurfaceShaderPreset.ShaderPreset` forms another layer. Frosty's render code recursively loads presets, applies named parameters case-insensitively and treats shader replacement differently from inheritance. The raw manifest preserves these source layers separately. Version 0.4 adds a Blender resolver for these parameter layers; it does not claim to evaluate the compiled surface shader. See `MATERIAL-RECONSTRUCTION.md`.
 
 The generated `TextureShaderParameter` has ParameterName and Value, with no per-binding UV index. MeshMaterial has additional fields such as DisplacementMapTexCoord; these are retained verbatim. The inspected ShaderGraph EBX exposes basic identifiers and metadata, not a complete readable shader implementation. ShaderBlockDepot/compiled shader behavior and engine-injected global textures are not decoded.
 
-The native FBX exporter emits UVChannel layers in encounter order and flips V. Raw vertex usages/formats/offsets are recorded, including special non-TexCoord attributes. Do not infer that a named shader parameter necessarily selects UVChannel0.
+The native FBX exporter emits UVChannel layers in encounter order and flips V for regular texture UVs. Auxiliary attributes follow their own native conversion. Raw vertex usages/formats/offsets and `FbxUvBindings` are recorded, including special non-TexCoord attributes. Do not infer that a named shader parameter necessarily selects UVChannel0.
 
 ## Schema 1
 
