@@ -1,0 +1,28 @@
+PASS: case-insensitive path scope
+PASS: path boundary avoids adjacent vehicle
+PASS: empty scope never selects entire game
+PASS: filesystem name sanitization
+PASS: deterministic distinct identities
+PASS: translation preserved in rigid transform acceptance
+PASS: rotation accepted
+PASS: lossy scale rejected
+PASS: reflection rejected
+PASS: shear rejected
+PASS: non-finite translation rejected
+PASS: internal reference resolved
+PASS: external file plus non-root class GUID resolved
+PASS: empty class GUID uses root
+PASS: missing class never silently substitutes root
+PASS: missing file reported
+PASS: null pointer reported
+PASS: invalid FBX rejected
+PASS: binary FBX signature recognized (not content validation)
+PASS: plugin types load against release assemblies
+PASS: native exporter signature available
+PASS: plugin registration attributes load
+TOTAL PASS: 22
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.015s
+
+OK
