@@ -1,0 +1,3 @@
+old.fbx.partial: exact=False, appended=True
+new.partial.fbx: exact=True, appended=False
+PASS: real native SDK reproduces old bug and writes corrected filename exactly.

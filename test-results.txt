@@ -3,6 +3,14 @@ PASS: path boundary avoids adjacent vehicle
 PASS: empty scope never selects entire game
 PASS: filesystem name sanitization
 PASS: deterministic distinct identities
+PASS: temporary export retains native FBX extension
+PASS: pending FBX is distinct in same destination directory
+PASS: boxed real SDK ResourceRef preserves full unsigned 64-bit ID
+PASS: reflected mesh resource follows actual export conversion path
+PASS: plain boxed UInt64 supported
+PASS: missing mesh resource rejected
+PASS: zero resource reference rejected
+PASS: unexpected resource type rejected explicitly
 PASS: translation preserved in rigid transform acceptance
 PASS: rotation accepted
 PASS: lossy scale rejected
@@ -20,9 +28,4 @@ PASS: binary FBX signature recognized (not content validation)
 PASS: plugin types load against release assemblies
 PASS: native exporter signature available
 PASS: plugin registration attributes load
-TOTAL PASS: 22
-....
-----------------------------------------------------------------------
-Ran 4 tests in 0.015s
-
-OK
+TOTAL PASS: 30

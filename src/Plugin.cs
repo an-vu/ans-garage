@@ -18,10 +18,10 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("UnboundBatchExport")]
-[assembly: AssemblyVersion("0.1.0.0")]
+[assembly: AssemblyVersion("0.1.2.0")]
 [assembly: PluginDisplayName("Unbound Vehicle Batch Export (experimental)")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("0.1.0.0")]
+[assembly: PluginVersion("0.1.2.0")]
 [assembly: RegisterMenuExtension(typeof(UnboundBatchExport.ExportMenu))]
 
 namespace UnboundBatchExport
@@ -82,6 +82,7 @@ namespace UnboundBatchExport
     public sealed class Manifest
     {
         public int Schema = 1;
+        public string PluginVersion = "0.1.2";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
@@ -219,7 +220,7 @@ namespace UnboundBatchExport
         }
         private void Export(MeshRecord record, FrostyTaskWindow task)
         {
-            ulong rid=Convert.ToUInt64(Get(record.Object,"MeshSetResource"));
+            ulong rid=GetResourceId(Get(record.Object,"MeshSetResource"));
             var res=App.AssetManager.GetResEntry(rid);
             if(res==null) throw new InvalidDataException("Missing mesh resource " + rid);
             var mesh=App.AssetManager.GetResAs<MeshSet>(res);
@@ -245,7 +246,7 @@ namespace UnboundBatchExport
             string relative="parts/" + Core.SafeName(Path.GetFileName(Core.Normalize(record.Asset))) + "_" + record.Id + "/LOD0.fbx";
             string file=Path.Combine(output,relative.Replace('/',Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(file));
-            string partial=file + ".partial";
+            string partial=Core.PendingFbxPath(file);
             try
             {
                 new FBXExporter(task).ExportFBX(record.Object,partial,"2014","Meters",false,true,false,skeleton,"binary",mesh);
@@ -253,6 +254,17 @@ namespace UnboundBatchExport
                 File.Move(partial,file); record.Fbx=relative; record.Status="exported";
             }
             finally { if(File.Exists(partial)) File.Delete(partial); }
+        }
+        public static ulong GetResourceId(object value)
+        {
+            // ResourceRef defines an implicit ulong conversion, not IConvertible.
+            // Unbox it first; Convert.ToUInt64(object) bypasses that operator.
+            ulong id;
+            if(value is ResourceRef) id=(ResourceRef)value;
+            else if(value is ulong) id=(ulong)value;
+            else throw new InvalidDataException("MeshSetResource must be a ResourceRef or UInt64; got " + (value==null ? "null" : value.GetType().FullName));
+            if(id==0) throw new InvalidDataException("MeshSetResource is zero.");
+            return id;
         }
         public static double[] ReadMatrix(object pose)
         {

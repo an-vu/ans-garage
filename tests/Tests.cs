@@ -23,7 +23,7 @@ public static class Tests
         string editor=Path.GetFullPath(args[0]), plugin=Path.GetFullPath(args[1]);
         AppDomain.CurrentDomain.AssemblyResolve += (s,e) => {
             string name=new AssemblyName(e.Name).Name + ".dll";
-            foreach(string dir in new [] {editor,Path.Combine(editor,"Plugins"),Path.Combine(editor,"ThirdParty"),plugin})
+            foreach(string dir in new [] {plugin,editor,Path.Combine(editor,"Plugins"),Path.Combine(editor,"ThirdParty")})
             { string p=Path.Combine(dir,name); if(File.Exists(p)) return Assembly.LoadFrom(p); }
             return null;
         };
@@ -38,6 +38,19 @@ public static class Tests
         Check(!Core.InScope("vehicles/car", ""),"empty scope never selects entire game");
         Check(Core.SafeName("../CON:<x>").IndexOf('.')<0,"filesystem name sanitization");
         Check(Core.Id("a")!=Core.Id("b") && Core.Id("a")==Core.Id("a"),"deterministic distinct identities");
+        string finalFbx=Path.Combine("parts","LOD0.fbx");
+        string pendingFbx=Core.PendingFbxPath(finalFbx);
+        Check(Path.GetExtension(pendingFbx)==".fbx","temporary export retains native FBX extension");
+        Check(pendingFbx!=finalFbx && Path.GetDirectoryName(pendingFbx)==Path.GetDirectoryName(finalFbx),"pending FBX is distinct in same destination directory");
+        const ulong resourceId=0xFEDCBA9876543210UL;
+        object resource=new ResourceRef(resourceId);
+        Check(Batch.GetResourceId(resource)==resourceId,"boxed real SDK ResourceRef preserves full unsigned 64-bit ID");
+        var meshFixture=new { MeshSetResource=new ResourceRef(resourceId) };
+        Check(Batch.GetResourceId(Batch.Get(meshFixture,"MeshSetResource"))==resourceId,"reflected mesh resource follows actual export conversion path");
+        Check(Batch.GetResourceId((object)resourceId)==resourceId,"plain boxed UInt64 supported");
+        Throws(()=>Batch.GetResourceId(null),"missing mesh resource rejected");
+        Throws(()=>Batch.GetResourceId(ResourceRef.Zero),"zero resource reference rejected");
+        Throws(()=>Batch.GetResourceId("FEDCBA9876543210"),"unexpected resource type rejected explicitly");
         var identity=new double[] {1,0,0,0,1,0,0,0,1,12,34,56};
         Check(Core.IsRigid(identity),"translation preserved in rigid transform acceptance");
         Check(Core.IsRigid(new double[] {0,1,0,-1,0,0,0,0,1,1,2,3}),"rotation accepted");

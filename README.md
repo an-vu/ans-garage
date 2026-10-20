@@ -1,8 +1,10 @@
-# Unbound Vehicle Batch Export 0.1.0 — experimental
+# Unbound Vehicle Batch Export 0.1.2 — experimental
 
 A compiled C# x64 plugin for **HarGabt Frosty Editor 1.0.7, build v1.0.7_26.10.12**, targeting NFS Unbound. Includes source, repeatable build/test commands, and a Blender manifest importer.
 
-**Status:** compiled against that release's real assemblies; automated helper/API checks pass. **Not tested in a running Frosty Editor, with NFS Unbound game assets, or inside Blender.** This is an experimental implementation, not a verified production exporter. See `TESTING.md`.
+**Status:** 0.1.2 fixes the temporary FBX filename mismatch discovered in the user's second run. 30 C# checks pass. A separate real native SDK export reproduces the old filename behavior and verifies the corrected filename. The user's 97 FBX files were recovered and structurally validated separately. **Blender import and fidelity to game geometry/transforms remain unverified.** See `TESTING.md`.
+
+**Updating from 0.1.0/0.1.1:** close Frosty, replace `Plugins/UnboundBatchExport.dll` with the DLL in this package, then restart Frosty. Use the separately provided recovered Murcielago export for the completed run; no rescan is needed for those files. The full database scan still occurs on future exports; this hotfix does not change scan speed.
 
 ## Install
 

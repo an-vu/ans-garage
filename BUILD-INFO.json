@@ -2,7 +2,7 @@
   "Release": "v1.0.7_26.10.12",
   "ReleaseCommit": "5fdef53c0e17cd8ed04a56a31bbd4f108b2854ba",
   "InspectedBranchCommit": "d73a3c6799025aa183da447e5defcf2a38f0786c",
-  "BuiltUtc": "2026-10-19T12:15:32.9953811Z",
+  "BuiltUtc": "2026-10-19T17:14:15.8078636Z",
   "Compiler": "14.8.10001.0 built by: bd501acdc000004",
   "Dependencies": [
     {
@@ -29,5 +29,6 @@
       "File": "Newtonsoft.Json.dll",
       "SHA256": "7F912B28A07C226E0BE3ACFB2F57F050538ABA0100FA1F0BF2C39F1A1F1DA814"
     }
-  ]
+  ],
+  "PluginVersion": "0.1.2"
 }

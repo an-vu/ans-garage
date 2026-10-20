@@ -38,6 +38,11 @@ namespace UnboundBatchExport
             double det = m[0] * (m[4]*m[8]-m[5]*m[7]) - m[1]*(m[3]*m[8]-m[5]*m[6]) + m[2]*(m[3]*m[7]-m[4]*m[6]);
             return Math.Abs(det - 1) < eps;
         }
+        public static string PendingFbxPath(string file)
+        {
+            // The FBX SDK appends .fbx when given an unfamiliar final extension.
+            return Path.Combine(Path.GetDirectoryName(file), Path.GetFileNameWithoutExtension(file) + ".partial.fbx");
+        }
         public static bool HasBinaryFbxHeader(string file)
         {
             if (!File.Exists(file) || new FileInfo(file).Length < 27) return false;

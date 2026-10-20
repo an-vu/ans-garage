@@ -1,5 +1,27 @@
 # Test report — 2026-10-19
 
+## 0.1.2 filename fix and actual FBX recovery
+
+The user's 0.1.1 run reached native FBX export for all 97 meshes. The SDK appended `.fbx` to the requested `.fbx.partial` path, producing `.fbx.partial.fbx`. The plugin checked the wrong path, so all files were incorrectly reported failed.
+
+0.1.2 stages export as `LOD0.partial.fbx`, retaining `.fbx` as its final extension. **30 C# assertions passed** against the installed Frosty assemblies. A standalone empty-scene native SDK test using the downloaded release reproduced the old extension append and confirmed that the new path is written exactly. Source: `tests/NativeFilenameSmoke.cs`; output: `native-test-results.txt`. An initial attempt to run that smoke test from the installed folder was blocked by sandbox working-directory permissions; it ran successfully from the downloaded workspace release instead.
+
+All 97 existing files were separately parsed as FBX 7400: node offsets, property boundaries, decompressed array lengths and nonempty geometry passed. They contain 280 geometry nodes in total. Files were copied byte-for-byte to a recovered deliverable with corrected paths/statuses in its manifest; original errors were retained as history. Original export files were not changed.
+
+The 0.1.2 full game export pipeline has not been rerun. Blender import, visual appearance, original transform fidelity and geometric correctness against the game remain unverified. An empty-scene native SDK smoke test does not establish those properties.
+
+The sections below are historical reports for earlier versions; the results above supersede their native-export availability statements.
+
+## 0.1.1 hotfix and user runtime evidence
+
+The user's 0.1.0 manifest confirms that the plugin loaded and scanned 26,382 databases, discovering 97 vehicle meshes (81 rigid, 16 composite) with 291 variant-row associations. All 97 failed before native FBX export with `InvalidCastException` from `Convert.ToUInt64(object)` on `FrostySdk.Ebx.ResourceRef`. The entered vehicle path was correct; no skinned meshes were in this batch.
+
+0.1.1 explicitly unboxes `ResourceRef` and uses its SDK-defined implicit conversion to UInt64. It also accepts an already boxed UInt64, rejects null/zero/unexpected types, and records the plugin version in new manifests. Six regression assertions were added, including the actual reflected-property conversion path and a resource ID with its high bit set. **All 28 C# assertions passed against the user's installed Frosty assemblies as well as the downloaded release.** The previous 4 Python helper tests remain unchanged; they were not rerun for this C#-only fix.
+
+The corrected DLL has **not** been exercised in the live Frosty export pipeline or Blender. This fixes the observed conversion failure; it does not establish that later mesh decoding/native export stages succeed. No scan-speed changes were made.
+
+The remaining sections describe the original 0.1.0 validation and its limitations. The user's run adds menu/discovery/failure-report evidence, but no successful FBX export evidence.
+
 ## Executed successfully
 
 - Built x64 `UnboundBatchExport.dll` with Windows .NET Framework C# compiler against **actual downloaded HarGabt v1.0.7_26.10.12 release assemblies**, including FrostyCore, FrostySdk, FrostyControls and MeshSetPlugin. No SDK stubs were used.
