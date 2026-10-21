@@ -6,6 +6,21 @@ shader-defaults/
 *.blend
 *.blend[0-9]*
 *.blend@
+*.fbx
+*.asm
+*.texture-data.bin
+exports/
+agnostic-cache/
+parsed.json
+profiles-agnostic.json
+
+# ---------------------------------------------------------------------------
+# Local machine settings and build output
+# ---------------------------------------------------------------------------
+settings.json
+*.dll
+*.exe
+*.zip
 
 # ---------------------------------------------------------------------------
 # macOS

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <OutputPath>plugin\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="src\*.cs" />
+    <Reference Include="FrostyCore"><HintPath>$(FrostyDir)\FrostyCore.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="FrostySdk"><HintPath>$(FrostyDir)\FrostySdk.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="FrostyControls"><HintPath>$(FrostyDir)\FrostyControls.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MeshSetPlugin"><HintPath>$(FrostyDir)\Plugins\MeshSetPlugin.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="TexturePlugin"><HintPath>$(FrostyDir)\Plugins\TexturePlugin.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(FrostyDir)\Newtonsoft.Json.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+  <Target Name="CheckFrostyDir" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(FrostyDir)\FrostySdk.dll')" Text="Set FrostyDir to your extracted HarGabt Frosty Editor folder." />
+  </Target>
+</Project>

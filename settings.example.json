@@ -1,0 +1,13 @@
+{
+  "_readme": "Copy to ../settings.json (next to this repository folder) and adjust. Relative paths are relative to that file.",
+  "frosty_dir": "C:/Tools/Frosty.Editor.1.0.7",
+  "game_dir": "C:/Program Files (x86)/Steam/steamapps/common/Excalibur",
+  "frosty_work_dir": "work/frosty-work",
+  "shader_data_dir": "work/shader-data",
+  "exports_dir": "work/exports",
+  "test_data_dir": "work/test-data",
+  "validation_dir": "work/validation",
+  "release_dir": "release",
+  "blender_exe": "C:/Program Files/Blender Foundation/Blender/blender.exe",
+  "python_exe": "python"
+}
