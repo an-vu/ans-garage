@@ -33,7 +33,7 @@ def report():
 
 
 check("Install ZIP has the seven add-on files", len(names) == 7, names)
-check("Version 0.8.0", unbound_batch.bl_info["version"] == (0, 8, 0))
+check("Version 0.8.1", unbound_batch.bl_info["version"] == (0, 8, 1))
 
 # Negative case first: export without shader-defaults must fail closed with an explicit reason.
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -90,7 +90,7 @@ tires = [o for o in meshes if o.get("unbound_assembled") and
 check("Four assembled tires keep the verified 0.5 tire profile", len(tires) == 4, len(tires))
 saved = out_dir / "fresh.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "0.8.0", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
+result = {"Version": "0.8.1", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "fresh-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

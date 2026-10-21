@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 PROFILE = json.loads(Path(__file__).with_name("tire_shader_evidence.json").read_text(encoding="utf-8"))
 CORE_TEXTURES = ("RGB_Color_A_Smoothness", "RG_Normal_A_AO")
 
@@ -317,6 +317,19 @@ def make_material(source, state, layer, images, basis, identity):
 
 
 def apply_supported_surfaces(objects=None, export_path=None, progress=None):
+    """Build every supported slot now; progress(done, total) is called per object."""
+    steps = surface_steps(objects, export_path)
+    while True:
+        try:
+            done, total = next(steps)
+        except StopIteration as stop:
+            return stop.value
+        if progress:
+            progress(done, total)
+
+
+def surface_steps(objects=None, export_path=None):
+    """Generator form of apply_supported_surfaces: yields (done, total) per object, returns the report."""
     import bpy
     objects = list(objects if objects is not None else bpy.context.scene.objects)
     report = {"Version": VERSION, "Profile": PROFILE["Profile"], "Built": [], "AlreadyBuilt": [],
@@ -325,12 +338,14 @@ def apply_supported_surfaces(objects=None, export_path=None, progress=None):
                                   "see each built material's unbound_surface_evidence_json."}
     documents, basis_cache, material_cache, caches = {}, {}, {}, {}
     for done, obj in enumerate(objects):
-        if progress:
-            progress(done, len(objects))
+        yield done, len(objects)
         if obj.type != "MESH" or not obj.get("unbound_mesh_id"):
             continue
         # Only occupied slots; unused slots may refer to a different section's UVs.
-        for index in sorted({p.material_index for p in obj.data.polygons}):
+        slots = sorted({p.material_index for p in obj.data.polygons})
+        for k, index in enumerate(slots):
+            if k:
+                yield done + k / len(slots), len(objects)  # many-slot parts: let the UI redraw between slots
             if index >= len(obj.material_slots):
                 report["Issues"].append({"Object": obj.name, "Issue": "Face material index out of range"})
                 continue

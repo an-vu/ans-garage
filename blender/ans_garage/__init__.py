@@ -4,45 +4,44 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (0, 8, 0), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (0, 8, 1), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
 
 import json
 import re
+import time
 from pathlib import Path
 
+# The import running in the background of the UI (one at a time): read by the sidebar panel.
+RUN = {}
 
-class Progress:
-    """Progress while an import blocks Blender's window: percentage on the mouse cursor, lines in the system console
-    (Window > Toggle System Console). Stages map to fixed ranges of the 0-100 bar."""
+
+class ConsoleProgress:
+    """Stage lines in the system console (Window > Toggle System Console) at each new stage and every 10%."""
 
     def __init__(self):
-        import bpy
-        self.wm = bpy.context.window_manager
-        self.last = None
-        if self.wm:
-            self.wm.progress_begin(0, 100)
+        self.stage, self.step = None, None
 
-    def stage(self, name, start, end):
-        self.name, self.start, self.end = name, start, end
-        print("An's Garage: %s..." % name, flush=True)
-        self.update(0, 1)
-
-    def update(self, done, total):
-        pct = self.start + (self.end - self.start) * (done / total if total else 1.0)
-        if self.wm:
-            self.wm.progress_update(pct)
+    def update(self, stage, pct, done, total):
         step = int(pct // 10)
-        if total > 1 and step != self.last and done:
-            self.last = step
-            print("An's Garage: %s %d/%d (%d%%)" % (self.name, done, total, pct), flush=True)
+        if stage != self.stage:
+            self.stage = stage
+            print("An's Garage: %s..." % stage, flush=True)
+        elif step != self.step and total > 1:
+            print("An's Garage: %s %d/%d (%d%%)" % (stage, done, total, pct), flush=True)
+        self.step = step
 
-    def finish(self):
-        if self.wm:
-            self.wm.progress_end()
-        print("An's Garage: done", flush=True)
+
+def _scaled(steps, stage, start, end):
+    """Re-yield (done, total) progress of a sub-step as (stage, percent, done, total) within start..end."""
+    while True:
+        try:
+            done, total = next(steps)
+        except StopIteration as stop:
+            return stop.value
+        yield stage, start + (end - start) * (done / total if total else 1.0), done, total
 
 
 def exported_records(manifest):
@@ -95,6 +94,29 @@ def surfaces_module():
 
 
 def import_manifest(filepath, assemble=True, materials=True):
+    """Import a whole vehicle now (blocking; used from scripts, tests and background mode)."""
+    steps, console = import_steps(filepath, assemble, materials), ConsoleProgress()
+    while True:
+        try:
+            console.update(*next(steps))
+        except StopIteration as stop:
+            print("An's Garage: done", flush=True)
+            return stop.value
+
+
+def vehicle_label(filepath):
+    """In-game vehicle name from assembly.json when the export has one, else the export folder name."""
+    path = Path(filepath)
+    try:
+        name = (json.loads(path.with_name("assembly.json").read_text(encoding="utf-8-sig")).get("VehicleName") or {}).get("Long")
+    except (OSError, ValueError):
+        name = None
+    return name or path.parent.name
+
+
+def import_steps(filepath, assemble=True, materials=True):
+    """The vehicle import as a generator: yields (stage, percent, done, total) after each unit of work and returns
+    (count, failures). The sidebar import runs it in short slices so Blender stays responsive."""
     import bpy
     path = Path(filepath).resolve()
     manifest = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -118,10 +140,8 @@ def import_manifest(filepath, assemble=True, materials=True):
     failures = []
     imported_objects = []
     count = 0
-    progress = Progress()
-    progress.stage("importing %d parts" % len(records), 0, 20)
     for index, mesh in enumerate(records):
-        progress.update(index, len(records))
+        yield "Importing parts", 20.0 * index / max(1, len(records)), index, len(records)
         before = set(bpy.data.objects)
         try:
             status = bpy.ops.import_scene.fbx(
@@ -167,15 +187,15 @@ def import_manifest(filepath, assemble=True, materials=True):
     report.write("Imported %d/%d meshes\n" % (count, len(records)) + "\n".join(failures))
     if materials and path.with_name("materials.json").is_file():
         try:
-            progress.stage("restoring material slots", 20, 25)
-            material_report = materials_module().reconstruct(path, imported_objects)
+            material_report = yield from _scaled(materials_module().reconstruct_steps(path, imported_objects),
+                                                 "Restoring material slots", 20.0, 25.0)
             assignment = ["Materials: " + x["Issue"] for x in material_report["Issues"]
                           if x.get("Severity") == "assignment_failed"]
             failures.extend(assignment)
             if assignment:
                 report.write("\n" + "\n".join(assignment))
-            progress.stage("building materials", 25, 75)
-            surface_report = surfaces_module().apply_supported_surfaces(imported_objects, path, progress.update)
+            surface_report = yield from _scaled(surfaces_module().surface_steps(imported_objects, path),
+                                                "Building materials", 25.0, 75.0)
             report.write("\nSupported surfaces: %d built; %d issues; %d unsupported slots. See An's Garage surface report." %
                          (len(surface_report["Built"]), len(surface_report["Issues"]), len(surface_report["Unsupported"])))
             report.write("\nBy shader: " + json.dumps(surface_report["Summary"]["BuiltByShader"]) +
@@ -185,7 +205,7 @@ def import_manifest(filepath, assemble=True, materials=True):
             report.write("\nMaterials: " + str(exc))
     if assemble and path.with_name("assembly.json").is_file() and not failures:
         try:
-            progress.stage("assembling the vehicle", 75, 80)
+            yield "Assembling the vehicle", 75.0, 0, 1
             assembly_module().assemble_existing(path)
         except Exception as exc:
             failures.append("Assembly: " + str(exc))
@@ -193,12 +213,28 @@ def import_manifest(filepath, assemble=True, materials=True):
         else:
             if materials and path.with_name("materials.json").is_file():
                 # Per-wheel inputs (front/rear selectors) exist only on assembled wheel parts.
-                progress.stage("building per-wheel materials", 80, 100)
-                surface_report = surfaces_module().apply_supported_surfaces(None, path, progress.update)
+                surface_report = yield from _scaled(surfaces_module().surface_steps(None, path),
+                                                    "Building per-wheel materials", 80.0, 100.0)
                 report.write("\nAfter assembly: %d more slots built (per-wheel inputs); %d issues." %
                              (len(surface_report["Built"]), len(surface_report["Issues"])))
-    progress.finish()
+    yield "Finishing", 100.0, 1, 1
     return count, failures
+
+
+def draw_status(self, context):
+    """Progress bar in Blender's status bar while an import runs (always visible, whatever the sidebar shows)."""
+    if not RUN:
+        return
+    row = self.layout.row(align=True)
+    row.label(text="An's Garage", icon="IMPORT")
+    text = "%s  %d%%  %d:%02d" % (RUN["stage"], RUN["pct"], *divmod(int(time.time() - RUN["start"]), 60))
+    bar = row.row(align=True)
+    bar.ui_units_x = 18  # wide enough for the stage text
+    if hasattr(bar, "progress"):
+        bar.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
+    else:
+        bar.label(text=text)
+    row.operator("wm.ans_garage_cancel_import", text="", icon="CANCEL")
 
 
 def register():
@@ -214,14 +250,86 @@ def register():
         filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
 
         def execute(self, context):
-            try:
-                count, failures = import_manifest(self.filepath)
-                self.report({"WARNING" if failures else "INFO"},
-                            "%d imported; %d failures. See An's Garage import report." % (count, len(failures)))
-                return {"FINISHED"}
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
+            # Scripts and background runs import in one go; from the UI the import runs in slices (modal) so
+            # Blender keeps drawing: progress bar in the An's Garage sidebar and the status bar.
+            if bpy.app.background or not context.window:
+                try:
+                    count, failures = import_manifest(self.filepath)
+                    self.report({"WARNING" if failures else "INFO"},
+                                "%d imported; %d failures. See An's Garage import report." % (count, len(failures)))
+                    return {"FINISHED"}
+                except Exception as exc:
+                    self.report({"ERROR"}, str(exc))
+                    return {"CANCELLED"}
+            if RUN:
+                self.report({"ERROR"}, "An import is already running")
                 return {"CANCELLED"}
+            RUN.update(steps=import_steps(self.filepath), name=vehicle_label(self.filepath), stage="Starting",
+                       pct=0.0, done=0, total=0, start=time.time(), cancel=False)
+            for area in context.screen.areas:
+                if area.type == "VIEW_3D":
+                    area.spaces.active.show_region_ui = True
+                    for region in area.regions:
+                        if region.type == "UI":
+                            try:
+                                region.active_panel_category = "An's Garage"
+                            except (AttributeError, TypeError):
+                                pass  # older Blender: the tab stays as it was
+            self._timer = context.window_manager.event_timer_add(0.02, window=context.window)
+            context.window_manager.modal_handler_add(self)
+            return {"RUNNING_MODAL"}
+
+        def modal(self, context, event):
+            if event.type in {"Z", "Y"} and (event.ctrl or event.oskey):
+                return {"RUNNING_MODAL"}  # no undo/redo while the import is still changing the scene
+            if event.type == "ESC" and event.value == "PRESS":
+                RUN["cancel"] = True
+            if event.type != "TIMER":
+                return {"PASS_THROUGH"}
+            result = None
+            deadline = time.perf_counter() + 0.15
+            try:
+                while time.perf_counter() < deadline:
+                    if RUN["cancel"]:
+                        RUN["steps"].close()
+                        result = ("cancelled", None)
+                        break
+                    RUN["stage"], RUN["pct"], RUN["done"], RUN["total"] = next(RUN["steps"])
+            except StopIteration as stop:
+                result = ("done", stop.value)
+            except Exception as exc:
+                result = ("error", exc)
+            elapsed = time.time() - RUN["start"]
+            if result is None:
+                for area in context.screen.areas:
+                    if area.type in {"VIEW_3D", "STATUSBAR"}:
+                        area.tag_redraw()
+                return {"PASS_THROUGH"}
+            context.window_manager.event_timer_remove(self._timer)
+            RUN.clear()
+            for area in context.screen.areas:
+                if area.type in {"VIEW_3D", "STATUSBAR"}:
+                    area.tag_redraw()
+            kind, value = result
+            if kind == "done":
+                count, failures = value
+                self.report({"WARNING" if failures else "INFO"}, "%d parts imported in %d:%02d; %d failures. See An's "
+                            "Garage import report." % (count, *divmod(int(elapsed), 60), len(failures)))
+                return {"FINISHED"}
+            if kind == "cancelled":
+                self.report({"WARNING"}, "Import cancelled; the parts imported so far stay in the scene (not assembled)")
+                return {"CANCELLED"}
+            self.report({"ERROR"}, str(value))
+            return {"CANCELLED"}
+
+    class WM_OT_ans_garage_cancel_import(bpy.types.Operator):
+        bl_idname = "wm.ans_garage_cancel_import"
+        bl_label = "Cancel vehicle import"
+
+        def execute(self, context):
+            if RUN:
+                RUN["cancel"] = True
+            return {"FINISHED"}
 
     class IMPORT_SCENE_OT_ans_garage_assembly(bpy.types.Operator, ImportHelper):
         bl_idname = "import_scene.ans_garage_assembly"
@@ -370,6 +478,18 @@ def register():
             def label(value):
                 value = value.rsplit("_template_", 1)[-1].replace("_", " ")
                 return re.sub(r"\bSet([A-Za-z]+)\b", lambda m: "Set " + m.group(1).upper(), value)
+            if RUN:
+                run = self.layout.box()
+                run.label(text="Importing " + RUN["name"], icon="IMPORT")
+                text = "%d%%" % RUN["pct"]
+                if hasattr(run, "progress"):
+                    run.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
+                else:
+                    run.label(text=text)
+                run.label(text=RUN["stage"] + ("  %d / %d" % (RUN["done"], RUN["total"]) if RUN["total"] > 1 else ""))
+                run.label(text="Elapsed %d:%02d" % divmod(int(time.time() - RUN["start"]), 60))
+                run.label(text="Leave the scene alone until it finishes", icon="INFO")
+                run.operator("wm.ans_garage_cancel_import", text="Cancel", icon="CANCEL")
             surfaces = self.layout.box()
             surfaces.label(text="Materials %d.%d.%d: compiled source shaders" % bl_info["version"])
             surfaces.operator("object.ans_garage_build_materials")
@@ -444,7 +564,7 @@ def register():
         self.layout.operator(IMPORT_SCENE_OT_ans_garage_material_slots.bl_idname, text="An's Garage: restore material slots")
 
     global _registered_classes, _menu
-    _registered_classes = [IMPORT_SCENE_OT_ans_garage_vehicle, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
+    _registered_classes = [IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
                            IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,
                            OBJECT_OT_ans_garage_variant, OBJECT_OT_ans_garage_preset,
@@ -453,11 +573,13 @@ def register():
     for cls in _registered_classes:
         bpy.utils.register_class(cls)
     bpy.types.TOPBAR_MT_file_import.append(_menu)
+    bpy.types.STATUSBAR_HT_header.prepend(draw_status)
 
 
 def unregister():
     import bpy
     bpy.types.TOPBAR_MT_file_import.remove(_menu)
+    bpy.types.STATUSBAR_HT_header.remove(draw_status)
     for cls in reversed(_registered_classes):
         bpy.utils.unregister_class(cls)
 

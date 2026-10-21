@@ -405,6 +405,17 @@ def build_material(state, root, label, diagnostics):
 
 
 def reconstruct(filepath, objects=None):
+    """Restore every mesh's original material slots now."""
+    steps = reconstruct_steps(filepath, objects)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as stop:
+            return stop.value
+
+
+def reconstruct_steps(filepath, objects=None):
+    """Generator form of reconstruct: yields (done, total) per source mesh, returns the report."""
     import bpy
     path = Path(filepath).resolve()
     if path.name != "materials.json":
@@ -422,7 +433,8 @@ def reconstruct(filepath, objects=None):
             grouped[obj["unbound_mesh_id"]].append(obj)
     for family in FAMILIES:
         principled_group(family).use_fake_user = True
-    for meshid, members in grouped.items():
+    for done, (meshid, members) in enumerate(grouped.items()):
+        yield done, len(grouped)
         mesh = resolver.meshes[meshid]
         try:
             fbx = _safe_texture(root, mesh["Fbx"])

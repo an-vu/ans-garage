@@ -1,3 +1,7 @@
+# 0.8.1
+
+- No changes; version kept in step with An's Garage for Blender 0.8.1.
+
 # 0.8.0 — renamed to An's Garage for Frosty
 
 - `AnsGarage.dll`, menu **Tools → An's Garage**; version shared with An's Garage for Blender. Remove the old `UnboundBatchExport.dll` from Frosty's `Plugins` folder.

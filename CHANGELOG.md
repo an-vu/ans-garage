@@ -2,6 +2,17 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 0.8.1
+
+- **Blender stays usable while a car imports:**
+  - the import runs in short steps, so the viewport keeps drawing and parts appear as they come in;
+  - a progress bar in the status bar shows the stage, percent, elapsed time and a Cancel button (Esc also cancels);
+  - the An's Garage sidebar tab shows the same with the vehicle name.
+- **Undo is blocked until the import finishes**, because the scene is still being built.
+- **Spoilers on cars with a spoiler mount** (Countach LPI 800-4, Chiron Sport, P1 and similar) are placed at the mount's position. Before, they sat inside the car at its origin, so the Countach's stock active spoiler looked missing. Geometry that is already in car space keeps its place.
+- **Scripts and background mode** still import in one go.
+- **Frosty plugin:** no changes; the version is kept in step at 0.8.1.
+
 ## 0.8.0
 
 - **Faster import in Blender:**

@@ -391,6 +391,53 @@ def assemble_existing(manifest_path):
                 inst["dimension_status"] = status
                 inst["source_item_json"] = json.dumps(item["Raw"])
                 used.add(use["MeshId"])
+    # Item meshes authored relative to a customization component are placed at that component (component chain
+    # composed root to leaf). Evidence: every spoiler of the Chiron Sport and P1 is modelled around the origin and
+    # their SpoilerCustomizationComponentData carries the deck position (the P1's -0.44 m lateral offset centres its
+    # asymmetric wing). A mesh already in car space (its centre would leave the body) keeps its authored placement.
+    comp_by_node = {c["Node"]: c for c in data.get("Components", [])}
+
+    def component_matrix(c):
+        chain = []
+        while c is not None and c not in chain:
+            chain.append(c)
+            c = comp_by_node.get(c.get("Parent"))
+        m = Matrix.Identity(4)
+        for c in reversed(chain):
+            m = m @ matrix_from_basis(c["Transform"])
+        return m
+    placements = {}
+    for item_type, comp_type in (("SpoilerItemData", "SpoilerCustomizationComponentData"),):
+        found = [c for c in data.get("Components", []) if c["Type"] == comp_type]
+        if len(found) > 1:
+            diagnostics.append("Several %s components; %s meshes keep their authored placement" % (comp_type, item_type))
+        elif found:
+            m = component_matrix(found[0])
+            if any(abs(m[i][j] - (1.0 if i == j else 0.0)) > 1e-6 for i in range(4) for j in range(4)):
+                placements[item_type] = (conversion @ m @ inverse, comp_type)
+
+    def world_box(objects, transform):
+        from mathutils import Vector
+        pts = [transform @ o.matrix_world @ Vector(c) for o in objects if o.type == "MESH" for c in o.bound_box]
+        return ([min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)]) if pts else None
+
+    def placement_for(item, meshid):
+        # Geometry centred on the component's own position is already in car space (e.g. the Countach's unnamed
+        # setepic wing); geometry centred near the origin is modelled relative to the component.
+        from mathutils import Vector
+        if item["Type"] not in placements:
+            return None
+        local, comp_type = placements[item["Type"]]
+        box = world_box(templates[meshid], Matrix.Identity(4))
+        if not box:
+            return None
+        centre = Vector([(a + b) / 2 for a, b in zip(*box)])
+        if (centre - local.translation).length < centre.length:
+            diagnostics.append("%s: geometry already sits at the %s position (car space); authored placement kept"
+                               % (records[meshid]["Asset"].rsplit("/", 1)[-1], comp_type))
+            return None
+        return local
+
     defaults, item_choices, group_collections = {}, {}, {}
     # In-game labels: the group shows the game's category when all its items agree; options show the game's option
     # name, with the set code added where two options would otherwise read the same.
@@ -458,7 +505,10 @@ def assemble_existing(manifest_path):
                     local_seen.add(key)
                     label = records[key]["Asset"].rsplit("/", 1)[-1]
                     label = re.sub(r"^car_.*?_\d{4}_", "", label).removesuffix("_mesh").replace("_", " ").title()
-                    inst = instance(key, variant, label)
+                    local = placement_for(item, key)
+                    inst = instance(key, variant, label, local=local)
+                    if local is not None:
+                        inst["placement_status"] = "Placed at the item's customization component (source transform)"
                     inst["source_blueprint_guid"] = desc["BlueprintGuid"]
                     used.add(key)
             variant.hide_viewport = variant.hide_render = defaults.get(group) != option

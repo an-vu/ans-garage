@@ -19,10 +19,10 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("AnsGarage")]
-[assembly: AssemblyVersion("0.8.0.0")]
+[assembly: AssemblyVersion("0.8.1.0")]
 [assembly: PluginDisplayName("An's Garage for Frosty")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("0.8.0.0")]
+[assembly: PluginVersion("0.8.1.0")]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
 
 namespace AnsGarage
@@ -180,7 +180,7 @@ namespace AnsGarage
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "0.8.0";
+        public string PluginVersion = "0.8.1";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion, Blueprint;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
