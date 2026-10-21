@@ -2,12 +2,17 @@
 
 NFS Unbound vehicles in Blender: any car, the game's own part names, and materials compiled from the game's shaders. NFS Heat and Hot Pursuit Remastered are planned.
 
+Two parts, always the same version:
+
+- **An's Garage for Frosty** exports a vehicle from the game (Frosty Editor plugin).
+- **An's Garage for Blender** imports it (Blender add-on).
+
 ## Layout
 
 | Folder | What it is |
 |---|---|
-| `blender/unbound_batch/` | Blender add-on (4.0+, tested on 5.2.2): import, assembly, part switching, materials |
-| `frosty/UnboundBatchExport/` | Frosty Editor plugin: exports a vehicle (geometry, materials, assembly, names) |
+| `blender/ans_garage/` | An's Garage for Blender (Blender 4.0+, tested on 5.2.2): import, assembly, part switching, materials |
+| `frosty/AnsGarage/` | An's Garage for Frosty: exports a vehicle (geometry, materials, assembly, names) |
 | `tools/shader-compiler/` | Builds `shader_profiles.json.gz` from the game's vehicle shader database |
 | `tools/headless/` | Runs the exporter without opening Frosty |
 | `tools/package_release.py` | Builds the install ZIPs into the release folder |
@@ -18,17 +23,17 @@ No game data is stored here: no textures, meshes, shader bytecode or disassembly
 
 ## Use
 
-1. Install the Frosty plugin (`frosty/UnboundBatchExport/README.md`).
-2. Install the add-on: zip `blender/unbound_batch` (or run `tools/package_release.py`), then in Blender use **Preferences → Add-ons → Install from Disk**.
-3. In Frosty, choose **Tools → Unbound vehicle batch export...**, then **Choose vehicle...**, then **Export...**.
-4. In Blender, choose **File → Import → Unbound batch manifest (.json)**, then pick the export's `manifest.json`.
-5. Press **N → Unbound** for presets, parts by in-game name, and vehicle paint.
+1. Install An's Garage for Frosty (`frosty/AnsGarage/README.md`).
+2. Install An's Garage for Blender: run `tools/package_release.py` (or zip `blender/ans_garage`), then in Blender use **Preferences → Add-ons → Install from Disk**.
+3. In Frosty, choose **Tools → An's Garage → Export vehicle...**, then **Choose vehicle...**, then **Export...**.
+4. In Blender, choose **File → Import → An's Garage vehicle (.json)**, then pick the export's `manifest.json`.
+5. Press **N → An's Garage** for presets, parts by in-game name, and vehicle paint.
 
 ## Development
 
 ```powershell
 copy settings.example.json ..\settings.json                       # then edit the paths
-powershell -File frosty\UnboundBatchExport\build.ps1              # Frosty plugin -> bin\
+powershell -File frosty\AnsGarage\build.ps1                       # Frosty plugin -> bin\
 powershell -File tools\headless\export.ps1 export <vehicle folder> <out dir> [blueprint]
 python tools\shader-compiler\compile_all.py <shader_data_dir>\profiles-agnostic.json --jobs 12
 python tools\package_release.py --profiles <shader_data_dir>\profiles-agnostic.json

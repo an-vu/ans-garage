@@ -1,16 +1,16 @@
-# UnboundBatchExport (Frosty plugin)
+# An's Garage for Frosty
 
-C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It exports one vehicle for the Blender add-on in `blender/unbound_batch`.
+C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It exports one vehicle for An's Garage for Blender (`blender/ans_garage`).
 
 ## Install
 
 1. Build it with `build.ps1` (see below), or take the plugin ZIP from a release build.
-2. Close Frosty. Copy `UnboundBatchExport.dll` and `UnboundShaderDefaults.json` into Frosty's `Plugins` folder, replacing any older DLL.
+2. Close Frosty. Copy `AnsGarage.dll` and `UnboundShaderDefaults.json` into Frosty's `Plugins` folder. Remove an older `UnboundBatchExport.dll` if present.
 3. Keep Frosty's own `MeshSetPlugin.dll` and `TexturePlugin.dll`: the plugin reuses their exporters.
 
 ## Use
 
-**Tools → Unbound vehicle batch export...** → **Choose vehicle...** (search by in-game name) → **Export...** → choose an output folder. One run writes:
+**Tools → An's Garage → Export vehicle...** → **Choose vehicle...** (search by in-game name) → **Export...** → choose an output folder. One run writes:
 
 | Stage | Output |
 |---|---|
@@ -19,11 +19,11 @@ C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It expo
 | Materials: source material graph, original DDS textures | `materials.json`, `textures/` |
 | Shader default textures (shared by all vehicles) | `shader-defaults/` |
 
-Import `manifest.json` in Blender with **File → Import → Unbound batch manifest (.json)**.
+Import `manifest.json` in Blender with **File → Import → An's Garage vehicle (.json)**.
 
-The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\UnboundBatchExport\vehicle-catalog.json`. **Refresh list** re-reads it.
+The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\AnsGarage\vehicle-catalog.json`. **Refresh list** re-reads it.
 
-**Tools → Unbound assembly for existing export...** adds or refreshes assembly data in an older export folder.
+**Tools → An's Garage → Add assembly to existing export...** adds or refreshes assembly data in an older export folder.
 
 ## Build
 

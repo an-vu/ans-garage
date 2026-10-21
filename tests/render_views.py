@@ -19,7 +19,7 @@ lo = Vector((min(v[i] for o in objs for v in (o.matrix_world @ Vector(c) for c i
 hi = Vector((max(v[i] for o in objs for v in (o.matrix_world @ Vector(c) for c in o.bound_box)) for i in range(3)))
 center, size = (lo + hi) / 2, (hi - lo)
 print("bounds", lo, hi)
-world = bpy.data.worlds.new("Unbound validation studio")
+world = bpy.data.worlds.new("Validation studio")
 world.use_nodes = True
 bg = world.node_tree.nodes["Background"]
 sky = world.node_tree.nodes.new("ShaderNodeTexSky")
@@ -31,15 +31,15 @@ if hasattr(sky, "sky_type"):
 world.node_tree.links.new(sky.outputs[0], bg.inputs[0])
 bg.inputs[1].default_value = 0.6
 scene.world = world
-sun_data = bpy.data.lights.new("Unbound validation sun", "SUN")
+sun_data = bpy.data.lights.new("Validation sun", "SUN")
 sun_data.energy = 3.0
-sun = bpy.data.objects.new("Unbound validation sun", sun_data)
+sun = bpy.data.objects.new("Validation sun", sun_data)
 sun.rotation_euler = (math.radians(50), 0, math.radians(35))
 scene.collection.objects.link(sun)
 floor_mesh = bpy.data.meshes.new("floor")
 r = max(size) * 4
 floor_mesh.from_pydata([(-r, -r, 0), (r, -r, 0), (r, r, 0), (-r, r, 0)], [], [(0, 1, 2, 3)])
-floor = bpy.data.objects.new("Unbound validation floor", floor_mesh)
+floor = bpy.data.objects.new("Validation floor", floor_mesh)
 floor.location.z = lo.z
 fm = bpy.data.materials.new("floor")
 fm.use_nodes = True
@@ -49,7 +49,7 @@ floor_mesh.materials.append(fm)
 scene.collection.objects.link(floor)
 cam_data = bpy.data.cameras.new("cam")
 cam_data.lens = 50
-cam = bpy.data.objects.new("Unbound validation camera", cam_data)
+cam = bpy.data.objects.new("Validation camera", cam_data)
 scene.collection.objects.link(cam)
 scene.camera = cam
 scene.render.engine = "BLENDER_EEVEE" if engine.startswith("EEVEE") else "CYCLES"

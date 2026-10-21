@@ -21,8 +21,8 @@ class DialogShot {
   Run(a[2]);
  }
  static void Run(string outDir) {
-  var asm = Assembly.LoadFrom(Path.Combine(plugin, "UnboundBatchExport.dll"));
-  foreach (var type in new[] { "UnboundBatchExport.Options", "UnboundBatchExport.VehiclePicker" }) {
+  var asm = Assembly.LoadFrom(Path.Combine(plugin, "AnsGarage.dll"));
+  foreach (var type in new[] { "AnsGarage.Options", "AnsGarage.VehiclePicker" }) {
    var form = (Form)Activator.CreateInstance(asm.GetType(type, true), true);
    form.Shown += (s, e) => {
     var t = new Timer { Interval = 1500 };

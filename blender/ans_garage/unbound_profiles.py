@@ -14,7 +14,7 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 ENGINE_ZERO_MAX_EFFECT = 0.05
 _PROFILES = None
 # Runtime vehicle customization -> shader parameter, by parameter-key equality (see SHADER-FINDINGS).

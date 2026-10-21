@@ -13,7 +13,7 @@ import numpy as np
 args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, materials, out_dir = Path(args[0]), args[1], Path(args[2])
 sys.path.insert(0, str(addon_parent))
-addon = importlib.import_module("unbound_batch")
+addon = importlib.import_module("ans_garage")
 assert Path(addon.__file__).resolve().parent.parent == addon_parent.resolve(), addon.__file__
 addon.register()
 checks = []
@@ -63,10 +63,10 @@ baseline = {m.name: digest(m) for m in bpy.data.meshes}
 before_objects = objects_state()
 before_sources = slot_sources()
 before_materials = {m.name for m in bpy.data.materials}
-check("Development add-on 0.7.0 loaded", addon.bl_info["version"] == (0, 7, 0))
+check("Development add-on 0.8.0 loaded", addon.bl_info["version"] == (0, 8, 0))
 check("Baseline scene has 593 Unbound meshes", len(meshes) == 593, len(meshes))
 
-status = bpy.ops.import_scene.unbound_surface_sources(filepath=materials)
+status = bpy.ops.import_scene.ans_garage_locate_export(filepath=materials)
 check("Locate export manifest operator finished", status == {"FINISHED"}, status)
 report = json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
 summary = report["Summary"]
@@ -105,7 +105,7 @@ for o, i in occupied:
 check("Visible unbuilt slots listed", True, dict(unbuilt))
 groups_before = {g.name for g in bpy.data.node_groups}
 mats_before = {m.name for m in bpy.data.materials}
-status = bpy.ops.object.unbound_surfaces()
+status = bpy.ops.object.ans_garage_build_materials()
 report2 = json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
 check("Repeat build is idempotent (no new materials or groups)",
       status == {"FINISHED"} and {m.name for m in bpy.data.materials} == mats_before
@@ -116,15 +116,15 @@ mat_assign = {o.name: tuple(s.material.name if s.material else None for s in o.m
 presets = list(json.loads(root["unbound_presets_json"]))
 ok = True
 for preset in presets:
-    ok &= bpy.ops.object.unbound_preset(root=root.name, preset=preset) == {"FINISHED"}
+    ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset=preset) == {"FINISHED"}
 groups = [g for g in root.children if g.get("unbound_choice_group")]
 switched = 0
 for g in groups:
     options = [v for v in g.children if "unbound_option" in v]
     for v in options:
-        ok &= bpy.ops.object.unbound_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"], preset="") == {"FINISHED"}
+        ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"], preset="") == {"FINISHED"}
         switched += 1
-ok &= bpy.ops.object.unbound_preset(root=root.name, preset="Stock") == {"FINISHED"}
+ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Presets and every individual part option still switch", ok, {"Presets": presets, "OptionsSwitched": switched})
 check("Part switching leaves built material assignments intact",
       {o.name: tuple(s.material.name if s.material else None for s in o.material_slots) for o in meshes} == mat_assign)
@@ -136,7 +136,7 @@ bpy.ops.wm.open_mainfile(filepath=str(saved))
 check("Save/reopen keeps mesh data", {m.name: digest(m) for m in bpy.data.meshes} == baseline)
 check("Save/reopen keeps built materials",
       len([m for m in bpy.data.materials if m.get("unbound_surface_profile") == "unbound-compiled-gbuffer-v1"]) == len(built))
-result = {"Version": "0.7.0", "Checks": checks, "Summary": summary,
+result = {"Version": "0.8.0", "Checks": checks, "Summary": summary,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "existing-070-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

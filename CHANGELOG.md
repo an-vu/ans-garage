@@ -1,6 +1,14 @@
 # Changelog
 
-Frosty plugin history: `frosty/UnboundBatchExport/CHANGELOG.md`.
+Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
+
+## 0.8.0 (in progress)
+
+- **New names:**
+  - **An's Garage for Frosty** (was UnboundBatchExport): **Tools → An's Garage → Export vehicle...**; `AnsGarage.dll`.
+  - **An's Garage for Blender** (was Unbound Batch Manifest): **File → Import → An's Garage vehicle (.json)**; sidebar tab **An's Garage**.
+- **One shared version** for both parts from 0.8.0 on.
+- **Upgrading:** remove the old `UnboundBatchExport.dll` from Frosty's `Plugins` folder, and uninstall the old "Unbound Batch Manifest" add-on. Existing .blend files keep working: their stored data is unchanged.
 
 ## Blender add-on 0.7.0 (with Frosty plugin 0.5.1)
 

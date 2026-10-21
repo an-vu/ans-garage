@@ -3,7 +3,7 @@
 usage: python tests/run_all.py [existing] [fresh] [nodes] [vehicle:<export folder name>] ...
 With no arguments: existing, fresh and nodes on the Murciélago test data. Results go to <validation_dir>/latest.
 Needs (in test_data_dir): input-merci-tires-0.5.0.blend, Murcielago-Export, Murcielago-Export-bare.
-The install ZIP for "fresh" comes from tools/package_release.py (<release_dir>/<version>/UnboundBlender-<version>.zip).
+The install ZIP for "fresh" comes from tools/package_release.py (<release_dir>/<version>/AnsGarage-Blender-<version>.zip).
 """
 import re
 import shutil
@@ -19,7 +19,7 @@ from settings import path as setting  # noqa: E402
 BLENDER = str(setting("blender_exe"))
 DATA = setting("test_data_dir")
 OUT = setting("validation_dir") / "latest"
-VERSION = ".".join(map(str, eval(re.search(r'"version": (\([^)]*\))', (REPO / "blender/unbound_batch/__init__.py").read_text()).group(1))))
+VERSION = ".".join(map(str, eval(re.search(r'"version": (\([^)]*\))', (REPO / "blender/ans_garage/__init__.py").read_text()).group(1))))
 
 
 def blender(args, log):
@@ -44,11 +44,11 @@ def main(tests):
             ok &= blender([str(scene), "--python", str(HERE / "test_existing_full.py"), "--",
                            str(REPO / "blender"), str(DATA / "Murcielago-Export" / "materials.json"), str(OUT)], "existing")
         elif t == "fresh":
-            zipfile = setting("release_dir") / VERSION / ("UnboundBlender-%s.zip" % VERSION)
+            zipfile = setting("release_dir") / VERSION / ("AnsGarage-Blender-%s.zip" % VERSION)
             ok &= blender(["--python", str(HERE / "test_fresh.py"), "--", str(zipfile), str(OUT / "zip-test"),
                            str(DATA / "Murcielago-Export"), str(DATA / "Murcielago-Export-bare"), str(OUT)], "fresh")
         elif t == "nodes":
-            ok &= blender(["--python", str(HERE / "test_node_compiler.py"), "--", str(REPO / "blender" / "unbound_batch"),
+            ok &= blender(["--python", str(HERE / "test_node_compiler.py"), "--", str(REPO / "blender" / "ans_garage"),
                            str(DATA / "Murcielago-Export" / "materials.json"), str(OUT / "node-compiler.json")], "nodes")
         elif t.startswith("vehicle:"):
             name = t.split(":", 1)[1]

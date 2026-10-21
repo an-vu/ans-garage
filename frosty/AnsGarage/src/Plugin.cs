@@ -18,20 +18,21 @@ using MeshSetPlugin;
 using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
-[assembly: AssemblyTitle("UnboundBatchExport")]
-[assembly: AssemblyVersion("0.5.1.0")]
-[assembly: PluginDisplayName("Unbound Vehicle Batch Export (experimental)")]
+[assembly: AssemblyTitle("AnsGarage")]
+[assembly: AssemblyVersion("0.8.0.0")]
+[assembly: PluginDisplayName("An's Garage for Frosty")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("0.5.1.0")]
-[assembly: RegisterMenuExtension(typeof(UnboundBatchExport.ExportMenu))]
+[assembly: PluginVersion("0.8.0.0")]
+[assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
 
-namespace UnboundBatchExport
+namespace AnsGarage
 {
     public sealed class ExportMenu : MenuExtension
     {
         private static int busy;
         public override string TopLevelMenuName { get { return "Tools"; } }
-        public override string MenuItemName { get { return "Unbound vehicle batch export..."; } }
+        public override string SubLevelMenuName { get { return "An's Garage"; } }
+        public override string MenuItemName { get { return "Export vehicle..."; } }
         public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => Run()); } }
         private static void Run()
         {
@@ -49,17 +50,17 @@ namespace UnboundBatchExport
                         var batch = new Batch(Core.Normalize(options.Prefix.Text), options.Skeleton.Text.Trim(), target);
                         if (options.Blueprint != null && Core.InScope(options.Blueprint, Core.Normalize(options.Prefix.Text))) batch.Blueprint = options.Blueprint;
                         Exception fatal = null;
-                        FrostyTaskWindow.Show("Unbound batch export", "Scanning databases", task => {
+                        FrostyTaskWindow.Show("An's Garage: export vehicle", "Scanning databases", task => {
                             try { batch.Run(task); } catch (Exception ex) { fatal = ex; batch.Manifest.Errors.Add(ex.ToString()); }
                             finally { try { batch.Save(); } catch (Exception ex) { fatal = ex; } }
                         }, true, task => batch.Cancel = true);
                         MessageBox.Show((fatal == null ? "Export run finished. " : "Run failed: " + fatal.Message + "\n") +
                             batch.Manifest.Meshes.Count(x => x.Status == "exported") + " meshes exported; " + batch.Manifest.Errors.Count + " geometry/run errors.\nReview manifest.json for skips and materials.json/materials.log for texture results.\n" + target,
-                            "Unbound batch export");
+                            "An's Garage");
                     }
                 }
             }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "Unbound batch export"); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "An's Garage"); }
             finally { Interlocked.Exchange(ref busy, 0); }
         }
     }
@@ -96,7 +97,7 @@ namespace UnboundBatchExport
         public readonly TextBox Skeleton = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         public Options()
         {
-            Ui.Setup(this, "Unbound vehicle batch export");
+            Ui.Setup(this, "An's Garage: export vehicle");
             var g = Ui.Grid(2);
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -179,7 +180,7 @@ namespace UnboundBatchExport
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "0.5.1";
+        public string PluginVersion = "0.8.0";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion, Blueprint;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
@@ -364,7 +365,7 @@ namespace UnboundBatchExport
                 if(entry==null) { run.Issue(name,"Texture asset not found"); continue; }
                 try { run.ExportTextureAsset(entry); } catch(Exception ex) { run.Issue(name,ex); }
             }
-            run.SaveTextureIndex("Exported with the UnboundBatchExport texture path; game data, keep private.");
+            run.SaveTextureIndex("Exported by An's Garage for Frosty; game data, keep private.");
         }
         private void Export(MeshRecord record, FrostyTaskWindow task)
         {

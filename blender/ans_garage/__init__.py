@@ -1,11 +1,13 @@
-"""Install as a legacy Blender add-on, or run from the Text Editor.
+"""An's Garage for Blender: imports vehicles exported by An's Garage for Frosty.
 
 Imports the manifest's exported FBX files without recentering or applying transforms.
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "Unbound Batch Manifest", "author": "An Vu",
-           "version": (0, 7, 0), "blender": (4, 0, 0), "category": "Import-Export"}
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (0, 8, 0), "blender": (4, 0, 0),
+           "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
+           "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
+           "category": "Import-Export"}
 
 import json
 import re
@@ -127,7 +129,7 @@ def import_manifest(filepath, assemble=True, materials=True):
             for obj in set(bpy.data.objects) - before:
                 bpy.data.objects.remove(obj, do_unlink=True)
             failures.append(mesh["Asset"] + ": " + str(exc))
-    report = bpy.data.texts.new("Unbound import report")
+    report = bpy.data.texts.new("An's Garage import report")
     report.write("Imported %d/%d meshes\n" % (count, len(records)) + "\n".join(failures))
     if materials and path.with_name("materials.json").is_file():
         try:
@@ -138,7 +140,7 @@ def import_manifest(filepath, assemble=True, materials=True):
             if assignment:
                 report.write("\n" + "\n".join(assignment))
             surface_report = surfaces_module().apply_supported_surfaces(imported_objects, path)
-            report.write("\nSupported surfaces: %d built; %d issues; %d unsupported slots. See Unbound surface report." %
+            report.write("\nSupported surfaces: %d built; %d issues; %d unsupported slots. See An's Garage surface report." %
                          (len(surface_report["Built"]), len(surface_report["Issues"]), len(surface_report["Unsupported"])))
             report.write("\nBy shader: " + json.dumps(surface_report["Summary"]["BuiltByShader"]) +
                          "\nUnsupported by shader: " + json.dumps(surface_report["Summary"]["UnsupportedByShader"]))
@@ -165,9 +167,9 @@ def register():
     from bpy_extras.io_utils import ImportHelper
     from bpy.props import StringProperty, IntProperty
 
-    class IMPORT_SCENE_OT_unbound_batch(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.unbound_batch"
-        bl_label = "Unbound batch manifest"
+    class IMPORT_SCENE_OT_ans_garage_vehicle(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_vehicle"
+        bl_label = "An's Garage vehicle"
         bl_options = {"REGISTER", "UNDO"}
         filename_ext = ".json"
         filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
@@ -176,30 +178,30 @@ def register():
             try:
                 count, failures = import_manifest(self.filepath)
                 self.report({"WARNING" if failures else "INFO"},
-                            "%d imported; %d failures. See Unbound import report." % (count, len(failures)))
+                            "%d imported; %d failures. See An's Garage import report." % (count, len(failures)))
                 return {"FINISHED"}
             except Exception as exc:
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class IMPORT_SCENE_OT_unbound_assembly(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.unbound_assembly"
-        bl_label = "Assemble existing Unbound meshes"
+    class IMPORT_SCENE_OT_ans_garage_assembly(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_assembly"
+        bl_label = "Assemble imported vehicle meshes"
         bl_options = {"REGISTER", "UNDO"}
         filename_ext = ".json"
         filter_glob: StringProperty(default="manifest.json", options={"HIDDEN"})
         def execute(self, context):
             try:
                 assembly_module().assemble_existing(self.filepath)
-                self.report({"INFO"}, "Assembly created. See Unbound Vehicle sidebar and assembly report.")
+                self.report({"INFO"}, "Assembly created. See the An's Garage sidebar and assembly report.")
                 return {"FINISHED"}
             except Exception as exc:
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class IMPORT_SCENE_OT_unbound_materials(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.unbound_materials"
-        bl_label = "Restore Unbound material slots"
+    class IMPORT_SCENE_OT_ans_garage_material_slots(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_material_slots"
+        bl_label = "Restore vehicle material slots"
         bl_options = {"REGISTER", "UNDO"}
         filename_ext = ".json"
         filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
@@ -215,8 +217,8 @@ def register():
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class OBJECT_OT_unbound_surfaces(bpy.types.Operator):
-        bl_idname = "object.unbound_surfaces"
+    class OBJECT_OT_ans_garage_build_materials(bpy.types.Operator):
+        bl_idname = "object.ans_garage_build_materials"
         bl_label = "Build supported materials"
         bl_description = ("Build surfaces from compiled source-shader profiles (static state); "
                           "keep unsupported shaders unconnected and preserve existing node edits")
@@ -224,12 +226,12 @@ def register():
         def execute(self, context):
             result = surfaces_module().apply_supported_surfaces()
             self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built, %d already built, %d unsupported, %d issues. See Unbound surface report." %
+                "%d slots built, %d already built, %d unsupported, %d issues. See An's Garage surface report." %
                 tuple(len(result[k]) for k in ("Built", "AlreadyBuilt", "Unsupported", "Issues")))
             return {"FINISHED"}
 
-    class IMPORT_SCENE_OT_unbound_surface_sources(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.unbound_surface_sources"
+    class IMPORT_SCENE_OT_ans_garage_locate_export(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_locate_export"
         bl_label = "Locate export manifest"
         bl_description = "Choose manifest.json or materials.json in a moved export folder, then build supported materials"
         bl_options = {"REGISTER", "UNDO"}
@@ -238,12 +240,12 @@ def register():
         def execute(self, context):
             result = surfaces_module().apply_supported_surfaces(export_path=self.filepath)
             self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built; %d issues. See Unbound surface report." %
+                "%d slots built; %d issues. See An's Garage surface report." %
                 (len(result["Built"]), len(result["Issues"])))
             return {"FINISHED"}
 
-    class IMPORT_SCENE_OT_unbound_shader_defaults(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.unbound_shader_defaults"
+    class IMPORT_SCENE_OT_ans_garage_locate_shader_defaults(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_locate_shader_defaults"
         bl_label = "Locate shader default textures"
         bl_description = ("Choose textures.json of an exported shader-defaults folder (shared vehicle textures such as "
                           "material swatches), then build supported materials")
@@ -258,12 +260,12 @@ def register():
             context.scene["unbound_shader_defaults_path"] = str(folder)
             result = surfaces_module().apply_supported_surfaces()
             self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built; %d issues. See Unbound surface report." % (len(result["Built"]), len(result["Issues"])))
+                "%d slots built; %d issues. See An's Garage surface report." % (len(result["Built"]), len(result["Issues"])))
             return {"FINISHED"}
 
-    class OBJECT_OT_unbound_variant(bpy.types.Operator):
-        bl_idname = "object.unbound_variant"
-        bl_label = "Switch Unbound variant"
+    class OBJECT_OT_ans_garage_variant(bpy.types.Operator):
+        bl_idname = "object.ans_garage_variant"
+        bl_label = "Switch vehicle part"
         bl_options = {"REGISTER", "UNDO"}
         # UI operator invocations normally reuse last-used properties. In 0.4.1
         # a previous preset="Stock" survived a subsequent single-part click and
@@ -284,9 +286,9 @@ def register():
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class OBJECT_OT_unbound_preset(bpy.types.Operator):
-        bl_idname = "object.unbound_preset"
-        bl_label = "Apply Unbound vehicle preset"
+    class OBJECT_OT_ans_garage_preset(bpy.types.Operator):
+        bl_idname = "object.ans_garage_preset"
+        bl_label = "Apply vehicle preset"
         bl_description = "Reset all part categories to this source preset"
         bl_options = {"REGISTER", "UNDO"}
         root: StringProperty(options={"SKIP_SAVE"})
@@ -299,8 +301,8 @@ def register():
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class OBJECT_OT_unbound_material_variant(bpy.types.Operator):
-        bl_idname = "object.unbound_material_variant"
+    class OBJECT_OT_ans_garage_material_row(bpy.types.Operator):
+        bl_idname = "object.ans_garage_material_row"
         bl_label = "Select source material database row"
         bl_options = {"REGISTER", "UNDO"}
         database_guid: StringProperty()
@@ -309,31 +311,31 @@ def register():
             try:
                 obj = context.active_object
                 if not obj or not obj.get("unbound_materials_path"):
-                    raise ValueError("Select a mesh with restored Unbound material slots")
+                    raise ValueError("Select a mesh with restored vehicle material slots")
                 materials_module().apply_material_variant(obj["unbound_materials_path"],
                     obj["unbound_mesh_id"], self.database_guid, self.row, context.selected_objects)
                 surfaces_module().apply_supported_surfaces(context.selected_objects)
-                self.report({"INFO"}, "Source row selected. Supported surfaces rebuilt; see Unbound surface report.")
+                self.report({"INFO"}, "Source row selected. Supported surfaces rebuilt; see An's Garage surface report.")
                 return {"FINISHED"}
             except Exception as exc:
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class VIEW3D_PT_unbound_vehicle(bpy.types.Panel):
-        bl_label = "Unbound Vehicle"
-        bl_idname = "VIEW3D_PT_unbound_vehicle"
+    class VIEW3D_PT_ans_garage_vehicle(bpy.types.Panel):
+        bl_label = "Vehicle"
+        bl_idname = "VIEW3D_PT_ans_garage_vehicle"
         bl_space_type = "VIEW_3D"
         bl_region_type = "UI"
-        bl_category = "Unbound"
+        bl_category = "An's Garage"
         def draw(self, context):
             def label(value):
                 value = value.rsplit("_template_", 1)[-1].replace("_", " ")
                 return re.sub(r"\bSet([A-Za-z]+)\b", lambda m: "Set " + m.group(1).upper(), value)
             surfaces = self.layout.box()
-            surfaces.label(text="Materials 0.7.0: compiled source shaders")
-            surfaces.operator("object.unbound_surfaces")
-            surfaces.operator("import_scene.unbound_surface_sources", text="Locate export manifest…")
-            surfaces.operator("import_scene.unbound_shader_defaults", text="Locate shader default textures…")
+            surfaces.label(text="Materials %d.%d.%d: compiled source shaders" % bl_info["version"])
+            surfaces.operator("object.ans_garage_build_materials")
+            surfaces.operator("import_scene.ans_garage_locate_export", text="Locate export manifest…")
+            surfaces.operator("import_scene.ans_garage_locate_shader_defaults", text="Locate shader default textures…")
             summary = None
             name = context.scene.get("unbound_surface_report")
             if name and name in bpy.data.texts:
@@ -345,7 +347,7 @@ def register():
                 surfaces.label(text="Built %d slots; %d unsupported; %d issues" %
                                (summary["BuiltSlots"], summary["UnsupportedSlots"], summary["IssueSlots"]))
                 if summary["UnsupportedSlots"] or summary["IssueSlots"]:
-                    surfaces.label(text="Not a complete car: see Unbound surface report", icon="ERROR")
+                    surfaces.label(text="Not a complete car: see An's Garage surface report", icon="ERROR")
             paint = bpy.data.node_groups.get("Unbound | Runtime Ext_Carpaint_Diffuse")
             rgb = next((n for n in paint.nodes if n.type == "RGB"), None) if paint else None
             if rgb:
@@ -358,7 +360,7 @@ def register():
                 current = assembly_module().current_preset(root)
                 box.label(text="Current: " + label(current))
                 for preset in json.loads(root["unbound_presets_json"]):
-                    op = box.operator("object.unbound_preset", text="Apply preset: " + label(preset),
+                    op = box.operator("object.ans_garage_preset", text="Apply preset: " + label(preset),
                                       depress=current == preset)
                     op.root, op.preset = root.name, preset
                 box.label(text="Then choose individual parts below.")
@@ -377,11 +379,11 @@ def register():
                                 continue
                             text = "None (hide this part)" if variant["unbound_option"] == "none" else \
                                 (variant.get("unbound_label") or label(variant.name.split(" | ", 1)[-1]))
-                            op = box.operator("object.unbound_variant", text=text,
+                            op = box.operator("object.ans_garage_variant", text=text,
                                               depress=not variant.hide_viewport)
                             op.root, op.group, op.option = root.name, key, variant["unbound_option"]
                             op.preset = ""  # Explicit even when replacing an already-loaded older add-on.
-                box.label(text="See Unbound assembly report for limits")
+                box.label(text="See An's Garage assembly report for limits")
             obj = context.active_object
             if obj and obj.get("unbound_materials_path"):
                 box = self.layout.box()
@@ -393,21 +395,21 @@ def register():
                          icon="TRIA_DOWN" if obj["unbound_show_material_rows"] else "TRIA_RIGHT", emboss=False)
                 if obj["unbound_show_material_rows"]:
                     for row in json.loads(obj["unbound_material_variants_json"]):
-                        op = box.operator("object.unbound_material_variant",
+                        op = box.operator("object.ans_garage_material_row",
                             text=row["Hash"] + " / " + row["DatabaseGuid"][:8] + ":" + str(row["Row"]))
                         op.database_guid, op.row = row["DatabaseGuid"], row["Row"]
 
     def menu(self, context):
-        self.layout.operator(IMPORT_SCENE_OT_unbound_batch.bl_idname, text="Unbound batch manifest (.json)")
-        self.layout.operator(IMPORT_SCENE_OT_unbound_assembly.bl_idname, text="Assemble existing Unbound meshes")
-        self.layout.operator(IMPORT_SCENE_OT_unbound_materials.bl_idname, text="Restore Unbound material slots")
+        self.layout.operator(IMPORT_SCENE_OT_ans_garage_vehicle.bl_idname, text="An's Garage vehicle (.json)")
+        self.layout.operator(IMPORT_SCENE_OT_ans_garage_assembly.bl_idname, text="An's Garage: assemble imported meshes")
+        self.layout.operator(IMPORT_SCENE_OT_ans_garage_material_slots.bl_idname, text="An's Garage: restore material slots")
 
     global _registered_classes, _menu
-    _registered_classes = [IMPORT_SCENE_OT_unbound_batch, IMPORT_SCENE_OT_unbound_assembly, IMPORT_SCENE_OT_unbound_materials,
-                           OBJECT_OT_unbound_surfaces, IMPORT_SCENE_OT_unbound_surface_sources,
-                           IMPORT_SCENE_OT_unbound_shader_defaults,
-                           OBJECT_OT_unbound_variant, OBJECT_OT_unbound_preset,
-                           OBJECT_OT_unbound_material_variant, VIEW3D_PT_unbound_vehicle]
+    _registered_classes = [IMPORT_SCENE_OT_ans_garage_vehicle, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
+                           OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
+                           IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,
+                           OBJECT_OT_ans_garage_variant, OBJECT_OT_ans_garage_preset,
+                           OBJECT_OT_ans_garage_material_row, VIEW3D_PT_ans_garage_vehicle]
     _menu = menu
     for cls in _registered_classes:
         bpy.utils.register_class(cls)

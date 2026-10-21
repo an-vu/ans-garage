@@ -487,7 +487,7 @@ def reconstruct(filepath, objects=None):
                     "RemovedDegenerateIndices": candidate["RemovedDegenerateIndices"]})
         except Exception as exc:
             diagnostics.append({"MeshId": meshid, "Issue": str(exc), "Severity": "assignment_failed"})
-    text = bpy.data.texts.new("Unbound material reconstruction report")
+    text = bpy.data.texts.new("An's Garage material slot report")
     text.write(json.dumps(report, indent=2))
     text["unbound_report"] = VERSION
     return report

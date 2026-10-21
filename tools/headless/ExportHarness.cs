@@ -10,9 +10,9 @@ using FrostySdk;
 using FrostySdk.Managers;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using UnboundBatchExport;
+using AnsGarage;
 
-// Runs UnboundBatchExport without the Frosty window (read-only game access; never prints keys).
+// Runs An's Garage for Frosty without the Frosty window (read-only game access; never prints keys).
 // Modes and arguments: see tools/headless/export.ps1.
 class Harness {
 class Logger : FrostySdk.Interfaces.ILogger {

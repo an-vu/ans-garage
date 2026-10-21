@@ -9,7 +9,7 @@ using FrostySdk.IO;
 using FrostySdk.Managers.Entries;
 using Newtonsoft.Json.Linq;
 
-namespace UnboundBatchExport
+namespace AnsGarage
 {
     // In-game display names from item UI metadata and the game's localization tables.
     // Nothing is guessed: unresolved ids are kept as ids and marked unresolved.
@@ -145,7 +145,7 @@ namespace UnboundBatchExport
         public sealed class Vehicle { public string Name, ShortName, Folder, Blueprint, Item; }
 
         // Disk cache (per user), invalidated when the loaded asset set changes or by an explicit refresh.
-        private static string CachePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UnboundBatchExport", "vehicle-catalog.json"); } }
+        private static string CachePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AnsGarage", "vehicle-catalog.json"); } }
         private static string CacheKey { get { return "0.5.0|" + App.AssetManager.EnumerateEbx().Count(); } }
         private static List<Vehicle> memory;
 

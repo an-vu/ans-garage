@@ -17,13 +17,14 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using TexturePlugin;
 
-[assembly: RegisterMenuExtension(typeof(UnboundBatchExport.MaterialsMenu))]
-namespace UnboundBatchExport
+[assembly: RegisterMenuExtension(typeof(AnsGarage.MaterialsMenu))]
+namespace AnsGarage
 {
     public sealed class MaterialsMenu : MenuExtension
     {
         public override string TopLevelMenuName { get { return "Tools"; } }
-        public override string MenuItemName { get { return "Unbound materials for existing export..."; } }
+        public override string SubLevelMenuName { get { return "An's Garage"; } }
+        public override string MenuItemName { get { return "Refresh materials of existing export..."; } }
         public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => {
             try {
                 if(!FrostySdk.ProfilesLibrary.IsLoaded(FrostySdk.ProfileVersion.NeedForSpeedUnbound)) throw new InvalidOperationException("Load NFS Unbound first.");
@@ -37,9 +38,9 @@ namespace UnboundBatchExport
                         catch(Exception ex) { run.Issue("run",ex); }
                         finally { run.Save(true); }
                     },true,task=>run.Cancel=true);
-                    System.Windows.Forms.MessageBox.Show("Material extraction finished. Review materials.json and materials.log.\n"+run.Summary(),"Unbound materials");
+                    System.Windows.Forms.MessageBox.Show("Material extraction finished. Review materials.json and materials.log.\n"+run.Summary(),"An\'s Garage");
                 }
-            } catch(Exception ex) { System.Windows.Forms.MessageBox.Show(ex.Message,"Unbound materials"); }
+            } catch(Exception ex) { System.Windows.Forms.MessageBox.Show(ex.Message,"An's Garage"); }
         }); } }
     }
 
@@ -60,7 +61,7 @@ namespace UnboundBatchExport
             output=directory;
             loader=load ?? (g=> { var e=App.AssetManager.GetEbxEntry(g); return e==null?null:App.AssetManager.GetEbx(e); });
             entryLookup=lookup ?? (g=>App.AssetManager.GetEbxEntry(g));
-            Document=new JObject {{"Schema", 1}, {"PluginVersion", "0.5.1"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
+            Document=new JObject {{"Schema", 1}, {"PluginVersion", "0.8.0"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
         }
         public void Issue(string path,Exception ex) { Issue(path,ex.GetType().Name+": "+ex.Message); }
         public void Issue(string path,string message) { issues.Add(new JObject {{"Path", path}, {"Message", message}}); }
@@ -291,7 +292,7 @@ namespace UnboundBatchExport
         public void SaveTextureIndex(string note)
         {
             Directory.CreateDirectory(output);
-            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion","0.5.1"},{"Scope","shader defaults"},
+            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion","0.8.0"},{"Scope","shader defaults"},
                 {"Note",note},{"Textures",textureRecords},{"Issues",issues}});
         }
         public void Save(bool completed=false)

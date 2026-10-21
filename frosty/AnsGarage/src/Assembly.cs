@@ -13,13 +13,14 @@ using FrostySdk.Managers.Entries;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-[assembly: RegisterMenuExtension(typeof(UnboundBatchExport.AssemblyMenu))]
-namespace UnboundBatchExport
+[assembly: RegisterMenuExtension(typeof(AnsGarage.AssemblyMenu))]
+namespace AnsGarage
 {
     public sealed class AssemblyMenu : MenuExtension
     {
         public override string TopLevelMenuName { get { return "Tools"; } }
-        public override string MenuItemName { get { return "Unbound assembly for existing export..."; } }
+        public override string SubLevelMenuName { get { return "An's Garage"; } }
+        public override string MenuItemName { get { return "Add assembly to existing export..."; } }
         public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => {
             try {
                 if(!FrostySdk.ProfilesLibrary.IsLoaded(FrostySdk.ProfileVersion.NeedForSpeedUnbound)) throw new InvalidOperationException("Load NFS Unbound first.");
@@ -48,9 +49,9 @@ namespace UnboundBatchExport
                         } catch(Exception ex) {assembly.Issue("run",ex.Message);}
                         finally {assembly.Save();}
                     },true,task=>assembly.Cancel=true);
-                    System.Windows.Forms.MessageBox.Show("Assembly data saved. Review assembly.json and assembly.log.\n"+folder,"Unbound assembly");
+                    System.Windows.Forms.MessageBox.Show("Assembly data saved. Review assembly.json and assembly.log.\n"+folder,"An's Garage");
                 }
-            } catch(Exception ex) {System.Windows.Forms.MessageBox.Show(ex.Message,"Unbound assembly");}
+            } catch(Exception ex) {System.Windows.Forms.MessageBox.Show(ex.Message,"An's Garage");}
         }); } }
     }
 
@@ -73,7 +74,7 @@ namespace UnboundBatchExport
         public AssemblyRun(Manifest source,string directory)
         {
             manifest=source;output=directory;entries=App.AssetManager.EnumerateEbx().ToList();
-            Document=new JObject {{"Schema",1},{"PluginVersion","0.5.1"},{"Scope",source.Scope},{"CreatedUtc",DateTime.UtcNow.ToString("o")},
+            Document=new JObject {{"Schema",1},{"PluginVersion","0.8.0"},{"Scope",source.Scope},{"CreatedUtc",DateTime.UtcNow.ToString("o")},
                 {"Nodes",nodes},{"Components",components},{"Items",items},{"Wheels",wheels},{"MeshUses",meshUses},{"Issues",issues},
                 {"CoordinateSystem","Frostbite authored XYZ, Y up. Matrices are right/up/forward/translation vectors; meters."},
                 {"Policy","Source graph, rest placement and explicit item references. Runtime suspension simulation, shader deformation and arbitrary compatibility rules are not evaluated."}};

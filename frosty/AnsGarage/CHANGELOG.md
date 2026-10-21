@@ -1,3 +1,8 @@
+# 0.8.0 — renamed to An's Garage for Frosty
+
+- `AnsGarage.dll`, menu **Tools → An's Garage**; version shared with An's Garage for Blender. Remove the old `UnboundBatchExport.dll` from Frosty's `Plugins` folder.
+- The vehicle list cache moved to `%LOCALAPPDATA%\AnsGarage\` (read once more after upgrading).
+
 # 0.5.1 — dialog fixes
 
 - The export dialog and vehicle picker use auto-sizing layouts, so text and buttons are not clipped at Windows display scaling above 100%.

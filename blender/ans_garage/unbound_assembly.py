@@ -500,7 +500,7 @@ def assemble_existing(manifest_path):
         "Material IDs are custom metadata; no placeholder materials or shaders were generated."
     ]
     root["diagnostics_json"] = json.dumps(diagnostics)
-    text = bpy.data.texts.new("Unbound assembly report")
+    text = bpy.data.texts.new("An's Garage assembly report")
     text.write("Authored vehicle assembly\n" + "\n".join(diagnostics))
     bpy.context.view_layer.update()
     return root, diagnostics

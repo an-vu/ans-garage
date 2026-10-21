@@ -18,7 +18,7 @@ with zipfile.ZipFile(archive) as z:
     names = z.namelist()
     z.extractall(scratch)
 sys.path.insert(0, str(scratch))
-import unbound_batch  # noqa: E402
+import ans_garage as unbound_batch  # noqa: E402
 assert Path(unbound_batch.__file__).resolve().parent.parent == scratch.resolve()
 checks = []
 
@@ -33,12 +33,12 @@ def report():
 
 
 check("Install ZIP has the seven add-on files", len(names) == 7, names)
-check("Version 0.7.0", unbound_batch.bl_info["version"] == (0, 7, 0))
+check("Version 0.8.0", unbound_batch.bl_info["version"] == (0, 8, 0))
 
 # Negative case first: export without shader-defaults must fail closed with an explicit reason.
 bpy.ops.wm.read_factory_settings(use_empty=True)
 unbound_batch.register()
-status = bpy.ops.import_scene.unbound_batch(filepath=str(export_bare / "manifest.json"))
+status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export_bare / "manifest.json"))
 r = report()
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
 check("Bare export imports geometry (593 meshes)", status == {"FINISHED"} and len(meshes) == 593, len(meshes))
@@ -47,7 +47,7 @@ check("Missing shader defaults fail closed with explicit reason", missing and r[
       r["Summary"]["IssueReasons"])
 check("Swatch-dependent opaque surfaces not connected without shader defaults",
       r["Summary"]["BuiltByShader"].get("cs_pbr_opaque_max", 0) == 0, r["Summary"]["BuiltByShader"])
-status = bpy.ops.import_scene.unbound_shader_defaults(filepath=str(export_ok / "shader-defaults" / "textures.json"))
+status = bpy.ops.import_scene.ans_garage_locate_shader_defaults(filepath=str(export_ok / "shader-defaults" / "textures.json"))
 r = report()
 check("Locate shader default textures operator recovers the build", status == {"FINISHED"} and r["Summary"]["IssueSlots"] == 0
       and r["Summary"]["BuiltByShader"].get("cs_pbr_opaque_max", 0) > 0, r["Summary"])
@@ -56,7 +56,7 @@ unbound_batch.unregister()
 # Normal fresh import.
 bpy.ops.wm.read_factory_settings(use_empty=True)
 unbound_batch.register()
-status = bpy.ops.import_scene.unbound_batch(filepath=str(export_ok / "manifest.json"))
+status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export_ok / "manifest.json"))
 r = report()
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
 check("Fresh import operator finished", status == {"FINISHED"})
@@ -90,7 +90,7 @@ tires = [o for o in meshes if o.get("unbound_assembled") and
 check("Four assembled tires keep the verified 0.5 tire profile", len(tires) == 4, len(tires))
 saved = out_dir / "fresh-070.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "0.7.0", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
+result = {"Version": "0.8.0", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "fresh-070-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

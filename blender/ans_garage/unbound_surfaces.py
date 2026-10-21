@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
 PROFILE = json.loads(Path(__file__).with_name("tire_shader_evidence.json").read_text(encoding="utf-8"))
 CORE_TEXTURES = ("RGB_Color_A_Smoothness", "RG_Normal_A_AO")
 
@@ -372,7 +372,7 @@ def apply_supported_surfaces(objects=None, export_path=None):
                 report["Issues"].append({"Object": obj.name, "Slot": index, "Issue": str(exc)})
     report["Limits"] = PROFILE["Unsupported"]
     report["Summary"] = summarize(report)
-    text = bpy.data.texts.new("Unbound surface report")
+    text = bpy.data.texts.new("An's Garage surface report")
     text.write(json.dumps(report, indent=2))
     bpy.context.scene["unbound_surface_report"] = text.name
     return report

@@ -2,7 +2,7 @@
 
 This release makes the pipeline vehicle-agnostic and adds in-game names.
 
-## 1. Exporter 0.5.0 (C#, `frosty/UnboundBatchExport/src`)
+## 1. Exporter 0.5.0 (C#, `frosty/AnsGarage/src`)
 
 | Area | Implementation | Evidence |
 |---|---|---|

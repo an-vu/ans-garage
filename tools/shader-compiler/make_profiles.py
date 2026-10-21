@@ -16,7 +16,7 @@ sys.path.insert(0, str(HERE.parent))
 from settings import path as setting  # noqa: E402
 
 DATA = setting("shader_data_dir")  # game-derived inputs; never committed
-spec = importlib.util.spec_from_file_location("um", HERE.parents[1] / "blender" / "unbound_batch" / "unbound_materials.py")
+spec = importlib.util.spec_from_file_location("um", HERE.parents[1] / "blender" / "ans_garage" / "unbound_materials.py")
 um = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(um)
 # Runtime customization parameters set per vehicle through RaceVehicleCustomizationComponentData keys.

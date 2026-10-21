@@ -13,7 +13,7 @@ args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, out_dir, label = Path(args[0]), Path(args[1]), Path(args[2]), args[3]
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sys.path.insert(0, str(addon_parent))
-addon = importlib.import_module("unbound_batch")
+addon = importlib.import_module("ans_garage")
 assert Path(addon.__file__).resolve().parent.parent == addon_parent.resolve(), addon.__file__
 addon.register()
 checks = []
@@ -24,10 +24,10 @@ def check(name, ok, detail=None):
     print(("PASS " if ok else "FAIL ") + name + ("" if detail is None else "  " + json.dumps(detail, ensure_ascii=False)[:600]))
 
 
-check("Add-on 0.7.0", addon.bl_info["version"] == (0, 7, 0))
-status = bpy.ops.import_scene.unbound_batch(filepath=str(export / "manifest.json"))
+check("Add-on 0.8.0", addon.bl_info["version"] == (0, 8, 0))
+status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export / "manifest.json"))
 check("Import operator finished", status == {"FINISHED"}, list(status))
-imp = bpy.data.texts.get("Unbound import report")
+imp = bpy.data.texts.get("An's Garage import report")
 print("IMPORT REPORT", (imp.as_string()[:4000] if imp else "none"))
 if not any(c.get("unbound_assembly_path") for c in bpy.context.scene.collection.children):
     bpy.ops.wm.save_as_mainfile(filepath=str(out_dir / ("vehicle-%s-070-unassembled.blend" % label)))
@@ -43,13 +43,13 @@ presets = list(json.loads(root["unbound_presets_json"])) if root else []
 check("Presets named", True, presets)
 ok, switched = True, 0
 for preset in presets:
-    ok &= bpy.ops.object.unbound_preset(root=root.name, preset=preset) == {"FINISHED"}
+    ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset=preset) == {"FINISHED"}
 for g in groups:
     for v in [v for v in g.children if "unbound_option" in v]:
-        ok &= bpy.ops.object.unbound_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"],
+        ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"],
                                              preset="") == {"FINISHED"}
         switched += 1
-ok &= bpy.ops.object.unbound_preset(root=root.name, preset="Stock") == {"FINISHED"}
+ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Every preset and part option switches; Stock restored", ok and addon.assembly_module().current_preset(root) == "Stock",
       {"Presets": len(presets), "Options": switched})
 s = report["Summary"]
@@ -73,7 +73,7 @@ check("Visible surfaces built", True, {"Visible": len(occupied), "Built": built,
 check("Visible unbuilt surfaces (reasons)", True, dict(unbuilt))
 saved = out_dir / ("vehicle-%s-070.blend" % label)
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "0.7.0", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
+result = {"Version": "0.8.0", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / ("vehicle-%s-070.json" % label)).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

@@ -1,6 +1,6 @@
 """Compile static-state G-buffer surface profiles for every deferred vehicle shader used by an export.
 
-Output: unbound_batch/shader_profiles.json (formulas only; no game bytecode or textures).
+Output: blender/ans_garage/shader_profiles.json (formulas only; no game bytecode or textures).
 usage: profile_compiler.py <materials.json> <out.json> [shader-substring ...]
 """
 import hashlib

@@ -1,5 +1,5 @@
 param([string]$FrostyDir)
-# Builds bin\UnboundBatchExport.dll (+ UnboundShaderDefaults.json). Copy both into Frosty's Plugins folder.
+# Builds bin\AnsGarage.dll (+ UnboundShaderDefaults.json). Copy both into Frosty's Plugins folder.
 $ErrorActionPreference = 'Stop'
 if (!$FrostyDir) { . (Join-Path $PSScriptRoot '..\..\tools\settings.ps1'); $FrostyDir = $Settings.frosty_dir }
 $FrostyDir = (Resolve-Path -LiteralPath $FrostyDir).Path
@@ -10,10 +10,10 @@ $refs += @('System.dll','System.Core.dll','System.Windows.Forms.dll','System.Dra
 foreach ($ref in $refs) { if (!(Test-Path -LiteralPath $ref)) { throw "Missing dependency: $ref" } }
 $destination = Join-Path $PSScriptRoot 'bin'
 New-Item -ItemType Directory -Force $destination | Out-Null
-$arguments = @('/nologo','/target:library','/platform:x64','/optimize+','/warn:4',('/out:' + (Join-Path $destination 'UnboundBatchExport.dll')))
+$arguments = @('/nologo','/target:library','/platform:x64','/optimize+','/warn:4',('/out:' + (Join-Path $destination 'AnsGarage.dll')))
 $arguments += $refs | ForEach-Object { '/reference:' + $_ }
 $arguments += Get-ChildItem (Join-Path $PSScriptRoot 'src') -Filter *.cs | ForEach-Object { $_.FullName }
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed' }
 Copy-Item (Join-Path $PSScriptRoot 'UnboundShaderDefaults.json') $destination -Force
-Write-Output "Built $destination\UnboundBatchExport.dll"
+Write-Output "Built $destination\AnsGarage.dll"
