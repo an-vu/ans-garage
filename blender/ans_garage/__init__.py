@@ -14,6 +14,37 @@ import re
 from pathlib import Path
 
 
+class Progress:
+    """Progress while an import blocks Blender's window: percentage on the mouse cursor, lines in the system console
+    (Window > Toggle System Console). Stages map to fixed ranges of the 0-100 bar."""
+
+    def __init__(self):
+        import bpy
+        self.wm = bpy.context.window_manager
+        self.last = None
+        if self.wm:
+            self.wm.progress_begin(0, 100)
+
+    def stage(self, name, start, end):
+        self.name, self.start, self.end = name, start, end
+        print("An's Garage: %s..." % name, flush=True)
+        self.update(0, 1)
+
+    def update(self, done, total):
+        pct = self.start + (self.end - self.start) * (done / total if total else 1.0)
+        if self.wm:
+            self.wm.progress_update(pct)
+        step = int(pct // 10)
+        if total > 1 and step != self.last and done:
+            self.last = step
+            print("An's Garage: %s %d/%d (%d%%)" % (self.name, done, total, pct), flush=True)
+
+    def finish(self):
+        if self.wm:
+            self.wm.progress_end()
+        print("An's Garage: done", flush=True)
+
+
 def exported_records(manifest):
     if manifest.get("Schema") != 1:
         raise ValueError("Unsupported manifest schema")
@@ -87,7 +118,10 @@ def import_manifest(filepath, assemble=True, materials=True):
     failures = []
     imported_objects = []
     count = 0
-    for mesh in records:
+    progress = Progress()
+    progress.stage("importing %d parts" % len(records), 0, 20)
+    for index, mesh in enumerate(records):
+        progress.update(index, len(records))
         before = set(bpy.data.objects)
         try:
             status = bpy.ops.import_scene.fbx(
@@ -133,13 +167,15 @@ def import_manifest(filepath, assemble=True, materials=True):
     report.write("Imported %d/%d meshes\n" % (count, len(records)) + "\n".join(failures))
     if materials and path.with_name("materials.json").is_file():
         try:
+            progress.stage("restoring material slots", 20, 25)
             material_report = materials_module().reconstruct(path, imported_objects)
             assignment = ["Materials: " + x["Issue"] for x in material_report["Issues"]
                           if x.get("Severity") == "assignment_failed"]
             failures.extend(assignment)
             if assignment:
                 report.write("\n" + "\n".join(assignment))
-            surface_report = surfaces_module().apply_supported_surfaces(imported_objects, path)
+            progress.stage("building materials", 25, 75)
+            surface_report = surfaces_module().apply_supported_surfaces(imported_objects, path, progress.update)
             report.write("\nSupported surfaces: %d built; %d issues; %d unsupported slots. See An's Garage surface report." %
                          (len(surface_report["Built"]), len(surface_report["Issues"]), len(surface_report["Unsupported"])))
             report.write("\nBy shader: " + json.dumps(surface_report["Summary"]["BuiltByShader"]) +
@@ -149,6 +185,7 @@ def import_manifest(filepath, assemble=True, materials=True):
             report.write("\nMaterials: " + str(exc))
     if assemble and path.with_name("assembly.json").is_file() and not failures:
         try:
+            progress.stage("assembling the vehicle", 75, 80)
             assembly_module().assemble_existing(path)
         except Exception as exc:
             failures.append("Assembly: " + str(exc))
@@ -156,9 +193,11 @@ def import_manifest(filepath, assemble=True, materials=True):
         else:
             if materials and path.with_name("materials.json").is_file():
                 # Per-wheel inputs (front/rear selectors) exist only on assembled wheel parts.
-                surface_report = surfaces_module().apply_supported_surfaces(None, path)
+                progress.stage("building per-wheel materials", 80, 100)
+                surface_report = surfaces_module().apply_supported_surfaces(None, path, progress.update)
                 report.write("\nAfter assembly: %d more slots built (per-wheel inputs); %d issues." %
                              (len(surface_report["Built"]), len(surface_report["Issues"])))
+    progress.finish()
     return count, failures
 
 

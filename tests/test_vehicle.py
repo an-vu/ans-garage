@@ -3,6 +3,7 @@ blender --background --factory-startup --python-exit-code 1 --python test_vehicl
 """
 import importlib
 import json
+import time
 import sys
 from collections import Counter
 from pathlib import Path
@@ -25,12 +26,14 @@ def check(name, ok, detail=None):
 
 
 check("Add-on 0.8.0", addon.bl_info["version"] == (0, 8, 0))
+started = time.perf_counter()
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export / "manifest.json"))
-check("Import operator finished", status == {"FINISHED"}, list(status))
+import_seconds = time.perf_counter() - started
+check("Import operator finished", status == {"FINISHED"}, {"Status": list(status), "Seconds": round(import_seconds, 1)})
 imp = bpy.data.texts.get("An's Garage import report")
 print("IMPORT REPORT", (imp.as_string()[:4000] if imp else "none"))
 if not any(c.get("unbound_assembly_path") for c in bpy.context.scene.collection.children):
-    bpy.ops.wm.save_as_mainfile(filepath=str(out_dir / ("vehicle-%s-070-unassembled.blend" % label)))
+    bpy.ops.wm.save_as_mainfile(filepath=str(out_dir / ("vehicle-%s-unassembled.blend" % label)))
 report = json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
 root = next((c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path")), None)
@@ -71,11 +74,11 @@ for o, i in occupied:
 built = sum(b for _, b in by_shader.values())
 check("Visible surfaces built", True, {"Visible": len(occupied), "Built": built, "ByShader(visible,built)": by_shader})
 check("Visible unbuilt surfaces (reasons)", True, dict(unbuilt))
-saved = out_dir / ("vehicle-%s-070.blend" % label)
+saved = out_dir / ("vehicle-%s.blend" % label)
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
 result = {"Version": "0.8.0", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
-(out_dir / ("vehicle-%s-070.json" % label)).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
+(out_dir / ("vehicle-%s.json" % label)).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
 print("PASSED", result["Passed"], "FAILED", result["Failed"])
 if result["Failed"]:
     raise SystemExit(1)

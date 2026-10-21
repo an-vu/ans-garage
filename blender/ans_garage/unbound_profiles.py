@@ -767,7 +767,7 @@ class Images:
 
     def __init__(self, root, extra_folders=()):
         self.root = Path(root)
-        self.by_asset, self.cache = {}, {}
+        self.by_asset, self.cache, self.uniform_cache = {}, {}, {}
         doc = json.loads((self.root / "materials.json").read_text(encoding="utf-8-sig"))
         textures = {t["ResourceId"]: t for t in doc.get("Textures", [])}
         for n in doc.get("Nodes", []):
@@ -884,18 +884,32 @@ class Images:
         return self.uniform(hit[0], hit[1])
 
     def uniform(self, root, binding):
-        """Decoded uniform RGBA (shader-visible, sRGB linearized) or None."""
+        """Decoded uniform RGBA (shader-visible, sRGB linearized) or None.
+
+        Reading an image's pixels is the expensive part, so the answer is computed once per image file and kept in
+        memory and on the image (keyed by file size and modification time, so a changed file is checked again)."""
         import numpy as np
         image = self.load(root, binding, binding.get("Asset"))
-        px = np.empty(image.size[0] * image.size[1] * 4, dtype=np.float32)
-        image.pixels.foreach_get(px)
-        px = px.reshape(-1, 4)
-        if not np.all(np.abs(px - px[0]) < 1e-6):
-            return None
-        v = [float(x) for x in px[0]]
-        if binding.get("ColorSpace") == "sRGB" and not image.is_float:
-            v[:3] = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in v[:3]]
-        return v
+        path = Path(image["unbound_source_path"])
+        stat = path.stat()
+        key = "%s|%d|%d|%s" % (image.colorspace_settings.name, stat.st_size, stat.st_mtime_ns, binding.get("ColorSpace"))
+        cached = self.uniform_cache.get((str(path), key))
+        if cached is None and image.get("unbound_uniform_key") == key:
+            cached = json.loads(image["unbound_uniform_json"])
+        if cached is None:
+            px = np.empty(image.size[0] * image.size[1] * 4, dtype=np.float32)
+            image.pixels.foreach_get(px)
+            px = px.reshape(-1, 4)
+            v = None
+            if np.all(np.abs(px - px[0]) < 1e-6):
+                v = [float(x) for x in px[0]]
+                if binding.get("ColorSpace") == "sRGB" and not image.is_float:
+                    v[:3] = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in v[:3]]
+            cached = {"Value": v}
+            image["unbound_uniform_key"] = key
+            image["unbound_uniform_json"] = json.dumps(cached)
+        self.uniform_cache[(str(path), key)] = cached
+        return cached["Value"]
 
 
 # ------------------------------------------------------------------ object context
@@ -1011,6 +1025,23 @@ def texture_constants(profile, sources, images):
     return consts, notes
 
 
+_SPECIALIZED = {}
+
+
+def specialize(profile, values, live, input_consts, rename, tex_consts):
+    """Specialized, simplified formulas; shared between slots whose inputs are identical (materials often differ only
+    in name). The result is read-only after simplification."""
+    names = {e["Name"] for e in profile["Externals"]}
+    key = (id(profile), json.dumps([sorted([k[0], k[1], values[k]] for k in values if k[0] in names), sorted(live),
+                                    sorted(input_consts.items()), sorted((rename or {}).items()),
+                                    sorted((str(k), v) for k, v in (tex_consts or {}).items())]))
+    if key not in _SPECIALIZED:
+        spec = Spec(profile, values, live, input_consts, rename, tex_consts)
+        _SPECIALIZED[key] = (spec, settle(spec, {k: spec.output(k) for k in profile["Outputs"]}, CONNECTED_OUTPUTS + ("Emissive",)))
+    spec, outs = _SPECIALIZED[key]
+    return spec, dict(outs)
+
+
 def plan(profile, state, runtime, live_names, images, root, input_consts=None, rename=None):
     """Everything that does not depend on the object's geometry: parameters, specialization, textures."""
     values, applied, issues = parameter_values(profile, state, runtime)
@@ -1020,8 +1051,7 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
     sources, bind_issues = check_bindings(profile, state, root, images)
     issues += bind_issues
     tex_consts, tex_notes = texture_constants(profile, sources, images)
-    spec = Spec(profile, values, live, input_consts, rename, tex_consts)
-    outs = settle(spec, {k: spec.output(k) for k in profile["Outputs"]}, CONNECTED_OUTPUTS + ("Emissive",))
+    spec, outs = specialize(profile, values, live, input_consts, rename, tex_consts)
     connected = {k: outs[k] for k in CONNECTED_OUTPUTS + ("Emissive",) if k in outs}
     used = reachable(spec, [x for v in connected.values() for x in (v if isinstance(v, list) else [v])])
     names = {spec.nodes[i].get("name", "") for i in used if spec.nodes[i]["op"] in ("input", "view")}
@@ -1041,8 +1071,7 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
                     effect = max(effect, float(np.nanmax(d[np.isfinite(d)])))
         if effect <= ENGINE_ZERO_MAX_EFFECT:
             input_consts.update({c: 0.0 for c in consts})
-            spec = Spec(profile, values, live, input_consts, rename, tex_consts)
-            outs = settle(spec, {k: spec.output(k) for k in profile["Outputs"]}, CONNECTED_OUTPUTS + ("Emissive",))
+            spec, outs = specialize(profile, values, live, input_consts, rename, tex_consts)
             connected = {k: outs[k] for k in CONNECTED_OUTPUTS + ("Emissive",) if k in outs}
             used = reachable(spec, [x for v in connected.values() for x in (v if isinstance(v, list) else [v])])
             names = {spec.nodes[i].get("name", "") for i in used if spec.nodes[i]["op"] in ("input", "view")}

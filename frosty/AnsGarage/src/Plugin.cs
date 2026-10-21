@@ -191,6 +191,8 @@ namespace AnsGarage
         public int DatabasesConsidered, DatabasesSkippedByDependencies;
         public List<MeshRecord> Meshes = new List<MeshRecord>();
         public List<string> Errors = new List<string>();
+        // Seconds per export stage (where an export spends its time).
+        public Dictionary<string,double> Timings = new Dictionary<string,double>();
     }
     public sealed class MeshRecord
     {
@@ -268,9 +270,31 @@ namespace AnsGarage
             var dependencies=database.EnumerateDependencies().ToList();
             return dependencies.Count==0 || dependencies.Any(g=>scopedFiles.Contains(g));
         }
+        private void Time(string stage, Action work)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            try { work(); }
+            finally { double t; Manifest.Timings.TryGetValue(stage, out t); Manifest.Timings[stage] = Math.Round(t + watch.Elapsed.TotalSeconds, 2); }
+        }
         public void Run(FrostyTaskWindow task)
         {
+            var total = System.Diagnostics.Stopwatch.StartNew();
+            try { RunStages(task); }
+            finally { Manifest.Timings["Total"] = Math.Round(total.Elapsed.TotalSeconds, 2); }
+        }
+        // Progress files are rewritten at most every 10 seconds (they grow with every part; rewriting them after each
+        // part took half of a 368-part export). The final save after each stage is unchanged.
+        private System.Diagnostics.Stopwatch geometrySaved = System.Diagnostics.Stopwatch.StartNew(), materialsSaved = System.Diagnostics.Stopwatch.StartNew();
+        private static bool Due(ref System.Diagnostics.Stopwatch since)
+        {
+            if (since.Elapsed.TotalSeconds < 10) return false;
+            since = System.Diagnostics.Stopwatch.StartNew();
+            return true;
+        }
+        private void RunStages(FrostyTaskWindow task)
+        {
             Directory.CreateDirectory(output);
+            var scan = System.Diagnostics.Stopwatch.StartNew();
             var entries=App.AssetManager.EnumerateEbx().OrderBy(e=>e.Name,StringComparer.OrdinalIgnoreCase).ToList();
             var scopedFiles=new HashSet<Guid>(entries.Where(e=>Core.InScope(e.Name,prefix)).Select(e=>e.Guid));
             foreach (var db in entries.Where(e => e.Type == "MeshVariationDatabase" || e.Filename.IndexOf("MeshVariationDb_Win32",StringComparison.OrdinalIgnoreCase)>=0))
@@ -313,6 +337,7 @@ namespace AnsGarage
                 }
                 catch(Exception ex) { Manifest.Errors.Add(db.Name + ": " + ex.Message); }
             }
+            Manifest.Timings["Scan mesh variation databases"] = Math.Round(scan.Elapsed.TotalSeconds, 2);
             // Include unreferenced mesh assets inside the explicit vehicle scope.
             foreach(var entry in entries.Where(e=>Core.InScope(e.Name,prefix) && (e.Type=="RigidMeshAsset" || e.Type=="CompositeMeshAsset" || e.Type=="SkinnedMeshAsset")))
             {
@@ -321,18 +346,21 @@ namespace AnsGarage
                 catch(Exception ex) { Manifest.Errors.Add(entry.Name + ": " + ex.Message); }
             }
             AssemblyRun assembly=null;
-            if(!Cancel) {
+            if(!Cancel) Time("Assembly", () => {
                 try {assembly=new AssemblyRun(Manifest,output) {CancellationRequested=()=>Cancel,Blueprint=Blueprint};assembly.Run();}
                 catch(Exception ex) {if(assembly!=null){assembly.Issue("run",ex.Message);assembly.Save();}Manifest.Errors.Add("Assembly: "+ex.Message);}
-            }
+            });
             Save();
             foreach(var record in Manifest.Meshes)
             {
                 if(Cancel) break;
-                try { Export(record,task); }
-                catch(Exception ex) { record.Status="failed"; record.Error=ex.ToString(); Manifest.Errors.Add(record.Asset + ": " + ex.Message); }
-                Save();
+                Time("Geometry (FBX export)", () => {
+                    try { Export(record,task); }
+                    catch(Exception ex) { record.Status="failed"; record.Error=ex.ToString(); Manifest.Errors.Add(record.Asset + ": " + ex.Message); }
+                });
+                if (Due(ref geometrySaved)) Time("Geometry: progress saves", () => Save());
             }
+            Time("Geometry: progress saves", () => Save());
             if(!Cancel)
             {
                 var materialRun=new MaterialRun(output,prefix);
@@ -340,13 +368,17 @@ namespace AnsGarage
                     foreach(var record in Manifest.Meshes) {
                         if(Cancel) {materialRun.Cancel=true;break;}
                         task.Update("Materials: "+record.Asset);
-                        materialRun.Process(record);materialRun.Save();
+                        var current = record;
+                        Time("Materials and textures", () => materialRun.Process(current));
+                        if (Due(ref materialsSaved)) Time("Materials: progress saves", () => materialRun.Save());
                     }
                 } catch(Exception ex) {materialRun.Issue("run",ex);}
                 finally {materialRun.Save(true);}
                 if(!Cancel) {
                     task.Update("Shader default textures");
-                    try { ExportShaderDefaults(output); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }
+                    Time("Shader default textures", () => {
+                        try { ExportShaderDefaults(output); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }
+                    });
                 }
             }
             Manifest.Cancelled=Cancel;

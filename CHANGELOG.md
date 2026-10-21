@@ -2,8 +2,14 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
-## 0.8.0 (in progress)
+## 0.8.0
 
+- **Faster import in Blender:**
+  - Murciélago: about 5.5 min → **55 s**; BMW M3 E46: about 25 min → **1 min 47 s**. The built materials are unchanged.
+  - Each texture is checked for a single flat colour once, and the answer is stored on the image. It used to be re-read for every slot: about 5,500 full pixel reads for 150 images.
+  - Simplified shader formulas are shared between materials whose inputs are identical.
+  - Progress shows as a percentage on the mouse cursor and as stage lines in the system console (Window → Toggle System Console).
+- **Faster export in Frosty:** BMW M3 E46 export 153 s → **73 s** (identical output). Progress files are rewritten at most every 10 seconds instead of after every part, and `manifest.json` now records the seconds spent in each export stage (`Timings`).
 - **New names:**
   - **An's Garage for Frosty** (was UnboundBatchExport): **Tools → An's Garage → Export vehicle...**; `AnsGarage.dll`.
   - **An's Garage for Blender** (was Unbound Batch Manifest): **File → Import → An's Garage vehicle (.json)**; sidebar tab **An's Garage**.

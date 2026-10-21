@@ -130,7 +130,7 @@ check("Part switching leaves built material assignments intact",
       {o.name: tuple(s.material.name if s.material else None for s in o.material_slots) for o in meshes} == mat_assign)
 check("Stock preset restored", addon.assembly_module().current_preset(root) == "Stock", addon.assembly_module().current_preset(root))
 
-saved = out_dir / "existing-070-validated.blend"
+saved = out_dir / "existing-validated.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
 bpy.ops.wm.open_mainfile(filepath=str(saved))
 check("Save/reopen keeps mesh data", {m.name: digest(m) for m in bpy.data.meshes} == baseline)
@@ -138,7 +138,7 @@ check("Save/reopen keeps built materials",
       len([m for m in bpy.data.materials if m.get("unbound_surface_profile") == "unbound-compiled-gbuffer-v1"]) == len(built))
 result = {"Version": "0.8.0", "Checks": checks, "Summary": summary,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
-(out_dir / "existing-070-validation.json").write_text(json.dumps(result, indent=1))
+(out_dir / "existing-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])
 if result["Failed"]:
     raise SystemExit(1)

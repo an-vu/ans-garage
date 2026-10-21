@@ -2,6 +2,8 @@
 
 - `AnsGarage.dll`, menu **Tools → An's Garage**; version shared with An's Garage for Blender. Remove the old `UnboundBatchExport.dll` from Frosty's `Plugins` folder.
 - The vehicle list cache moved to `%LOCALAPPDATA%\AnsGarage\` (read once more after upgrading).
+- About twice as fast: `manifest.json` and `materials.json` are rewritten at most every 10 seconds instead of after every part (BMW M3 E46: 153 s → 73 s, identical output).
+- `manifest.json` records the seconds spent in each stage (`Timings`).
 
 # 0.5.1 — dialog fixes
 

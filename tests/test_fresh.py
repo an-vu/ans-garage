@@ -88,11 +88,11 @@ for suffix, label in (("cs_rim", "rims"), ("caliper_LookDev", "brake calipers"),
 tires = [o for o in meshes if o.get("unbound_assembled") and
          o.material_slots[o["unbound_material_slot"]].material.get("unbound_surface_profile") == "unbound-tire-static-v1"]
 check("Four assembled tires keep the verified 0.5 tire profile", len(tires) == 4, len(tires))
-saved = out_dir / "fresh-070.blend"
+saved = out_dir / "fresh.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
 result = {"Version": "0.8.0", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
-(out_dir / "fresh-070-validation.json").write_text(json.dumps(result, indent=1))
+(out_dir / "fresh-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])
 if result["Failed"]:
     raise SystemExit(1)

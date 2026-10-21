@@ -316,7 +316,7 @@ def make_material(source, state, layer, images, basis, identity):
         raise
 
 
-def apply_supported_surfaces(objects=None, export_path=None):
+def apply_supported_surfaces(objects=None, export_path=None, progress=None):
     import bpy
     objects = list(objects if objects is not None else bpy.context.scene.objects)
     report = {"Version": VERSION, "Profile": PROFILE["Profile"], "Built": [], "AlreadyBuilt": [],
@@ -324,7 +324,9 @@ def apply_supported_surfaces(objects=None, export_path=None):
               "CompiledProfiles": "Static-state source G-buffer formulas translated to Principled; "
                                   "see each built material's unbound_surface_evidence_json."}
     documents, basis_cache, material_cache, caches = {}, {}, {}, {}
-    for obj in objects:
+    for done, obj in enumerate(objects):
+        if progress:
+            progress(done, len(objects))
         if obj.type != "MESH" or not obj.get("unbound_mesh_id"):
             continue
         # Only occupied slots; unused slots may refer to a different section's UVs.
