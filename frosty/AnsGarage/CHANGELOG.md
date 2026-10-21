@@ -1,3 +1,12 @@
+# 1.0.0 — moving parts
+
+- `assembly.json` gains `TrackData`: the keyframes of the vehicle's sequence tracks (active wings, airbrakes, vents) as plain numbers, 6 per key (time, value, in-tangent x/y, out-tangent x/y). An's Garage for Blender 1.0.0 turns them, together with the blueprint's door, window, hood and boot curves (already in `assembly.json`), into 0–1 sliders.
+- Older exports: re-run the export (or **Add assembly to existing export...**) to get `TrackData`.
+
+# 0.9.0 — tire library
+
+- **Tools → An's Garage → Export tire library...** exports the Falken and Toyo tires once (both sizes and plain or brand lettering), for the Blender add-on's Tires section.
+
 # 0.8.1
 
 - No changes; version kept in step with An's Garage for Blender 0.8.1.

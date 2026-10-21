@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (0, 8, 1), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 0), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -83,6 +83,48 @@ def materials_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def tires_module():
+    from . import unbound_tires
+    return unbound_tires
+
+
+def animation_module():
+    from . import unbound_animation
+    return unbound_animation
+
+
+def add_moving_parts(root, report=None):
+    """Sliders for the car's moving parts (doors, windows, hood, boot, active aero); problems go to the report."""
+    try:
+        result = animation_module().build(root)
+        lines = ["Moving parts: %d sliders (%s)" % (len(result["Controls"]), ", ".join(c["Label"] for c in result["Controls"]))]
+        lines += ["Moving parts: " + x for x in result["Issues"]]
+    except Exception as exc:
+        lines = ["Moving parts: " + str(exc)]
+    if report is not None:
+        report.write("\n" + "\n".join(lines))
+    return lines
+
+
+_TIRE_INDEX = {}
+
+
+def tire_library(context):
+    """Tire library folder: the add-on preference, else the scene's (set by Locate tire library)."""
+    addon = context.preferences.addons.get(__name__)
+    folder = getattr(getattr(addon, "preferences", None), "tire_library", "") if addon else ""
+    return folder or context.scene.get("ans_garage_tire_library", "")
+
+
+def tire_index(folder):
+    if folder not in _TIRE_INDEX:
+        try:
+            _TIRE_INDEX[folder] = tires_module().load_index(folder)
+        except (OSError, ValueError):
+            _TIRE_INDEX[folder] = None
+    return _TIRE_INDEX[folder]
 
 
 def surfaces_module():
@@ -206,11 +248,13 @@ def import_steps(filepath, assemble=True, materials=True):
     if assemble and path.with_name("assembly.json").is_file() and not failures:
         try:
             yield "Assembling the vehicle", 75.0, 0, 1
-            assembly_module().assemble_existing(path)
+            root, _ = assembly_module().assemble_existing(path)
         except Exception as exc:
             failures.append("Assembly: " + str(exc))
             report.write("\nAssembly: " + str(exc))
         else:
+            yield "Adding moving parts", 78.0, 0, 1
+            add_moving_parts(root, report)
             if materials and path.with_name("materials.json").is_file():
                 # Per-wheel inputs (front/rear selectors) exist only on assembled wheel parts.
                 surface_report = yield from _scaled(surfaces_module().surface_steps(None, path),
@@ -322,6 +366,88 @@ def register():
             self.report({"ERROR"}, str(value))
             return {"CANCELLED"}
 
+    class AnsGaragePreferences(bpy.types.AddonPreferences):
+        bl_idname = __name__
+        tire_library: StringProperty(name="Tire library folder", subtype="DIR_PATH",
+                                     description="Folder made by Frosty: Tools > An's Garage > Export tire library...")
+
+        def draw(self, context):
+            self.layout.prop(self, "tire_library")
+            self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export tire library...")
+
+    class IMPORT_SCENE_OT_ans_garage_locate_tires(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_locate_tires"
+        bl_label = "Locate tire library"
+        filename_ext = ".json"
+        filter_glob: StringProperty(default="tires.json", options={"HIDDEN"})
+
+        def execute(self, context):
+            folder = str(Path(self.filepath).parent)
+            if tire_index(folder) is None:
+                _TIRE_INDEX.pop(folder, None)
+                self.report({"ERROR"}, "Not a tire library (tires.json from An's Garage for Frosty)")
+                return {"CANCELLED"}
+            context.scene["ans_garage_tire_library"] = folder
+            addon = context.preferences.addons.get(__name__)
+            if addon and getattr(addon, "preferences", None) is not None:
+                addon.preferences.tire_library = folder
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_tire(bpy.types.Operator):
+        bl_idname = "object.ans_garage_tire"
+        bl_label = "Choose tires"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty()
+        tire: StringProperty()
+        lettering: StringProperty(default="Plain")
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            folder = tire_library(context)
+            if root is None or (self.tire != "Stock" and not folder):
+                self.report({"ERROR"}, "Locate the tire library first")
+                return {"CANCELLED"}
+            try:
+                notes = tires_module().apply_tire(root, self.tire, self.lettering, folder)
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            if notes:
+                self.report({"WARNING"}, "; ".join(notes))
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_moving_parts(bpy.types.Operator):
+        bl_idname = "object.ans_garage_moving_parts"
+        bl_label = "Add moving parts"
+        bl_description = ("Add sliders for the doors, windows, hood, boot and active aero, from the game's animation data "
+                          "(for cars imported before 1.0.0)")
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            lines = add_moving_parts(root, bpy.data.texts.get("An's Garage assembly report"))
+            self.report({"INFO"}, lines[0] if lines else "Done")
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_close_moving_parts(bpy.types.Operator):
+        bl_idname = "object.ans_garage_close_moving_parts"
+        bl_label = "Close all"
+        bl_description = "Set every moving part slider of this car to 0"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            obj, controls = animation_module().controls(root) if root else (None, [])
+            for c in controls:
+                obj[c["Key"]] = 0.0
+            if obj is not None:
+                obj.update_tag()
+            return {"FINISHED"}
+
     class WM_OT_ans_garage_cancel_import(bpy.types.Operator):
         bl_idname = "wm.ans_garage_cancel_import"
         bl_label = "Cancel vehicle import"
@@ -339,7 +465,8 @@ def register():
         filter_glob: StringProperty(default="manifest.json", options={"HIDDEN"})
         def execute(self, context):
             try:
-                assembly_module().assemble_existing(self.filepath)
+                root, _ = assembly_module().assemble_existing(self.filepath)
+                add_moving_parts(root, bpy.data.texts.get("An's Garage assembly report"))
                 self.report({"INFO"}, "Assembly created. See the An's Garage sidebar and assembly report.")
                 return {"FINISHED"}
             except Exception as exc:
@@ -542,6 +669,44 @@ def register():
                                               depress=not variant.hide_viewport)
                             op.root, op.group, op.option = root.name, key, variant["unbound_option"]
                             op.preset = ""  # Explicit even when replacing an already-loaded older add-on.
+                current = json.loads(root.get("ans_garage_tire_json") or '{"Name": "Stock", "Lettering": "Plain"}')
+                tires = box.box()
+                tires.label(text="Tires: %s%s" % (current["Name"], ", brand lettering" if current["Name"] != "Stock"
+                                                  and current["Lettering"] == "Brand" else ""), icon="MESH_TORUS")
+                folder = tire_library(context)
+                index = tire_index(folder) if folder else None
+                if index is None:
+                    tires.operator("import_scene.ans_garage_locate_tires", text="Locate tire library…")
+                else:
+                    grid = tires.grid_flow(columns=2, align=True)
+                    for name in ["Stock"] + tires_module().tire_names(index):
+                        op = grid.operator("object.ans_garage_tire", text=name if name != "Stock" else "Stock (car's own)",
+                                           depress=current["Name"] == name)
+                        op.root, op.tire, op.lettering = root.name, name, current["Lettering"]
+                    if current["Name"] != "Stock":
+                        row = tires.row(align=True)
+                        for lettering, text in (("Plain", "Plain sidewall"), ("Brand", "Brand lettering")):
+                            op = row.operator("object.ans_garage_tire", text=text, depress=current["Lettering"] == lettering)
+                            op.root, op.tire, op.lettering = root.name, current["Name"], lettering
+                moving = box.box()
+                obj, controls = animation_module().controls(root)
+                if obj is not None and controls:
+                    row = moving.row()
+                    row.label(text="Moving parts (0 closed, 1 open)", icon="ARMATURE_DATA")
+                    row.operator("object.ans_garage_close_moving_parts", text="Close all").root = root.name
+                    for group in animation_module().GROUPS:
+                        rows = [c for c in controls if c["Group"] == group]
+                        if not rows:
+                            continue
+                        moving.label(text=group)
+                        col = moving.column(align=True)
+                        for c in rows:
+                            if c["Key"] in obj:
+                                col.prop(obj, '["%s"]' % c["Key"], text=c["Label"], slider=True)
+                elif root.get("ans_garage_moving_parts_json"):
+                    moving.label(text="Moving parts: none in this car's data", icon="ARMATURE_DATA")
+                else:
+                    moving.operator("object.ans_garage_moving_parts", icon="ARMATURE_DATA").root = root.name
                 box.label(text="See An's Garage assembly report for limits")
             obj = context.active_object
             if obj and obj.get("unbound_materials_path"):
@@ -564,7 +729,9 @@ def register():
         self.layout.operator(IMPORT_SCENE_OT_ans_garage_material_slots.bl_idname, text="An's Garage: restore material slots")
 
     global _registered_classes, _menu
-    _registered_classes = [IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
+    _registered_classes = [AnsGaragePreferences, IMPORT_SCENE_OT_ans_garage_locate_tires, OBJECT_OT_ans_garage_tire,
+                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
+                           IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
                            IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,
                            OBJECT_OT_ans_garage_variant, OBJECT_OT_ans_garage_preset,

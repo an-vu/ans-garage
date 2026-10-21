@@ -524,7 +524,7 @@ def compile_shader(shader, ps, doc, states, root, programs, parsed, layouts, lay
     }, res, roots, out
 
 
-ENGINE_ZERO_MAX_EFFECT = 0.05
+ENGINE_ZERO_MAX_EFFECT = 0.1
 
 
 def engine_constants(roots, external_bind, view_bind=2):

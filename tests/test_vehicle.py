@@ -25,7 +25,7 @@ def check(name, ok, detail=None):
     print(("PASS " if ok else "FAIL ") + name + ("" if detail is None else "  " + json.dumps(detail, ensure_ascii=False)[:600]))
 
 
-check("Add-on 0.8.1", addon.bl_info["version"] == (0, 8, 1))
+check("Add-on 1.0.0", addon.bl_info["version"] == (1, 0, 0))
 started = time.perf_counter()
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export / "manifest.json"))
 import_seconds = time.perf_counter() - started
@@ -55,6 +55,47 @@ for g in groups:
 ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Every preset and part option switches; Stock restored", ok and addon.assembly_module().current_preset(root) == "Stock",
       {"Presets": len(presets), "Options": switched})
+moving = json.loads(root.get("ans_garage_moving_parts_json") or "null") if root else None
+check("Moving parts built from the source graph", moving is not None and all(c["Attached"] > 0 for c in moving["Controls"]),
+      moving and {"Controls": ["%s/%s" % (c["Group"], c["Label"]) for c in moving["Controls"]], "Issues": moving["Issues"],
+                  "Skipped": [x["Control"] for x in moving["Skipped"]]})
+if moving and moving["Controls"]:
+    ctrl = bpy.data.objects[root["ans_garage_controls"]]
+    bones = [(a, pb) for a in bpy.data.objects if a.type == "ARMATURE" for pb in a.pose.bones
+             if any(c.name == "An's Garage moving part" for c in pb.constraints)]
+    items = [o for o in root.all_objects if o.get("ans_garage_rest_matrix_json")]
+
+    def state():
+        ctrl.update_tag()
+        bpy.context.view_layer.update()
+        return [a.matrix_world @ pb.matrix for a, pb in bones] + [o.matrix_world.copy() for o in items]
+
+    def apart(a, b):
+        return max(abs(x - y) for m, n in zip(a, b) for r, q in zip(m, n) for x, y in zip(r, q))
+
+    for c in moving["Controls"]:
+        ctrl[c["Key"]] = 0.0
+    closed = state()
+    # At 0 the rig must reproduce the imported car exactly: bones as with their constraints muted, items at their
+    # recorded rest matrices.
+    for a, pb in bones:
+        for con in pb.constraints:
+            con.mute = con.name == "An's Garage moving part"
+    unrigged = state()
+    for a, pb in bones:
+        for con in pb.constraints:
+            con.mute = False
+    rest_items = [json.loads(o["ans_garage_rest_matrix_json"]) for o in items]
+    error = max([apart(closed[:len(bones)], unrigged[:len(bones)])] +
+                [apart([o.matrix_world], [m]) for o, m in zip(items, rest_items)] + [0.0])
+    check("Sliders at 0 leave the car as imported", error < 1e-4, {"MaxDifference": error, "Bones": len(bones), "Items": len(items)})
+    moved = {}
+    for c in moving["Controls"]:
+        ctrl[c["Key"]] = 1.0
+        moved[c["Label"]] = round(apart(state(), closed), 3)
+        ctrl[c["Key"]] = 0.0
+    state()
+    check("Every slider moves its parts", all(v > 0.01 for v in moved.values()), moved)
 s = report["Summary"]
 check("No surface build issues", s["IssueSlots"] == 0, s["IssueReasons"])
 visible = [o for o in meshes if o.visible_get() and o.get("unbound_mesh_id")]
@@ -76,7 +117,7 @@ check("Visible surfaces built", True, {"Visible": len(occupied), "Built": built,
 check("Visible unbuilt surfaces (reasons)", True, dict(unbuilt))
 saved = out_dir / ("vehicle-%s.blend" % label)
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "0.8.1", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
+result = {"Version": "1.0.0", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / ("vehicle-%s.json" % label)).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

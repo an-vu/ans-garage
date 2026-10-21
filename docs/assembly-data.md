@@ -14,6 +14,27 @@ Collections use item types, location, source variant names and preset membership
 
 The first source permutation is an explicit preview policy. Source template SubItems allow stock/body-kit selection. Full engine restrictions and offsets are retained raw, not evaluated. Arbitrary compatible customization combinations are therefore not certified.
 
+## Moving parts
+
+`blender/ans_garage/unbound_animation.py` reads the vehicle blueprint's animation graph from `assembly.json` (field names are Frosty field-name hashes; the module computes them from the names).
+
+- **Doors, windows, hood, boot:**
+  - `NamedAnimationPropertyEntityData` (`sharedvehiclerigpropertyinfo_ldooropen`, ...) `.Value` drives `TransformAnimationEntityData.T`.
+  - The entity's six curves (degrees, metres; `CurveType_Basic_Linear` or `CurveType_Zero`) move the part about its `Origin`.
+  - `.Transform` reaches the part through `AnimateComponentEntityData` and a link connection.
+- **Active aero:**
+  - `AnimationComponentData` drives `SequenceEntityData.ExternalTime` (the airbrake through a `MathEntityData`).
+  - The sequence's `TransformPartPropertyTrackData` keys live in resources. The exporter writes them to `assembly.json` as `TrackData`: 6 floats per key (time, value, in-tangent x/y, out-tangent x/y; cubic Hermite).
+  - Tracks reach a component's `Transform` (Murciélago vents) or `TransformOffset` (spoiler base and flap) through:
+    - `TransformBlendEntityData.In2`, weighted by the spoiler component's `AnimationExtent`: stock item 1, aftermarket 0;
+    - `TransformMultiplierEntityData` (wing in `In1`, airbrake in `In2`);
+    - `RealmTransformCombinerEntityData.ClientTransform`.
+- **Geometry:**
+  - body parts follow bone `PART_<i>`, where `i` is the part's index in `RaceVehiclePhysicsComponentData.Parts`;
+  - item meshes follow their component (via `BlueprintComponents`), including items on child components (door mirrors on a door).
+- **One convention not stated by the data:** the Euler order (yaw Y, then pitch X, then roll Z). Only orders that apply roll last open the P1's dihedral doors upward; the remaining candidates differ by under 5 cm.
+- **Not reproduced:** the speed logic that sets the wing's sequence time, `NormalisedRotationAnimationEntityData` (body roll) and `NormalisedTranslationAnimationEntityData` (exhaust shake).
+
 ## Experimental interpretation
 
 - `Rotate` is interpreted as 180 degrees around source Y. This produced outward-facing rim badges in the Murciélago, but the engine implementation was not recovered.

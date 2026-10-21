@@ -74,7 +74,7 @@ namespace AnsGarage
         public AssemblyRun(Manifest source,string directory)
         {
             manifest=source;output=directory;entries=App.AssetManager.EnumerateEbx().ToList();
-            Document=new JObject {{"Schema",1},{"PluginVersion","0.8.1"},{"Scope",source.Scope},{"CreatedUtc",DateTime.UtcNow.ToString("o")},
+            Document=new JObject {{"Schema",1},{"PluginVersion","1.0.0"},{"Scope",source.Scope},{"CreatedUtc",DateTime.UtcNow.ToString("o")},
                 {"Nodes",nodes},{"Components",components},{"Items",items},{"Wheels",wheels},{"MeshUses",meshUses},{"Issues",issues},
                 {"CoordinateSystem","Frostbite authored XYZ, Y up. Matrices are right/up/forward/translation vectors; meters."},
                 {"Policy","Source graph, rest placement and explicit item references. Runtime suspension simulation, shader deformation and arbitrary compatibility rules are not evaluated."}};
@@ -154,6 +154,21 @@ namespace AnsGarage
             var objects=asset.Objects.ToList();
             Document["Vehicle"]=new JObject {{"Asset",vehicle.Name},{"FileGuid",vehicle.Guid},{"Node",Capture(vehicle.Guid,root)}};
             foreach(var obj in objects)Capture(vehicle.Guid,obj);
+            // Moving parts: sequence property tracks keep their keys in resources (6 floats per key:
+            // time, value, in-tangent x/y, out-tangent x/y). Stored as plain numbers next to the graph.
+            var tracks=new JObject();Document["TrackData"]=tracks;
+            foreach(var obj in objects.Where(o=>o.GetType().Name.EndsWith("PropertyTrackData"))) {
+                var r=Batch.Get(obj,"Resource");if(!(r is ResourceRef))continue;
+                ulong rid=(ulong)(ResourceRef)r;string key=rid.ToString("x16");
+                if(rid==0||tracks[key]!=null)continue;
+                var res=App.AssetManager.GetResEntry(rid);
+                if(res==null){Issue(key,"Track resource not found.");continue;}
+                using(var s=App.AssetManager.GetRes(res)) {
+                    var ms=new MemoryStream();s.CopyTo(ms);var b=ms.ToArray();var floats=new JArray();
+                    for(int i=0;i+4<=b.Length;i+=4)floats.Add(BitConverter.ToSingle(b,i));
+                    tracks[key]=new JObject {{"Name",res.Name},{"Floats",floats}};
+                }
+            }
             var entity=Resolve(Batch.Get(root,"Object"));
             var hash=Convert.ToUInt32(Batch.Get(Batch.Get(entity,"VehicleBundleHash"),"Hash"));
             var parents=new Dictionary<string,string>();

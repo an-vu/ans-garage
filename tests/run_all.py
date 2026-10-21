@@ -1,6 +1,6 @@
 """Run the Blender test suite with paths from settings.json.
 
-usage: python tests/run_all.py [existing] [fresh] [nodes] [vehicle:<export folder name>] ...
+usage: python tests/run_all.py [existing] [fresh] [nodes] [tires] [vehicle:<export folder name>] ...
 With no arguments: existing, fresh and nodes on the Murciélago test data. Results go to <validation_dir>/latest.
 Needs (in test_data_dir): input-merci-tires-0.5.0.blend, Murcielago-Export, Murcielago-Export-bare.
 The install ZIP for "fresh" comes from tools/package_release.py (<release_dir>/<version>/AnsGarage-Blender-<version>.zip).
@@ -50,6 +50,10 @@ def main(tests):
         elif t == "nodes":
             ok &= blender(["--python", str(HERE / "test_node_compiler.py"), "--", str(REPO / "blender" / "ans_garage"),
                            str(DATA / "Murcielago-Export" / "materials.json"), str(OUT / "node-compiler.json")], "nodes")
+        elif t == "tires":
+            ok &= blender(["--python", str(HERE / "test_tires.py"), "--", str(REPO / "blender"),
+                           str(setting("exports_dir") / "murcielago"), str(setting("exports_dir") / "tire-library"),
+                           str(OUT / "tires")], "tires")
         elif t.startswith("vehicle:"):
             name = t.split(":", 1)[1]
             ok &= blender(["--python", str(HERE / "test_vehicle.py"), "--", str(REPO / "blender"),

@@ -15,6 +15,61 @@ using AnsGarage;
 // Runs An's Garage for Frosty without the Frosty window (read-only game access; never prints keys).
 // Modes and arguments: see tools/headless/export.ps1.
 class Harness {
+// Shallow, readable dump of an EBX object: primitives, enum names, external references as asset names,
+// internal references followed (depth-limited).
+static JToken Dump(object o, FrostySdk.IO.EbxAsset asset, int depth) {
+ if(o==null) return null;
+ if(o is string || o.GetType().IsPrimitive) return JToken.FromObject(o);
+ if(o.GetType().Name=="CString") return o.ToString();
+ if(o.GetType().IsEnum) return o.ToString();
+ if(o is FrostySdk.Ebx.PointerRef) {
+  var p=(FrostySdk.Ebx.PointerRef)o;
+  if(p.Type==FrostySdk.IO.PointerRefType.External) { var e=App.AssetManager.GetEbxEntry(p.External.FileGuid); return "-> "+(e==null?p.External.FileGuid.ToString():e.Name); }
+  if(p.Type==FrostySdk.IO.PointerRefType.Internal && depth<4) return Dump(p.Internal,asset,depth+1);
+  return p.Type.ToString();
+ }
+ if(o is System.Collections.IList) { var arr=new JArray(); int n=0; foreach(var x in (System.Collections.IList)o){ if(n++>=24) break; arr.Add(Dump(x,asset,depth+1)); } return arr; }
+ if(depth>=5) return o.GetType().Name;
+ var obj=new JObject{{"__Type",o.GetType().Name}};
+ foreach(var prop in o.GetType().GetProperties()) {
+  if(prop.GetIndexParameters().Length>0 || prop.Name.StartsWith("__")) continue;
+  object v; try { v=prop.GetValue(o); } catch { continue; }
+  if(v is Guid) v=v.ToString();
+  try { obj[prop.Name]=Dump(v,asset,depth+1); } catch { obj[prop.Name]=v==null?null:v.ToString(); }
+ }
+ return obj;
+}
+// Instance id of an EBX object: its exported GUID, or "internal:<n>".
+static string InstanceId(object o) {
+ var p=o.GetType().GetProperty("__InstanceGuid"); if(p==null) return "?";
+ dynamic g=p.GetValue(o);
+ return g.IsExported ? ((Guid)g.ExportedGuid).ToString() : "internal:"+(int)g.InternalId;
+}
+static System.Collections.Generic.HashSet<ulong> Resources=new System.Collections.Generic.HashSet<ulong>();
+// Flat dump of one object: every field, lists in full, internal references as "#<instance id>", resources as "res:<rid>".
+static JToken Flat(object o, int depth) {
+ if(o==null) return null;
+ if(o is string || o.GetType().IsPrimitive) return JToken.FromObject(o);
+ if(o.GetType().Name=="CString") return o.ToString();
+ if(o.GetType().IsEnum) return o.ToString();
+ if(o is Guid) return o.ToString();
+ if(o is FrostySdk.Ebx.ResourceRef) { ulong rid=(ulong)(FrostySdk.Ebx.ResourceRef)o; if(rid!=0) Resources.Add(rid); return "res:"+rid.ToString("x16"); }
+ if(o is FrostySdk.Ebx.PointerRef) {
+  var p=(FrostySdk.Ebx.PointerRef)o;
+  if(p.Type==FrostySdk.IO.PointerRefType.External) { var e=App.AssetManager.GetEbxEntry(p.External.FileGuid); return "-> "+(e==null?p.External.FileGuid.ToString():e.Name)+" #"+p.External.ClassGuid; }
+  if(p.Type==FrostySdk.IO.PointerRefType.Internal) return "#"+InstanceId(p.Internal);
+  return null;
+ }
+ if(o is System.Collections.IList) { var arr=new JArray(); foreach(var x in (System.Collections.IList)o) arr.Add(Flat(x,depth+1)); return arr; }
+ if(depth>=8) return o.GetType().Name;
+ var obj=new JObject{{"__Type",o.GetType().Name}};
+ foreach(var prop in o.GetType().GetProperties()) {
+  if(prop.GetIndexParameters().Length>0 || prop.Name.StartsWith("__")) continue;
+  object v; try { v=prop.GetValue(o); } catch { continue; }
+  try { obj[prop.Name]=Flat(v,depth+1); } catch { obj[prop.Name]=v==null?null:v.ToString(); }
+ }
+ return obj;
+}
 class Logger : FrostySdk.Interfaces.ILogger {
 public void Log(string text,params object[] args){Console.WriteLine(text,args);}
 public void LogWarning(string text,params object[] args){Console.WriteLine(text,args);}
@@ -60,6 +115,61 @@ static void Run(string[] a) {
   var sw=System.Diagnostics.Stopwatch.StartNew(); var rows=new JArray(VehicleCatalog.BuildAndCache(m=>Console.WriteLine(m)).Select(v=>new JObject{{"Name",v.Name},{"ShortName",v.ShortName},{"Folder",v.Folder},{"Blueprint",v.Blueprint},{"Item",v.Item}}));
   File.WriteAllText(a[5],rows.ToString(Formatting.Indented));
   Console.WriteLine("CATALOG "+rows.Count+" vehicles in "+sw.Elapsed.TotalSeconds.ToString("0")+" s; localization: "+Names.Status+"; cached: "+(VehicleCatalog.Cached()!=null));
+  return;
+ }
+ if(mode=="tires") {
+  // Tire library (Falken and Toyo): a[5] = output folder.
+  var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));
+  var index=TireLibrary.Export(Path.GetFullPath(a[5]),t);
+  Console.WriteLine("TIRES "+((JArray)index["Tires"]).Count+" items, "+((JObject)index["Blueprints"]).Count+" meshes");
+  return;
+ }
+ if(mode=="assets") {
+  // EBX assets whose name contains any of the terms (term1|term2), with their types.
+  var terms=a[5].Split('|');
+  var found=new JArray(am.EnumerateEbx().Where(e=>terms.Any(t=>e.Name.IndexOf(t,StringComparison.OrdinalIgnoreCase)>=0))
+   .OrderBy(e=>e.Name,StringComparer.OrdinalIgnoreCase).Select(e=>new JObject{{"Name",e.Name},{"Type",e.Type},{"Guid",e.Guid.ToString()}}));
+  File.WriteAllText(a[6],found.ToString(Formatting.Indented));
+  Console.WriteLine("ASSETS "+found.Count);
+  return;
+ }
+ if(mode=="items") {
+  // Every EBX asset of one type (e.g. TiresItemData): in-game names plus a shallow field dump with referenced asset
+  // names, to study how the game structures an item family.
+  var found=new JArray();
+  foreach(var e in am.EnumerateEbx().Where(x=>x.Type==a[5])) {
+   try {
+    var asset=am.GetEbx(e);
+    Func<object,object> resolve=p=>Batch.Resolve((FrostySdk.Ebx.PointerRef)p,g=>g==e.Guid?asset:am.GetEbx(am.GetEbxEntry(g)));
+    found.Add(new JObject{{"Asset",e.Name},{"RootGuid",asset.RootInstanceGuid.ToString()},{"UI",Names.ItemUi(asset.RootObject,resolve)},{"Fields",Dump(asset.RootObject,asset,0)}});
+   } catch(Exception ex) { found.Add(new JObject{{"Asset",e.Name},{"Error",ex.Message}}); }
+  }
+  File.WriteAllText(a[6],found.ToString(Formatting.Indented));
+  Console.WriteLine("ITEMS "+found.Count);
+  return;
+ }
+ if(mode=="dump") {
+  // Every object of the named assets (name1|name2), keyed by instance id, to follow a blueprint's connections.
+  var result=new JObject();
+  foreach(var name in a[5].Split('|')) {
+   var e=am.GetEbxEntry(name);
+   if(e==null) { result[name]="not found"; continue; }
+   var asset=am.GetEbx(e);
+   var objects=new JObject();
+   foreach(var o in asset.Objects) objects[InstanceId(o)]=Flat(o,0);
+   result[e.Name]=new JObject{{"Type",e.Type},{"Root",InstanceId(asset.RootObject)},{"Objects",objects}};
+  }
+  // Referenced resources (e.g. sequence key data) as hex, with their resource type.
+  var res=new JObject();
+  foreach(var rid in Resources) {
+   var entry=am.GetResEntry(rid);
+   if(entry==null) { res[rid.ToString("x16")]="not found"; continue; }
+   using(var s=am.GetRes(entry)) { var ms=new MemoryStream(); s.CopyTo(ms);
+    res[rid.ToString("x16")]=new JObject{{"Name",entry.Name},{"Type",entry.ResType.ToString("x8")},{"Size",ms.Length},{"Hex",BitConverter.ToString(ms.ToArray()).Replace("-","")}}; }
+  }
+  result["Resources"]=res;
+  File.WriteAllText(a[6],result.ToString(Formatting.Indented));
+  Console.WriteLine("DUMPED "+result.Count);
   return;
  }
  if(mode=="hashes") {

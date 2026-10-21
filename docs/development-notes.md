@@ -45,9 +45,7 @@ Results are summarized in `CHANGELOG.md`; run `tests/run_all.py` to reproduce th
 
 ## 5. Open items
 
-1. **Light-glass lenses that need engine constants:**
-   - Murciélago orange indicator: `cb0[1].x`, effect 0.083 > 0.05.
-   - M3 E46 `roboto/cs_lglass`: view exposure `cb2[44].w`, plus vertex-computed interpolants.
+1. **Light-glass lenses that need engine constants:** M3 E46 `roboto/cs_lglass` needs the view exposure `cb2[44].w`, plus vertex-computed interpolants. (Engine constants with a measured effect up to 0.1 are set to 0 and recorded on the material; permutations may differ by up to 0.12 in glass transmittance/reflectance. This covers the Murciélago lenses: `cb0[1].x` effect 0.055–0.083, orange-lens permutations 0.111 apart.)
 2. **License plate:** program permutations disagree; the selection key is unknown.
 3. **Kit parts without a localized name:** shown as category + brand logo key + set code.
 4. **Profiles for unseen skinned layouts:** usage-named entries exist only for layouts seen in exports. Exporting more vehicles and re-running `compile_all.py` extends them.

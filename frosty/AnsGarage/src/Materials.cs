@@ -61,7 +61,7 @@ namespace AnsGarage
             output=directory;
             loader=load ?? (g=> { var e=App.AssetManager.GetEbxEntry(g); return e==null?null:App.AssetManager.GetEbx(e); });
             entryLookup=lookup ?? (g=>App.AssetManager.GetEbxEntry(g));
-            Document=new JObject {{"Schema", 1}, {"PluginVersion", "0.8.1"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
+            Document=new JObject {{"Schema", 1}, {"PluginVersion", "1.0.0"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
         }
         public void Issue(string path,Exception ex) { Issue(path,ex.GetType().Name+": "+ex.Message); }
         public void Issue(string path,string message) { issues.Add(new JObject {{"Path", path}, {"Message", message}}); }
@@ -292,7 +292,7 @@ namespace AnsGarage
         public void SaveTextureIndex(string note)
         {
             Directory.CreateDirectory(output);
-            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion","0.8.1"},{"Scope","shader defaults"},
+            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion","1.0.0"},{"Scope","shader defaults"},
                 {"Note",note},{"Textures",textureRecords},{"Issues",issues}});
         }
         public void Save(bool completed=false)

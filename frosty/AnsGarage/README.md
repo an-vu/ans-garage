@@ -14,7 +14,7 @@ C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It expo
 
 | Stage | Output |
 |---|---|
-| Assembly: blueprint, wheels, parts, presets, shared tires/brakes, in-game names | `assembly.json` |
+| Assembly: blueprint, wheels, parts, presets, shared tires/brakes, in-game names, moving-part keyframes | `assembly.json` |
 | Geometry: LOD0 binary FBX per mesh, meters, hierarchy kept | `parts/*.fbx`, `manifest.json` |
 | Materials: source material graph, original DDS textures | `materials.json`, `textures/` |
 | Shader default textures (shared by all vehicles) | `shader-defaults/` |
@@ -24,6 +24,8 @@ Import `manifest.json` in Blender with **File → Import → An's Garage vehicle
 The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\AnsGarage\vehicle-catalog.json`. **Refresh list** re-reads it.
 
 **Tools → An's Garage → Add assembly to existing export...** adds or refreshes assembly data in an older export folder.
+
+**Tools → An's Garage → Export tire library...** exports the Falken and Toyo tires once, for the Blender add-on's Tires section.
 
 ## Build
 

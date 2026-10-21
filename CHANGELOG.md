@@ -2,6 +2,32 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.0
+
+- **Moving parts:** each car gets a 0–1 slider per moving part in the An's Garage sidebar: 0 closed, 1 fully open, 0.5 halfway, keyframable like any property. **Close all** sets them back to 0.
+  - **Active aero:** rear wings, their airbrake stage, and the Murciélago's shoulder air vents.
+  - **Doors** (scissor, butterfly or conventional), **windows**, **hood** and **boot**.
+- **The motion is the game's own:**
+  - the hinge points, angles, travel and ease curves come from the vehicle blueprint's animation graph;
+  - parts mounted on a moving part follow it, such as the Murciélago's door mirrors on its doors;
+  - only the stock spoiler moves; aftermarket spoilers stay still, as in the game.
+- **Not reproduced:** the game's speed logic (the wing rising above a set speed), body roll and exhaust shake.
+- **Sliders at 0 leave the car exactly as imported.**
+- **Cars imported with an earlier version:** use **Add moving parts** in the sidebar. Wings and vents also need the export re-run with An's Garage for Frosty 1.0.0, which writes their keyframes into `assembly.json` (`TrackData`).
+- Results: Murciélago 7 sliders, P1 7, Chiron Sport 6, each moving its parts as in the game data.
+
+## 0.9.0
+
+- **Tire library:** swap a car's tires for Falken or Toyo tires at the car's own tire size, with a plain or brand-lettered sidewall.
+  - Export the library once in Frosty: **Tools → An's Garage → Export tire library...**
+  - Then choose the tires in the sidebar's Tires section. **Stock** brings the car's own tires back.
+- **Light glass:** more headlight and taillight lenses build, including the Murciélago's orange taillight glass, which used to render as a black block.
+  - A constant the game sets while running is taken as 0 when it changes the result by at most 0.1 (was 0.05).
+  - Light-glass shader versions may differ by up to 0.12 in transmittance and reflectance.
+  - Each material records the value it assumed and the difference it measured.
+  - Lights render switched off (no glow).
+- **A moved .blend file** finds its export textures again instead of failing on a broken relative path.
+
 ## 0.8.1
 
 - **Blender stays usable while a car imports:**

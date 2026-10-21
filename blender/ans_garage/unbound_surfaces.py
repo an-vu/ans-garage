@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-VERSION = "0.8.1"
+VERSION = "1.0.0"
 PROFILE = json.loads(Path(__file__).with_name("tire_shader_evidence.json").read_text(encoding="utf-8"))
 CORE_TEXTURES = ("RGB_Color_A_Smoothness", "RG_Normal_A_AO")
 
@@ -358,7 +358,10 @@ def surface_steps(objects=None, export_path=None):
                 continue  # Preserve user node edits, including edits to a generated graph.
             try:
                 state = json.loads(material["unbound_source_json"])
-                if not supported(state):
+                if obj.get("unbound_texture_overrides_json"):
+                    # Per-object shader texture overrides (tire library lettering): parameter -> texture asset.
+                    state["TextureOverrides"] = json.loads(obj["unbound_texture_overrides_json"])
+                if not supported(state) or obj.get("unbound_compiled_profile_only"):
                     profile_slot(obj, index, slot, material, state, export_path, documents, basis_cache,
                                  material_cache, caches, report)
                     continue
@@ -442,7 +445,8 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         return
     if ("images", str(root)) not in caches:
         import bpy
-        caches[("images", str(root))] = P.Images(root, [bpy.context.scene.get("unbound_shader_defaults_path", "")])
+        caches[("images", str(root))] = P.Images(root, [bpy.context.scene.get("unbound_shader_defaults_path", ""),
+                                                        obj.get("unbound_override_textures", "")])
         caches[("runtime", str(root))] = P.runtime_values(root / "assembly.json")
     images = caches[("images", str(root))]
     runtime, runtime_notes, assembly_doc = caches[("runtime", str(root))]
@@ -456,7 +460,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         live_names = {e["Name"] for e in entry["Externals"]
                       if runtime.get(e["Key"].casefold(), {}).get("Field") == "PaintFacingColorParameter"}
         pkey = (shader, material.get("unbound_state_key"), str(root), id(entry), tuple(sorted(consts.items())),
-                tuple(sorted(rename.items())))
+                tuple(sorted(rename.items())), json.dumps(state.get("TextureOverrides"), sort_keys=True))
         if pkey not in caches:
             caches[pkey] = P.plan(entry, state, runtime, live_names, images, root, consts, rename)
         if caches[pkey]["issues"]:

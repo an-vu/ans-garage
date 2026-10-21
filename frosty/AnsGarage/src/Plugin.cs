@@ -19,11 +19,12 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("AnsGarage")]
-[assembly: AssemblyVersion("0.8.1.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
 [assembly: PluginDisplayName("An's Garage for Frosty")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("0.8.1.0")]
+[assembly: PluginVersion("1.0.0.0")]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
+[assembly: RegisterMenuExtension(typeof(AnsGarage.TireLibraryMenu))]
 
 namespace AnsGarage
 {
@@ -180,7 +181,7 @@ namespace AnsGarage
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "0.8.1";
+        public string PluginVersion = "1.0.0";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion, Blueprint;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
@@ -218,6 +219,8 @@ namespace AnsGarage
         private readonly Dictionary<string,MeshRecord> meshes = new Dictionary<string,MeshRecord>();
         // Chosen RaceVehicleBlueprint when one folder holds several vehicles (e.g. a base car and its special edition).
         public string Blueprint { get { return Manifest.Blueprint; } set { Manifest.Blueprint = value; } }
+        // Library exports (shared parts such as the tire library) have no vehicle blueprint and no per-car shader defaults.
+        public bool Library;
         public Batch(string scope, string skeletonAsset, string directory)
         {
             prefix=scope; skeleton=skeletonAsset; output=directory;
@@ -346,7 +349,7 @@ namespace AnsGarage
                 catch(Exception ex) { Manifest.Errors.Add(entry.Name + ": " + ex.Message); }
             }
             AssemblyRun assembly=null;
-            if(!Cancel) Time("Assembly", () => {
+            if(!Cancel && !Library) Time("Assembly", () => {
                 try {assembly=new AssemblyRun(Manifest,output) {CancellationRequested=()=>Cancel,Blueprint=Blueprint};assembly.Run();}
                 catch(Exception ex) {if(assembly!=null){assembly.Issue("run",ex.Message);assembly.Save();}Manifest.Errors.Add("Assembly: "+ex.Message);}
             });
@@ -374,7 +377,7 @@ namespace AnsGarage
                     }
                 } catch(Exception ex) {materialRun.Issue("run",ex);}
                 finally {materialRun.Save(true);}
-                if(!Cancel) {
+                if(!Cancel && !Library) {
                     task.Update("Shader default textures");
                     Time("Shader default textures", () => {
                         try { ExportShaderDefaults(output); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }

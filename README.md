@@ -27,7 +27,7 @@ No game data is stored here: no textures, meshes, shader bytecode or disassembly
 2. Install An's Garage for Blender: run `tools/package_release.py` (or zip `blender/ans_garage`), then in Blender use **Preferences → Add-ons → Install from Disk**.
 3. In Frosty, choose **Tools → An's Garage → Export vehicle...**, then **Choose vehicle...**, then **Export...**.
 4. In Blender, choose **File → Import → An's Garage vehicle (.json)**, then pick the export's `manifest.json`.
-5. Press **N → An's Garage** for presets, parts by in-game name, and vehicle paint.
+5. Press **N → An's Garage** for presets, parts by in-game name, vehicle paint, tires and moving parts (0–1 sliders for doors, windows, hood, boot and active aero).
 
 ## Development
 

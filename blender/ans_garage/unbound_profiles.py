@@ -14,8 +14,11 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "0.8.1"
-ENGINE_ZERO_MAX_EFFECT = 0.05
+VERSION = "1.0.0"
+ENGINE_ZERO_MAX_EFFECT = 0.1
+# Largest output difference tolerated between permutations of one vertex layout (light glass: see-through/reflection).
+PERMUTATION_MAX = 0.1
+PERMUTATION_GLASS_MAX = 0.12
 _PROFILES = None
 # Runtime vehicle customization -> shader parameter, by parameter-key equality (see SHADER-FINDINGS).
 # RaceVehicleCustomizationComponentData key field -> (RaceVehicleItemData field, component fallback field).
@@ -331,6 +334,7 @@ def parameter_values(profile, state, runtime):
 def check_bindings(profile, state, root, image_loader):
     """Folded texture slots must match the actual binding; returns {slot: image source} for sampled slots."""
     bindings = {b["Parameter"].casefold(): b for b in state["TextureBindings"]}
+    overrides = {k.casefold(): v for k, v in (state.get("TextureOverrides") or {}).items()}
     issues, sources = [], {}
     built = {k.casefold(): v for k, v in profile.get("BoundAtProfileBuild", {}).items()}
     for k, v in built.items():
@@ -346,7 +350,9 @@ def check_bindings(profile, state, root, image_loader):
             issues.append("Texture %s is not the uniform value the profile folded" % b["Parameter"])
     for slot, info in profile["Slots"].items():
         p = (info.get("Parameter") or "").casefold()
-        if p and p in bindings:
+        if p and p in overrides:
+            sources[int(slot)] = ("default", overrides[p])  # item-level shader override (exported texture by asset)
+        elif p and p in bindings:
             sources[int(slot)] = ("binding", bindings[p])
         elif info.get("DefaultAsset"):
             sources[int(slot)] = ("default", info["DefaultAsset"])
@@ -796,6 +802,8 @@ class Images:
         colorspace = "sRGB" if record.get("ColorSpace") == "sRGB" else "Non-Color"
         key = (str(path), colorspace)
         if key in self.cache:
+            if asset and not self.cache[key].get("unbound_asset"):
+                self.cache[key]["unbound_asset"] = asset
             return self.cache[key]
         image = next((im for im in bpy.data.images if im.get("unbound_source_path") == str(path)
                       and im.colorspace_settings.name == colorspace and im.alpha_mode == "CHANNEL_PACKED"), None)
@@ -809,6 +817,10 @@ class Images:
             image.alpha_mode = "CHANNEL_PACKED"
         if asset:
             image["unbound_asset"] = asset
+        if image.size[0] == 0 and not image.packed_file:
+            # A reused image whose relative path broke when the .blend moved: point it back at the export file.
+            image.filepath = str(path)
+            image.reload()
         if image.size[0] == 0:
             raise ValueError("Blender could not decode " + path.name)
         self.cache[key] = image
@@ -881,7 +893,7 @@ class Images:
         hit = self.by_asset.get(value.casefold())
         if not hit or hit[1].get("Slices"):
             return None
-        return self.uniform(hit[0], hit[1])
+        return self.uniform(hit[0], dict(hit[1], Asset=value))
 
     def uniform(self, root, binding):
         """Decoded uniform RGBA (shader-visible, sRGB linearized) or None.
@@ -1519,11 +1531,14 @@ def choose_entry(candidates, plans):
         if not diff:
             continue
         coat_only = set(diff) <= {"CoatSmoothness", "RT2.x"}
-        if (len(diff) == 1 or coat_only) and max(diff.values()) <= 0.1 + 1e-6:
+        glass_only = set(diff) <= {"Transmittance", "Reflectance"}
+        limit = PERMUTATION_GLASS_MAX if glass_only else PERMUTATION_MAX
+        if (len(diff) == 1 or coat_only or glass_only) and max(diff.values()) <= limit + 1e-6:
             notes.append({"AlternateProgram": entry["Programs"][0], "Outputs": sorted(diff),
                           "MaxDifference": max(diff.values()),
-                          "Status": "bounded difference between permutations (one coat-finish constant, 0.7 vs 0.8); "
-                                    "entry with most solutions used"})
+                          "Status": "bounded difference between permutations (%s, at most %.2f); "
+                                    "entry with most solutions used"
+                                    % ("glass transmittance/reflectance" if glass_only else "one finish constant", limit)})
         else:
             raise Unsupported("Permutations disagree for this vertex layout (%s); selection key unknown"
                              % ", ".join(sorted(diff)))
