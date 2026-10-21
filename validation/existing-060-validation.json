@@ -1,0 +1,129 @@
+{
+ "Version": "0.6.1",
+ "Checks": [
+  {
+   "Check": "Development add-on 0.6.1 loaded",
+   "Passed": true
+  },
+  {
+   "Check": "Baseline scene has 593 Unbound meshes",
+   "Passed": true,
+   "Detail": "593"
+  },
+  {
+   "Check": "Locate export manifest operator finished",
+   "Passed": true,
+   "Detail": "{'FINISHED'}"
+  },
+  {
+   "Check": "No build issues",
+   "Passed": true,
+   "Detail": "{}"
+  },
+  {
+   "Check": "Car paint slots built",
+   "Passed": true,
+   "Detail": "{'cs_pbr_brakedisc_max_LookDev': 5, 'cs_pbr_engine_max': 8, 'cs_pbr_glass_max': 22, 'cs_pbr_glassopaque_max': 2, 'cs_pbr_opaque_max': 147, 'cs_pbr_carpaint_max': 123, 'cs_pbr_badge_max': 33, 'cs_pbr_interior_max': 2, 'cs_pbr_interiortiled_max': 2, 'cs_pbr_chassis_max': 40, 'cs_pbr_grilleb_max': 35, 'cs_pbr_light_max': 12, 'cs_pbr_lightbucket_max': 36, 'cs_pbr_genericdetail_max': 22, 'cs_pbr_mirror_max': 20, 'cs_pbr_rimbadge_max': 6, 'cs_pbr_caliper_LookDev': 6, 'cs_pbr_caliperbadge_LookDev': 4, "
+  },
+  {
+   "Check": "Opaque slots built",
+   "Passed": true,
+   "Detail": "{'cs_pbr_brakedisc_max_LookDev': 5, 'cs_pbr_engine_max': 8, 'cs_pbr_glass_max': 22, 'cs_pbr_glassopaque_max': 2, 'cs_pbr_opaque_max': 147, 'cs_pbr_carpaint_max': 123, 'cs_pbr_badge_max': 33, 'cs_pbr_interior_max': 2, 'cs_pbr_interiortiled_max': 2, 'cs_pbr_chassis_max': 40, 'cs_pbr_grilleb_max': 35, 'cs_pbr_light_max': 12, 'cs_pbr_lightbucket_max': 36, 'cs_pbr_genericdetail_max': 22, 'cs_pbr_mirror_max': 20, 'cs_pbr_rimbadge_max': 6, 'cs_pbr_caliper_LookDev': 6, 'cs_pbr_caliperbadge_LookDev': 4, "
+  },
+  {
+   "Check": "Mesh data unchanged (topology, attributes, UVs, colours, normals, material indices)",
+   "Passed": true
+  },
+  {
+   "Check": "Objects unchanged (data, parent, transforms, groups, collections, visibility, slot links)",
+   "Passed": true
+  },
+  {
+   "Check": "Every slot keeps its original source material identity",
+   "Passed": true
+  },
+  {
+   "Check": "Built materials have a connected active output",
+   "Passed": true,
+   "Detail": "248"
+  },
+  {
+   "Check": "Original source materials still present",
+   "Passed": true
+  },
+  {
+   "Check": "Runtime paint control from RaceVehicleItemData.DefaultPaint",
+   "Passed": true,
+   "Detail": "(0.7677687406539917, 0.39913177490234375, 0.003459150670096278, 1.0)"
+  },
+  {
+   "Check": "Visible assembled slots counted",
+   "Passed": true,
+   "Detail": "{'VisibleObjects': 102, 'OccupiedSlots': 102, 'Connected': 96}"
+  },
+  {
+   "Check": "Repeat build is idempotent (no new materials or groups)",
+   "Passed": true,
+   "Detail": "534"
+  },
+  {
+   "Check": "Presets and every individual part option still switch",
+   "Passed": true,
+   "Detail": "{'Presets': ['Stock', 'bodykit_car_lamborghini_murcielagosv_2010_template_SetB'], 'OptionsSwitched': 67}"
+  },
+  {
+   "Check": "Part switching leaves built material assignments intact",
+   "Passed": true
+  },
+  {
+   "Check": "Stock preset restored",
+   "Passed": true,
+   "Detail": "Stock"
+  },
+  {
+   "Check": "Save/reopen keeps mesh data",
+   "Passed": true
+  },
+  {
+   "Check": "Save/reopen keeps built materials",
+   "Passed": true
+  }
+ ],
+ "Summary": {
+  "BuiltSlots": 529,
+  "BuiltByShader": {
+   "cs_pbr_brakedisc_max_LookDev": 5,
+   "cs_pbr_engine_max": 8,
+   "cs_pbr_glass_max": 22,
+   "cs_pbr_glassopaque_max": 2,
+   "cs_pbr_opaque_max": 147,
+   "cs_pbr_carpaint_max": 123,
+   "cs_pbr_badge_max": 33,
+   "cs_pbr_interior_max": 2,
+   "cs_pbr_interiortiled_max": 2,
+   "cs_pbr_chassis_max": 40,
+   "cs_pbr_grilleb_max": 35,
+   "cs_pbr_light_max": 12,
+   "cs_pbr_lightbucket_max": 36,
+   "cs_pbr_genericdetail_max": 22,
+   "cs_pbr_mirror_max": 20,
+   "cs_pbr_rimbadge_max": 6,
+   "cs_pbr_caliper_LookDev": 6,
+   "cs_pbr_caliperbadge_LookDev": 4,
+   "cs_rim": 4
+  },
+  "UnsupportedSlots": 59,
+  "UnsupportedByShader": {
+   "cs_pbr_caliper_LookDev": 4,
+   "cs_pbr_caliperbadge_LookDev": 1,
+   "cs_pbr_lightglass_max": 14,
+   "cs_pbr_licenseplate_max": 8,
+   "cs_pbr_lightglassnormal_max": 30,
+   "cs_rim": 2
+  },
+  "IssueSlots": 0,
+  "IssueReasons": {}
+ },
+ "Passed": 19,
+ "Failed": 0
+}

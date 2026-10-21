@@ -1,0 +1,827 @@
+{
+ "vehicles/shaders/cs_pbr_badge_max": {
+  "Status": "profiled",
+  "PixelProgram": "2cfba920-ec0b-d2ae-98b3-b58fb572b0c8",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 227,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 1.1137015633266856e-05,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_brakedisc_max_LookDev": {
+  "Status": "profiled",
+  "PixelProgram": "0cdba879-33f4-cbe9-1b19-9719733bc729",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 98,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_caliper_LookDev": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "8317b436-5c18-9217-fcd8-1805f5555acb",
+  "Unresolved": [
+   "IN1[3].w=Computed"
+  ],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 200,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_caliperbadge_LookDev": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "78631393-4f07-f445-23b2-5e7707303fd2",
+  "Unresolved": [
+   "IN1[2].x=Computed"
+  ],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 130,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_carpaint_max": {
+  "Status": "profiled",
+  "PixelProgram": "53c5c1e5-6da3-9694-a945-8b634cfe14e4",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 880,
+  "Outputs": [
+   "BaseColor",
+   "CoatNormal",
+   "CoatSmoothness",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "RT4Color",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [
+   {
+    "AlternateProgram": "ecbe3711-e736-8c30-d4fb-72ac162582d5",
+    "Output": "CoatSmoothness",
+    "MaxDifference": 0.10000002384185791,
+    "Status": "bounded difference; primary (most solutions) used and reported"
+   }
+  ],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": [
+   {
+    "Slot": 5,
+    "Parameter": "Ext_T_Livery_Diffuse",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "material binds a texture whose decoded texels are uniform"
+   },
+   {
+    "Slot": 15,
+    "Parameter": "scratches",
+    "Asset": null,
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "runtime-bound texture without shader default; static undamaged state assumes zero"
+   },
+   {
+    "Slot": 4,
+    "Parameter": "Ext_T_Livery_Material",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black_Linear",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "material binds a texture whose decoded texels are uniform"
+   },
+   {
+    "Slot": 5,
+    "Parameter": "Ext_T_Livery_Diffuse",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "material binds a texture whose decoded texels are uniform"
+   }
+  ]
+ },
+ "vehicles/shaders/cs_pbr_chassis_max": {
+  "Status": "profiled",
+  "PixelProgram": "e7d57f31-b20f-8258-d51a-889c2e798d54",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 231,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 2.968462353702961e-08,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_engine_max": {
+  "Status": "profiled",
+  "PixelProgram": "f6b7597b-5771-57df-8b28-c2c820386430",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 142,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_genericdetail_max": {
+  "Status": "profiled",
+  "PixelProgram": "c7e733e1-2dbf-4263-e83a-d1bdeea72b6e",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 140,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_glass_low": {
+  "Status": "profiled_forward_transmittance",
+  "PixelProgram": "576ba703-b890-4eb3-95c1-af0e245ad5ed",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "forward_transmittance",
+  "Nodes": 167,
+  "Outputs": [
+   "Reflectance",
+   "Transmittance"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {
+   "Ext_GlassDamage": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": [
+   {
+    "Slot": 44,
+    "Parameter": "Ext_T_Livery_Diffuse",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "material binds a texture whose decoded texels are uniform"
+   },
+   {
+    "Slot": 45,
+    "Parameter": "Ext_T_Livery_Material",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "material binds a texture whose decoded texels are uniform"
+   }
+  ]
+ },
+ "vehicles/shaders/cs_pbr_glass_max": {
+  "Status": "profiled_forward_transmittance",
+  "PixelProgram": "0493a71f-64cf-2622-eb1e-bccc72eec034",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "forward_transmittance",
+  "Nodes": 167,
+  "Outputs": [
+   "Reflectance",
+   "Transmittance"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {
+   "Ext_GlassDamage": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": [
+   {
+    "Slot": 29,
+    "Parameter": "Ext_T_Livery_Diffuse",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "material binds a texture whose decoded texels are uniform"
+   }
+  ]
+ },
+ "vehicles/shaders/cs_pbr_glassopaque_max": {
+  "Status": "profiled",
+  "PixelProgram": "148ffe28-87d8-5722-93d9-1a7278682845",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 12,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {
+   "Ext_GlassDamage": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": [
+   {
+    "Slot": 2,
+    "Parameter": "Ext_T_Livery_Diffuse",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "shader default texture with uniform texels"
+   },
+   {
+    "Slot": 2,
+    "Parameter": "Ext_T_Livery_Diffuse",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "shader default texture with uniform texels"
+   },
+   {
+    "Slot": 1,
+    "Parameter": "Ext_T_Livery_Material",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "shader default texture with uniform texels"
+   }
+  ]
+ },
+ "vehicles/shaders/cs_pbr_grilleb_max": {
+  "Status": "profiled",
+  "PixelProgram": "414554a5-c780-07b6-4a36-e9c6380b5bc4",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 53,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_interior_max": {
+  "Status": "profiled",
+  "PixelProgram": "9eaac591-e1ea-7f3f-2f65-65a993b1a776",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 143,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {
+   "Emissive": [
+    "cb2[44].w",
+    "cb2[44].x"
+   ]
+  },
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_interiortiled_max": {
+  "Status": "profiled",
+  "PixelProgram": "0892e5f2-3a20-6869-4c55-f50b37c414ef",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 130,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_licenseplate_max": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "ba416799-b8d2-0ab4-ba6e-681c8087c80f",
+  "Unresolved": [
+   "Ambiguous permutation 9d5c565c differs in BaseColor, Normal, Smoothness"
+  ],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 180,
+  "Outputs": [
+   "BaseColor",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {
+   "Emissive": [
+    "cb2[0].y",
+    "cb2[44].w",
+    "cb2[44].x"
+   ]
+  },
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 2.8303984045408015e-08,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_light_max": {
+  "Status": "profiled",
+  "PixelProgram": "19e7b14d-d01c-bf76-f848-099b281a6c22",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 266,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_lightbucket_max": {
+  "Status": "profiled",
+  "PixelProgram": "5cd95876-e01c-0807-7ef2-87388cbdc427",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 131,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_lightglass_low": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "ae19fd8f-f1ef-f5e0-1f21-33e4d39665d9",
+  "Unresolved": [
+   "IN1[4].x=Computed",
+   "IN1[4].y=Computed",
+   "IN1[4].z=Computed"
+  ],
+  "Reason": null,
+  "Kind": "forward_transmittance",
+  "Nodes": 118,
+  "Outputs": [
+   "Reflectance",
+   "Transmittance"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_lightglass_max": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "cc3401f6-2419-a944-c39b-f473e1f4dc56",
+  "Unresolved": [
+   "cb0[1].x"
+  ],
+  "Reason": null,
+  "Kind": "forward_transmittance",
+  "Nodes": 194,
+  "Outputs": [
+   "Reflectance",
+   "Transmittance"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_lightglassnormal_low": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "f534d4c7-4cda-1c98-c4ac-b5a14cbb6f4e",
+  "Unresolved": [
+   "IN1[3].w=Computed",
+   "IN1[4].w=Computed",
+   "cb0[1].x"
+  ],
+  "Reason": null,
+  "Kind": "forward_transmittance",
+  "Nodes": 319,
+  "Outputs": [
+   "Transmittance"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_lightglassnormal_max": {
+  "Status": "profiled_with_unresolved_inputs",
+  "PixelProgram": "c9acc43a-e7aa-7b1a-4cbc-15285d83c49d",
+  "Unresolved": [
+   "IN1[3].w=Computed",
+   "IN1[4].w=Computed",
+   "cb0[1].x"
+  ],
+  "Reason": null,
+  "Kind": "forward_transmittance",
+  "Nodes": 301,
+  "Outputs": [
+   "Transmittance"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_mirror_max": {
+  "Status": "profiled",
+  "PixelProgram": "ce69b9c3-170d-b2dc-614a-f0de0c0b3b4f",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 84,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {
+   "Ext_GlassDamage": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_opaque_max": {
+  "Status": "profiled",
+  "PixelProgram": "693bdba0-b435-bc39-427f-912ac9a71f6b",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 202,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 1.2545014897114015e-05,
+  "FoldedTextures": [
+   {
+    "Slot": 9,
+    "Parameter": "scratches",
+    "Asset": null,
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "runtime-bound texture without shader default; static undamaged state assumes zero"
+   }
+  ]
+ },
+ "vehicles/shaders/cs_pbr_rimbadge_max": {
+  "Status": "profiled",
+  "PixelProgram": "54a02785-0ed2-79b9-a84e-8ea9be3fc915",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 128,
+  "Outputs": [
+   "BaseColor",
+   "Discard",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {
+   "RT1.w": [
+    "cb0[0].x",
+    "cb0[0].y"
+   ]
+  },
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ },
+ "vehicles/shaders/cs_pbr_tire_max_lookdev": {
+  "Status": "profiled",
+  "PixelProgram": "b680e9a0-4da2-a1f2-9f58-ad41752944b4",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 236,
+  "Outputs": [
+   "BaseColor",
+   "Emissive",
+   "Metallic",
+   "Normal",
+   "RT1.w",
+   "RT2.x",
+   "RT2.z",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {},
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": [
+   {
+    "Slot": 4,
+    "Parameter": "Ext_T_Tyrebomb_Material",
+    "Asset": "Vehicles/CommonTextures/Constants/Default_Black",
+    "Value": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "Reason": "shader default texture with uniform texels"
+   }
+  ]
+ },
+ "vehicles/shaders/roboto/cs_rim": {
+  "Status": "profiled",
+  "PixelProgram": "7a2a47c1-efd0-a728-cfd6-423d91b1b9e3",
+  "Unresolved": [],
+  "Reason": null,
+  "Kind": "gbuffer",
+  "Nodes": 137,
+  "Outputs": [
+   "BaseColor",
+   "CoatNormal",
+   "CoatSmoothness",
+   "Metallic",
+   "Normal",
+   "RT2.x",
+   "ShadingId",
+   "Smoothness"
+  ],
+  "OmittedOutputs": {
+   "RT1.w": [
+    "cb0[0].x",
+    "cb0[0].y"
+   ],
+   "RT2.z": [
+    "cb0[0].x",
+    "cb0[0].y"
+   ],
+   "Emissive": [
+    "cb2[44].w",
+    "cb2[44].x"
+   ],
+   "RT4Color": [
+    "cb0[0].x",
+    "cb0[0].y"
+   ]
+  },
+  "StaticOverrides": {},
+  "PermutationNotes": [],
+  "SimplificationMaxAbsDifference": 0.0,
+  "FoldedTextures": []
+ }
+}
