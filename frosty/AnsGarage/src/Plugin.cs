@@ -27,6 +27,7 @@ using Newtonsoft.Json;
 [assembly: RegisterMenuExtension(typeof(AnsGarage.TireLibraryMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.PlateLibraryMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.AddLiveriesMenu))]
+[assembly: RegisterMenuExtension(typeof(AnsGarage.RimLibraryMenu))]
 
 namespace AnsGarage
 {

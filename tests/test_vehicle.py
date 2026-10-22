@@ -54,6 +54,14 @@ for g in groups:
 ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Every preset and part option switches; Stock restored", ok and addon.assembly_module().current_preset(root) == "Stock",
       {"Presets": len(presets), "Options": switched})
+rims = next((g for g in groups if g["unbound_choice_group"] == "Rims"), None)
+rim_sets = {}
+for v in [v for v in (rims.children if rims else []) if "unbound_option" in v]:
+    addon.assembly_module().set_variant(root, "Rims", v["unbound_option"])
+    rim_sets[v["unbound_label"]] = sum(1 for c in v.children if c.get("source_item") and not v.hide_viewport)
+addon.assembly_module().apply_preset(root, "Stock")
+check("Each of the car's wheel sets mounts on all four wheels", rims is not None and rim_sets and all(n == 4 for n in rim_sets.values())
+      and next(v for v in rims.children if "unbound_option" in v and not v.hide_viewport)["unbound_label"] == "Stock", rim_sets)
 moving = json.loads(root.get("ans_garage_moving_parts_json") or "null") if root else None
 check("Moving parts built from the source graph", moving is not None and all(c["Attached"] > 0 for c in moving["Controls"]),
       moving and {"Controls": ["%s/%s" % (c["Group"], c["Label"]) for c in moving["Controls"]], "Issues": moving["Issues"],

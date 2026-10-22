@@ -39,25 +39,13 @@ def ensure_library(folder):
     import bpy
     folder = Path(folder).resolve()
     index = load_index(folder)
-    lib = bpy.data.collections.get(LIBRARY)
-    if lib is None or lib.get("ans_garage_tire_library") != str(folder):
-        if lib is not None:
-            for o in list(lib.all_objects):
-                bpy.data.objects.remove(o, do_unlink=True)
-            bpy.data.collections.remove(lib)
-        lib = bpy.data.collections.new(LIBRARY)
-        bpy.context.scene.collection.children.link(lib)
-        lib["ans_garage_tire_library"] = str(folder)
+    lib, fill = _addon().library_collection(LIBRARY, "ans_garage_tire_library", folder)
+    if fill:
         overrides = index["ShaderOverrides"]
         for brand in index["Brands"]:
             manifest = folder / brand / "manifest.json"
-            before = set(bpy.data.objects)
-            steps = _addon().import_steps(manifest, assemble=False, materials=False)
-            for _ in steps:
-                pass
-            plain = [o for o in bpy.data.objects if o not in before]
-            # Material slots from the source data, then a lettered copy of every object.
-            _addon().materials_module().reconstruct(manifest, plain)
+            # Meshes with their source material slots, then a lettered copy of every object.
+            plain = _addon().import_library_parts(manifest)
             records = {m["Id"]: m for m in json.loads(manifest.read_text(encoding="utf-8-sig"))["Meshes"]}
             lettered = []
             for o in plain:
@@ -93,13 +81,7 @@ def ensure_library(folder):
                     col.objects.unlink(o)
                 lib.objects.link(o)
             _addon().surfaces_module().apply_supported_surfaces(plain + lettered, manifest)
-        for col in [c for c in bpy.data.collections if c.name.startswith("Unbound | ") and not c.all_objects]:
-            for parent in [p for p in bpy.data.collections if col.name in p.children] + [bpy.context.scene.collection]:
-                if col.name in parent.children:
-                    parent.children.unlink(col)
-        layer = bpy.context.view_layer.layer_collection.children.get(LIBRARY)
-        if layer:
-            layer.exclude = True
+        _addon().finish_library(lib)
     templates = {}
     for o in lib.all_objects:
         templates.setdefault((o.get("ans_garage_tire_mesh", "").lower(), o.get("ans_garage_lettering")), []).append(o)
@@ -178,22 +160,5 @@ def apply_tire(root, name, lettering, folder):
         inst["ans_garage_library_tire"] = True
         inst["source_item"] = tire["Asset"]
         inst["dimension_status"] = "Library tire at the stock tire's rim size (inner diameter %.3f m), scaled to the car's tire configuration" % size["InnerDiameter"]
-        mapping = {}
-        for s in sources:
-            c = s.copy()
-            inst.objects.link(c)
-            mapping[s] = c
-            c["unbound_assembled"] = True
-        for s, c in mapping.items():
-            if s.parent in mapping:
-                c.parent = mapping[s.parent]
-                c.matrix_parent_inverse = s.matrix_parent_inverse.copy()
-                c.matrix_basis = s.matrix_basis.copy()
-            else:
-                c.parent = spin
-                c.matrix_parent_inverse = Matrix.Identity(4)
-                c.matrix_basis = local @ s.matrix_world
-            for m in c.modifiers:
-                if m.type == "ARMATURE" and m.object in mapping:
-                    m.object = mapping[m.object]
+        _addon().place_copies(sources, inst, spin, local)
     return notes

@@ -13,6 +13,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 | Shader defaults | `Batch.ExportShaderDefaults()` writes the assets in `UnboundShaderDefaults.json` once into a `shader-defaults` folder next to the car folders and skips them when it is complete. Two tiny black textures always fail the exact-payload check. |
 | Assembly | `AssemblyRun` (Assembly.cs): blueprint graph, wheels, items, presets, components and `TrackData` (sequence keyframes for moving parts). |
 | Libraries | `TireLibrary` (Tires.cs) and `PlateLibrary` (Plates.cs), exported once through `LibraryMenu`. |
+| Rim library | `RimLibrary` (Rims.cs): shared `RimsItemData` whose meshes are in a real brand's folder under `vehicles/sharedcustomizedparts/wheels/`; exported once through `LibraryMenu`. |
 | Liveries | `Liveries` (Liveries.cs): the car's `StaticLiveryTexturesAsset` (diffuse + material texture per livery), ticked in the export dialog or added later (`AddLiveriesMenu`); written to `<export>/liveries/liveries.json`. Labels come from the texture names without the car's own words; `Car` holds the paint, finish and plate text of the livery's `TemplateItemData`. |
 | Version | `Core.Version` (Core.cs) is the only place the version is written. |
 
@@ -48,6 +49,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 - **Moving parts:** 0–1 sliders from the blueprint's animation graph; see `assembly-data.md`.
 - **Libraries:** tires (`unbound_tires.py`) and license plates (`unbound_plates.py`, with typed plate text) swap textures and meshes through per-object overrides (`unbound_texture_overrides_json`, merged by `set_texture_overrides`, and `unbound_parameter_overrides_json`).
 - **Paint, per car** (`LIVE_FIELDS`): the paint colour and finish (`Ext_Carpaint_Material`) stay live in "Unbound | Runtime <parameter> | <car>" groups, keyed by the export folder; a profile group with live paint belongs to its car. Finish = `floor(16x)` (14 types, `FINISHES`), gloss = `floor(16z)` (`GLOSS_LEVELS`).
+- **Wheels:** the car's own rim items are one choice group ("Rims", one option per set code); tires, brake discs and calipers stay the default. The rim library (`unbound_rims.py`) hides that group and places library rims on the rotation empties, scaled to the factory rim; placed parts carry `unbound_car_assembly`, so the surface builder uses the car's runtime values, wheel facing, controls and shader defaults. Rim colours (`RIM_COLOR_FIELDS`) are live per car.
 - **Liveries** (`unbound_liveries.py`): texture overrides of `Ext_T_Livery_Diffuse`/`Ext_T_Livery_Material` on every slot whose shader samples them. They are `OPTIONAL_OVERRIDES`: a slot that can't be built with them is built without, with `LiveryNotApplied` in its evidence.
 
 ## 4. Validation

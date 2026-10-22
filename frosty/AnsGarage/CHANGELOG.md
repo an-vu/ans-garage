@@ -1,3 +1,7 @@
+# 1.0.8
+
+- **Tools → An's Garage → Export rim library…**: real-brand aftermarket rims (16 brands, 122 models), one export folder per brand folder, indexed in `rims.json` (brand, name, axle, diameter, width, size options, default paint, meshes). Rim items are matched to meshes through their customizable or plain object blueprints; items whose meshes sit outside a real brand's folder (turbofans, LED and NFS-made wheels) are left out.
+
 # 1.0.7
 
 - The export dialog lists the vehicle's stock liveries (its `StaticLiveryTexturesAsset`) with a tick box each, all ticked. The ticked ones are exported into `liveries/` with `liveries.json` (key, label, group, index, diffuse and material texture).

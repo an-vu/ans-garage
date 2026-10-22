@@ -47,8 +47,7 @@ def use_livery_car(root, key):
     for name, field in (("Ext_Carpaint_Diffuse", "Paint"), ("Ext_Carpaint_Material", "Finish")):
         g = P.runtime_group(scope, name)
         if g is not None and setup.get(field):
-            rgb = next(n for n in g.nodes if n.type == "RGB").outputs[0]
-            rgb.default_value = list(setup[field][:3]) + [1.0]
+            P.runtime_rgb(g).default_value = list(setup[field][:3]) + [1.0]
     if setup.get("PlateText"):
         addon.plates_module().apply_text(root, setup["PlateText"])
 

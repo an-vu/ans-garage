@@ -277,28 +277,33 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"),
                                       "Reason": "Unresolved runtime inputs: " + ", ".join(unresolved)})
         return
-    # One resolver per car and per extra texture folder (plate and tire libraries are per object).
-    ikey = ("images", str(root), obj.get("unbound_override_textures", ""))
+    # A library part placed on a car (rims) takes the car's runtime values, wheel facing, controls and shared shader
+    # default textures (library exports have none of their own).
+    car = Path(obj["unbound_car_assembly"]) if obj.get("unbound_car_assembly") else root / "assembly.json"
+    scope = car.parent.name
+    # One resolver per export, car and extra texture folder (plate and tire libraries are per object).
+    ikey = ("images", str(root), str(car), obj.get("unbound_override_textures", ""))
     if ikey not in caches:
         import bpy
         caches[ikey] = P.Images(root, [bpy.context.scene.get("unbound_shader_defaults_path", ""),
-                                       obj.get("unbound_override_textures", "")])
-    if ("runtime", str(root)) not in caches:
-        caches[("runtime", str(root))] = P.runtime_values(root / "assembly.json")
+                                       obj.get("unbound_override_textures", ""),
+                                       str(car.parent / "shader-defaults"), str(car.parent.parent / "shader-defaults")])
+    if ("runtime", str(car)) not in caches:
+        caches[("runtime", str(car))] = P.runtime_values(car)
     images = caches[ikey]
-    runtime, runtime_notes, assembly_doc = caches[("runtime", str(root))]
+    runtime, runtime_notes, assembly_doc = caches[("runtime", str(car))]
 
     def planned(conditions):
         """(plans, permutation notes) for the candidates, or the reason they can't be built."""
         plans = []
         for entry, rename in zip(candidates, renames):
             consts = P.input_constants(entry, obj, assembly_doc)
-            live_names = P.live_names(entry, runtime)
-            pkey = (shader, material.get("unbound_state_key"), str(root), id(entry), tuple(sorted(consts.items())),
+            live_fields = P.live_fields(entry, runtime)
+            pkey = (shader, material.get("unbound_state_key"), str(root), str(car), id(entry), tuple(sorted(consts.items())),
                     tuple(sorted(rename.items())), json.dumps(state.get("TextureOverrides"), sort_keys=True),
                     json.dumps(state.get("ParameterOverrides"), sort_keys=True), conditions)
             if pkey not in caches:
-                caches[pkey] = P.plan(entry, state, runtime, live_names, images, root, consts, rename, conditions)
+                caches[pkey] = P.plan(entry, state, runtime, live_fields, images, root, consts, rename, conditions)
             if caches[pkey]["issues"]:
                 raise ValueError("; ".join(caches[pkey]["issues"]))
             if caches[pkey]["unsupported"]:
@@ -345,7 +350,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
             colors[usage] = {"name": name, "byte": attr.data_type == "BYTE_COLOR"}
     fb_to_blender, blender_to_fb = P.axis_matrices(obj)
     ctx = {"uv": uv, "colors": colors, "tangent_uv": uv.get("TexCoord0", ""), "fb_to_blender": fb_to_blender,
-           "live_scope": root.name,
+           "live_scope": scope,
            "blender_to_fb": blender_to_fb, "notes": []}
     basis = None
     if p["uses_frame"]:
@@ -361,7 +366,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         "UV": uv, "Colors": colors, "Signs": ctx.get("basis_signs"), "Axes": fb_to_blender,
         "Live": sorted(map(list, p["live"])),
         # Runtime controls are per car: a group with live paint belongs to its car.
-        "Scope": root.name if any(n not in P.CONDITIONS for n, _ in p["live"]) else None}).encode()).hexdigest()
+        "Scope": scope if any(n not in P.CONDITIONS for n, _ in p["live"]) else None}).encode()).hexdigest()
     label = "Unbound | %s | %s" % (shader.rsplit("/", 1)[-1], identity[:8])
     group, connected = P.build_group(entry, p, ctx, identity, label)
     unsupported = [{"Output": k, "Reason": v} for k, v in P.UNSUPPORTED_OUTPUTS.items() if k in entry["Outputs"]]

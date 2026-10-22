@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 7), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 8), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -89,9 +89,15 @@ def plates_module():
 
 
 # Libraries exported once by An's Garage for Frosty (kind -> module that reads its index).
-LIBRARIES = {"tire": tires_module, "plate": plates_module}
+def rims_module():
+    from . import unbound_rims
+    return unbound_rims
+
+
+LIBRARIES = {"tire": tires_module, "plate": plates_module, "rim": rims_module}
 _LIBRARY_INDEX = {}
 _PLATE_ITEMS = []  # Blender keeps only references to enum item strings: hold them here
+_RIM_ITEMS = []
 
 
 def library_folder(context, kind):
@@ -164,6 +170,70 @@ def tire_index(folder):
 def surfaces_module():
     from . import unbound_surfaces
     return unbound_surfaces
+
+
+def import_library_parts(manifest):
+    """Meshes of a library export (tires, rims) with their source material slots restored: the new objects."""
+    import bpy
+    before = set(bpy.data.objects)
+    for _ in import_steps(manifest, assemble=False, materials=False):
+        pass
+    objects = [o for o in bpy.data.objects if o not in before]
+    materials_module().reconstruct(manifest, objects)
+    return objects
+
+
+def library_collection(name, key, folder):
+    """The hidden collection of a part library imported from `folder`: (collection, True when it must be filled now).
+    A collection imported from another folder is replaced."""
+    import bpy
+    lib = bpy.data.collections.get(name)
+    if lib is not None and lib.get(key) == str(folder):
+        return lib, False
+    if lib is not None:
+        for o in list(lib.all_objects):
+            bpy.data.objects.remove(o, do_unlink=True)
+        bpy.data.collections.remove(lib)
+    lib = bpy.data.collections.new(name)
+    bpy.context.scene.collection.children.link(lib)
+    lib[key] = str(folder)
+    return lib, True
+
+
+def finish_library(lib):
+    """After filling a library collection: drop the emptied import collections and exclude the library from the view."""
+    import bpy
+    for col in [c for c in bpy.data.collections if c.name.startswith("Unbound | ") and not c.all_objects]:
+        for parent in [p for p in bpy.data.collections if col.name in p.children] + [bpy.context.scene.collection]:
+            if col.name in parent.children:
+                parent.children.unlink(col)
+    layer = bpy.context.view_layer.layer_collection.children.get(lib.name)
+    if layer:
+        layer.exclude = True
+
+
+def place_copies(sources, collection, spin, local):
+    """Copies of a library part's objects in `collection`, its roots on a wheel's rotation empty at `local`."""
+    from mathutils import Matrix
+    mapping = {}
+    for s in sources:
+        c = s.copy()
+        collection.objects.link(c)
+        mapping[s] = c
+        c["unbound_assembled"] = True
+    for s, c in mapping.items():
+        if s.parent in mapping:
+            c.parent = mapping[s.parent]
+            c.matrix_parent_inverse = s.matrix_parent_inverse.copy()
+            c.matrix_basis = s.matrix_basis.copy()
+        else:
+            c.parent = spin
+            c.matrix_parent_inverse = Matrix.Identity(4)
+            c.matrix_basis = local @ s.matrix_world
+        for m in c.modifiers:
+            if m.type == "ARMATURE" and m.object in mapping:
+                m.object = mapping[m.object]
+    return list(mapping.values())
 
 
 def import_manifest(filepath, assemble=True, materials=True):
@@ -410,12 +480,16 @@ def register():
                                      description="Folder made by Frosty: Tools > An's Garage > Export tire library...")
         plate_library: StringProperty(name="License plate library folder", subtype="DIR_PATH",
                                       description="Folder made by Frosty: Tools > An's Garage > Export license plate library...")
+        rim_library: StringProperty(name="Rim library folder", subtype="DIR_PATH",
+                                    description="Folder made by Frosty: Tools > An's Garage > Export rim library...")
 
         def draw(self, context):
             self.layout.prop(self, "tire_library")
             self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export tire library...")
             self.layout.prop(self, "plate_library")
             self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export license plate library...")
+            self.layout.prop(self, "rim_library")
+            self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export rim library...")
 
     class LocateLibrary(ImportHelper):
         """Pick a library's index file; remembered in the scene and the add-on preferences."""
@@ -467,6 +541,66 @@ def register():
         bl_label = "Locate license plate library"
         filter_glob: StringProperty(default="*plates.json", options={"HIDDEN"})
         kind, index_file = "plate", "plates.json"
+
+    class IMPORT_SCENE_OT_ans_garage_locate_rims(bpy.types.Operator, LocateLibrary):
+        bl_idname = "import_scene.ans_garage_locate_rims"
+        bl_label = "Locate rim library"
+        filter_glob: StringProperty(default="*rims.json", options={"HIDDEN"})
+        kind, index_file = "rim", "rims.json"
+
+    def rim_items(self, context):
+        index = library_index("rim", library_folder(context, "rim")) if context else None
+        items = [("Stock", "Stock (car's own wheels)", "The car's own factory wheel set")]
+        for name in rims_module().rim_names(index) if index else []:
+            brand = next(r["Brand"] for r in index["Rims"] if r["Name"] == name)
+            items.append((name, name, brand))
+        _RIM_ITEMS[:] = items
+        return _RIM_ITEMS
+
+    class OBJECT_OT_ans_garage_rim(bpy.types.Operator):
+        bl_idname = "object.ans_garage_rim"
+        bl_label = "Choose rims"
+        bl_description = "Search the real-brand rim library (type to filter, e.g. bbs or work)"
+        bl_options = {"REGISTER", "UNDO"}
+        bl_property = "rim"
+        root: StringProperty(options={"SKIP_SAVE"})
+        rim: EnumProperty(items=rim_items, name="Rim")
+        pick: BoolProperty(default=True, options={"SKIP_SAVE"})
+
+        def invoke(self, context, event):
+            if not self.pick:
+                return self.execute(context)
+            context.window_manager.invoke_search_popup(self)
+            return {"RUNNING_MODAL"}
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            folder = library_folder(context, "rim")
+            if root is None or (self.rim != "Stock" and not folder):
+                self.report({"ERROR"}, "Locate the rim library first")
+                return {"CANCELLED"}
+            try:
+                notes = rims_module().apply_rim(root, self.rim, folder)
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            if notes:
+                self.report({"WARNING"}, "; ".join(notes))
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_rim_paint_stock(bpy.types.Operator):
+        bl_idname = "object.ans_garage_rim_paint_stock"
+        bl_label = "Stock rim colors"
+        bl_description = "Put the car's own rim colors back"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            rims_module().stock_rim_paint(root)
+            return {"FINISHED"}
 
     def plate_items(self, context):
         index = plate_index(plate_library(context)) if context else None
@@ -846,7 +980,7 @@ def register():
                 if paint:
                     pbox = box.box()
                     wrapped(pbox, context, "Paint", icon="COLOR")
-                    pbox.prop(next(n for n in paint.nodes if n.type == "RGB").outputs[0], "default_value", text="Color")
+                    pbox.prop(profiles.runtime_rgb(paint), "default_value", text="Color")
                     now, stock = profiles.finish_value(scope)
                     if now:
                         names = dict(profiles.FINISHES)
@@ -894,6 +1028,23 @@ def register():
                         for lettering, text in (("Plain", "Plain sidewall"), ("Brand", "Brand lettering")):
                             op = row.operator("object.ans_garage_tire", text=text, depress=current["Lettering"] == lettering)
                             op.root, op.tire, op.lettering = root.name, current["Name"], lettering
+                rims = box.box()
+                current_rim = root.get("ans_garage_rim", "Stock")
+                wrapped(rims, context, "Rims: " + ("Stock (factory wheel set above)" if current_rim == "Stock" else current_rim),
+                        icon="MESH_CIRCLE")
+                if library_index("rim", library_folder(context, "rim")) is None:
+                    rims.operator("import_scene.ans_garage_locate_rims", text="Locate rim library…")
+                else:
+                    row = rims.row(align=True)
+                    row.operator("object.ans_garage_rim", text="Choose rim…", icon="VIEWZOOM").root = root.name
+                    op = row.operator("object.ans_garage_rim", text="Stock", depress=current_rim == "Stock")
+                    op.root, op.rim, op.pick = root.name, "Stock", False
+                paint_rows = rims_module().rim_paint(root)
+                if paint_rows:
+                    grid = rims.grid_flow(columns=2, align=True)
+                    for label, socket in paint_rows:
+                        grid.prop(socket, "default_value", text=label)
+                    rims.operator("object.ans_garage_rim_paint_stock", text="Stock rim colors").root = root.name
                 plates = box.box()
                 folder = plate_library(context)
                 pindex = plate_index(folder) if folder else None
@@ -943,6 +1094,7 @@ def register():
     global _registered_classes, _menu
     _registered_classes = [AnsGaragePreferences, IMPORT_SCENE_OT_ans_garage_locate_tires, OBJECT_OT_ans_garage_tire,
                            IMPORT_SCENE_OT_ans_garage_locate_plates, OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_text,
+                           IMPORT_SCENE_OT_ans_garage_locate_rims, OBJECT_OT_ans_garage_rim, OBJECT_OT_ans_garage_rim_paint_stock,
                            OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
                            OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_gloss,
                            OBJECT_OT_ans_garage_livery, OBJECT_OT_ans_garage_livery_car,

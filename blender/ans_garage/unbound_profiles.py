@@ -1056,8 +1056,10 @@ def is_const(v, value=None):
 
 
 # ------------------------------------------------------------------ live runtime parameters
-# Vehicle customization kept live, one control group per car: the paint colour and the paint finish.
-LIVE_FIELDS = ("PaintFacingColorParameter", "PaintMaterialParameter")
+# Vehicle customization kept live, one control group per car: the paint colour and finish, and the rims' primary and
+# secondary colours, front and rear.
+RIM_COLOR_FIELDS = tuple("%sRim%sColorParameter" % (axle, layer) for axle in ("Front", "Rear") for layer in ("Primary", "Secondary"))
+LIVE_FIELDS = ("PaintFacingColorParameter", "PaintMaterialParameter") + RIM_COLOR_FIELDS
 # Paint finish (Ext_Carpaint_Material): x = finish type floor(16x), 0-13; types 3-13 sample layer (type - 3) of
 # paintnormalarray. z = gloss level floor(16z): 0 clear coat smoothness 1.0, 1 coat 0.70, 2 and above no clear coat
 # (measured on cs_pbr_carpaint_max), the garage's Gloss / Satin / Matte. y is left as the car has it. The game's
@@ -1074,26 +1076,35 @@ GLOSS_LEVELS = ((0, "Gloss"), (1, "Satin"), (2, "Matte"))
 OPTIONAL_OVERRIDES = ("Ext_T_Livery_Diffuse", "Ext_T_Livery_Material")
 
 
-def live_names(entry, runtime):
-    """External parameters of an entry that the car's runtime customization keeps live."""
-    return {e["Name"] for e in entry["Externals"] if runtime.get(e["Key"].casefold(), {}).get("Field") in LIVE_FIELDS}
+def live_fields(entry, runtime):
+    """External parameters of an entry that the car's runtime customization keeps live, with their customization field
+    (e.g. PaintFacingColorParameter)."""
+    return {e["Name"]: runtime[e["Key"].casefold()]["Field"] for e in entry["Externals"]
+            if runtime.get(e["Key"].casefold(), {}).get("Field") in LIVE_FIELDS}
 
 
-def runtime_group(scope, name):
-    """The car's control group for a live runtime parameter (scope: the car's export folder name), or None."""
+def runtime_group(scope, name=None, field=None):
+    """The car's control group for a live runtime parameter, by parameter name or customization field (scope: the
+    car's export folder name), or None."""
     import bpy
-    return next((g for g in bpy.data.node_groups if g.get("unbound_live_parameter") == name
-                 and g.get("unbound_live_scope") == scope), None)
+    return next((g for g in bpy.data.node_groups if g.get("unbound_live_scope") == scope
+                 and (name is None or g.get("unbound_live_parameter") == name)
+                 and (field is None or g.get("unbound_live_field") == field)), None)
 
 
-def live_group(name, value, scope):
+def runtime_rgb(group):
+    """The RGB value socket of a control group."""
+    return next(n for n in group.nodes if n.type == "RGB").outputs[0]
+
+
+def live_group(name, value, scope, field=""):
     """One user-editable control per live runtime parameter and car (e.g. the vehicle paint)."""
     import bpy
     g = runtime_group(scope, name)
     if g:
         return g
     g = bpy.data.node_groups.new("Unbound | Runtime %s | %s" % (name, scope), "ShaderNodeTree")
-    g["unbound_live_parameter"], g["unbound_live_scope"] = name, scope
+    g["unbound_live_parameter"], g["unbound_live_scope"], g["unbound_live_field"] = name, scope, field
     g["unbound_stock_value"] = [float(v) for v in value]
     g["unbound_note"] = "Runtime vehicle input. Initial value from the vehicle data; set it in the An's Garage sidebar."
     for c in "xyzw":
@@ -1137,7 +1148,7 @@ def finish_value(scope):
     g = runtime_group(scope, "Ext_Carpaint_Material")
     if g is None:
         return None, None
-    rgb = next(n for n in g.nodes if n.type == "RGB").outputs[0].default_value
+    rgb = runtime_rgb(g).default_value
     stock = g["unbound_stock_value"]
     level = lambda v: int(math.floor(16 * v + 1e-6))
     return (level(rgb[0]), level(rgb[2])), (level(stock[0]), level(stock[2]))
@@ -1148,7 +1159,7 @@ def set_finish(scope, finish=None, gloss=None):
     g = runtime_group(scope, "Ext_Carpaint_Material")
     if g is None:
         raise ValueError("This car's paint has no finish control (rebuild its materials)")
-    rgb = next(n for n in g.nodes if n.type == "RGB").outputs[0]
+    rgb = runtime_rgb(g)
     value, stock = list(rgb.default_value), g["unbound_stock_value"]
     for i, choice in ((0, finish), (2, gloss)):
         if choice is not None:
@@ -1345,10 +1356,10 @@ def view_independence(profile, values, live, input_consts, rename, tex_consts):
     return worst
 
 
-def plan(profile, state, runtime, live_names, images, root, input_consts=None, rename=None, conditions=False):
+def plan(profile, state, runtime, live_fields, images, root, input_consts=None, rename=None, conditions=False):
     """Everything that does not depend on the object's geometry: parameters, specialization, textures."""
     values, applied, issues = parameter_values(profile, state, runtime)
-    live = {(n, c) for n in live_names for c in range(4)
+    live = {(n, c) for n in live_fields for c in range(4)
             if any(a["Parameter"] == n for a in applied)}
     if conditions:
         live |= {(e["Name"], c) for e in profile["Externals"] if e["Name"] in CONDITIONS for c in range(4)}
@@ -1419,7 +1430,7 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
     return {"values": values, "applied": applied, "issues": issues, "spec": spec, "outs": outs,
             "input_consts": input_consts, "unsupported": unsupported, "engine": engine, "view": view,
             "images": image_map, "image_issues": image_issues, "uses_frame": uses_frame, "inputs": inputs,
-            "live": live, "conditions": sorted({n for n, _ in live if n in CONDITIONS}), "folded_textures": tex_notes}
+            "live": live, "live_fields": dict(live_fields), "conditions": sorted({n for n, _ in live if n in CONDITIONS}), "folded_textures": tex_notes}
 
 
 def build_group(profile, p, ctx, identity, label):
@@ -1441,7 +1452,8 @@ def build_group(profile, p, ctx, identity, label):
                     n.node_tree = condition_group(name)
                     n.label = "Vehicle condition: " + CONDITIONS[name][0]
                 else:
-                    n.node_tree = live_group(name, [p["values"][(name, k)] for k in range(4)], ctx["live_scope"])
+                    n.node_tree = live_group(name, [p["values"][(name, k)] for k in range(4)], ctx["live_scope"],
+                                             p["live_fields"].get(name, ""))
                     n.label = "Runtime vehicle input: " + name
                 n.location = (-2600, 1400 - 200 * len(live_nodes))
                 live_nodes[name] = n

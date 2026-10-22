@@ -2,6 +2,19 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.8
+
+- **The car's own wheel sets:** a **Wheels** choice in the car's parts. 31 of the 200 cars have more than one factory set (the Aventador S has four; the BMW M3 E46 has Stock, Custom and RZR). Body kits that come with their own wheels switch them too. The game names every set "Stock", so the others show their set code.
+- **Rim library:** 122 aftermarket rims from 16 real brands: 3SDM, BBS, Cosmis, Fifteen52, HRE, Loma, Nismo, Rotiform, RTR, SSR, Vorsteiner, Vossen, Watanabe, Weds, Weld Racing (incl. Rekon) and Work.
+  - Exported once in Frosty (**Tools → An's Garage → Export rim library…**, about 115 MB).
+  - Chosen per car in the sidebar (**Rims → Choose rim…**, Stock = the car's own wheel set).
+  - NFS-made wheels are left out: turbofans, LED and "ghost" wheels, drag and off-road wheels, the generic ones. Another car's factory wheels never come from the library, as in the game.
+  - A library rim is scaled from its declared size to the car's factory rim on that axle (object scale; the game resizes rims in the wheel shader).
+- **Rim colors**, live per car on factory and library rims: primary and secondary, front and rear, with **Stock rim colors**.
+- Library parts placed on a car (rims) are built against that car: its wheel inputs, rim paint and shared shader default textures.
+- Tire and rim libraries share one import and placement helper.
+- **Tests:** `rims` (library, placement, sizing, rim colors, stock); every vehicle test checks each wheel set mounts on all four wheels.
+
 ## 1.0.7
 
 - **Paint finishes**, per car in the sidebar's new **Paint** section: the paint colour, a **Finish** list and **Stock / Gloss / Satin / Matte**.

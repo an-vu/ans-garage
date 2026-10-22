@@ -349,11 +349,10 @@ def assemble_existing(manifest_path):
         wheel_controls[w["Name"]] = (c, steering, spin)
     used = {data["BodyMeshId"]}
     # Source wheel declarations are explicit; runtime resize/deformation is tracked separately.
-    for item in data["Items"]:
-        if item["Type"] not in ("RimsItemData", "TiresItemData", "BrakeDiscsItemData", "CalipersItemData") or not item["Default"]:
-            continue
-        if not item["Permutations"]:
-            continue
+    defaults, item_choices, group_collections = {}, {}, {}
+
+    def mount(item, collection):
+        """Instances of a wheel item's meshes on their wheels (rims, tires and brakes spin; calipers steer only)."""
         for desc in item["Permutations"][0]["Meshes"]:
             facing = desc.get("Facing")
             if not facing or facing["Name"] not in wheel_controls:
@@ -382,12 +381,41 @@ def assemble_existing(manifest_path):
                 proxy = Matrix.Identity(4)
                 for matrix in use["TransformChain"]:
                     proxy = proxy @ matrix_from_basis(matrix)
-                inst = instance(use["MeshId"], c, kind, parent, conversion @ rotation @ scaling @ proxy @ inverse)
+                inst = instance(use["MeshId"], collection or c, kind, parent, conversion @ rotation @ scaling @ proxy @ inverse)
                 inst["source_item"] = item["Asset"]
                 inst["source_rotate_flag"] = desc["Rotate"]
                 inst["dimension_status"] = status
                 inst["source_item_json"] = json.dumps(item["Raw"])
                 used.add(use["MeshId"])
+
+    for item in data["Items"]:
+        if item["Type"] in ("TiresItemData", "BrakeDiscsItemData", "CalipersItemData") and item["Default"] and item["Permutations"]:
+            mount(item, None)
+    # The car's own wheel sets (its factory rims in the game; up to four, e.g. the Aventador S): one choice group, the
+    # front and rear items of a set sharing its set code. The game names every set "Stock", so the others show their code.
+    rim_sets = defaultdict(list)
+    for item in data["Items"]:
+        if item["Type"] == "RimsItemData" and item["Permutations"]:
+            rim_sets[set_code(item["Asset"]) or item["Asset"]].append(item)
+    if rim_sets:
+        group = "Rims"
+        parent_col = group_collections[group] = col("Wheels (rim sets)", root)
+        parent_col["unbound_choice_group"], parent_col["unbound_label"] = group, "Wheels"
+        parent_col["show_variants"] = False
+        for code, items in sorted(rim_sets.items(), key=lambda kv: (not any(i["Default"] for i in kv[1]), kv[0])):
+            stock = any(i["Default"] for i in items)
+            text = "Stock" if stock else re.sub(r"^set", "", code).upper() if len(code) <= 7 else re.sub(r"^set", "", code).title()
+            option = "rims/" + code
+            variant = col("Wheels | " + text, parent_col)
+            variant["unbound_group"], variant["unbound_option"], variant["unbound_label"] = group, option, text
+            variant["unbound_set_code"] = code
+            variant["unbound_item"] = ", ".join(i["Asset"] for i in items)
+            for item in items:
+                mount(item, variant)
+                item_choices[item["Asset"].lower()] = (group, option)
+            if stock:
+                defaults[group] = option
+            variant.hide_viewport = variant.hide_render = not stock
     # Item meshes authored relative to their customization component are placed at that component (component chain
     # composed root to leaf; the component comes from the mesh blueprint's BlueprintComponents entry). Evidence: every
     # spoiler of the Chiron Sport and P1 is modelled around the origin and its SpoilerCustomizationComponentData
@@ -437,7 +465,6 @@ def assemble_existing(manifest_path):
             return None
         return local
 
-    defaults, item_choices, group_collections = {}, {}, {}
     # In-game labels: the group shows the game's category when all its items agree; options show the game's option
     # name, with the set code added where two options would otherwise read the same.
     group_items = defaultdict(list)

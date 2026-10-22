@@ -170,6 +170,12 @@ static void Run(string[] a) {
   Console.WriteLine("TIRES "+((JArray)index["Tires"]).Count+" items, "+((JObject)index["Blueprints"]).Count+" meshes");
   return;
  }
+ if(mode=="rims") {
+  // Rim library (real aftermarket brands): a[5] = output folder.
+  var index=RimLibrary.Export(Path.GetFullPath(a[5]),NoWindow());
+  Console.WriteLine("RIMS "+((JArray)index["Rims"]).Count+" items in "+((JArray)index["Folders"]).Count+" brand folders");
+  return;
+ }
  if(mode=="liveries") {
   // Stock liveries of an existing export: a[5] = export folder; a[6] = "list", "all" or keys (key1|key2).
   string export=Path.GetFullPath(a[5]);
