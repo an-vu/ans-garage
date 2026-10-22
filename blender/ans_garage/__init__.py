@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 4), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 5), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -67,22 +67,15 @@ def safe_fbx(root, relative):
     return path
 
 
+# The add-on's modules, imported once (their caches, such as the loaded shader profiles, persist between imports).
 def assembly_module():
-    import importlib.util
-    module_path = Path(__file__).with_name("unbound_assembly.py")
-    spec = importlib.util.spec_from_file_location("unbound_assembly", module_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from . import unbound_assembly
+    return unbound_assembly
 
 
 def materials_module():
-    import importlib.util
-    module_path = Path(__file__).with_name("unbound_materials.py")
-    spec = importlib.util.spec_from_file_location("unbound_materials", module_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from . import unbound_materials
+    return unbound_materials
 
 
 def tires_module():
@@ -95,24 +88,35 @@ def plates_module():
     return unbound_plates
 
 
-_PLATE_INDEX = {}
+# Libraries exported once by An's Garage for Frosty (kind -> module that reads its index).
+LIBRARIES = {"tire": tires_module, "plate": plates_module}
+_LIBRARY_INDEX = {}
 _PLATE_ITEMS = []  # Blender keeps only references to enum item strings: hold them here
 
 
-def plate_library(context):
-    """License plate library folder: the add-on preference, else the scene's (set by Locate plate library)."""
+def library_folder(context, kind):
+    """A library's folder: the add-on preference, else the scene's (set by Locate ... library)."""
     addon = context.preferences.addons.get(__name__)
-    folder = getattr(getattr(addon, "preferences", None), "plate_library", "") if addon else ""
-    return folder or context.scene.get("ans_garage_plate_library", "")
+    folder = getattr(getattr(addon, "preferences", None), kind + "_library", "") if addon else ""
+    return folder or context.scene.get("ans_garage_%s_library" % kind, "")
+
+
+def library_index(kind, folder, reload=False):
+    """The library's index (tires.json, plates.json), read once per folder; None if it is not one."""
+    if reload or (kind, folder) not in _LIBRARY_INDEX:
+        try:
+            _LIBRARY_INDEX[(kind, folder)] = LIBRARIES[kind]().load_index(folder)
+        except (OSError, ValueError):
+            _LIBRARY_INDEX[(kind, folder)] = None
+    return _LIBRARY_INDEX[(kind, folder)]
+
+
+def plate_library(context):
+    return library_folder(context, "plate")
 
 
 def plate_index(folder):
-    if folder not in _PLATE_INDEX:
-        try:
-            _PLATE_INDEX[folder] = plates_module().load_index(folder)
-        except (OSError, ValueError):
-            _PLATE_INDEX[folder] = None
-    return _PLATE_INDEX[folder]
+    return library_index("plate", folder)
 
 
 def plate_label(index, key):
@@ -139,31 +143,17 @@ def add_moving_parts(root, report=None):
     return lines
 
 
-_TIRE_INDEX = {}
-
-
 def tire_library(context):
-    """Tire library folder: the add-on preference, else the scene's (set by Locate tire library)."""
-    addon = context.preferences.addons.get(__name__)
-    folder = getattr(getattr(addon, "preferences", None), "tire_library", "") if addon else ""
-    return folder or context.scene.get("ans_garage_tire_library", "")
+    return library_folder(context, "tire")
 
 
 def tire_index(folder):
-    if folder not in _TIRE_INDEX:
-        try:
-            _TIRE_INDEX[folder] = tires_module().load_index(folder)
-        except (OSError, ValueError):
-            _TIRE_INDEX[folder] = None
-    return _TIRE_INDEX[folder]
+    return library_index("tire", folder)
 
 
 def surfaces_module():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("unbound_surfaces", Path(__file__).with_name("unbound_surfaces.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from . import unbound_surfaces
+    return unbound_surfaces
 
 
 def import_manifest(filepath, assemble=True, materials=True):
@@ -315,17 +305,14 @@ def draw_status(self, context):
     text = "%s  %d%%  %d:%02d" % (RUN["stage"], RUN["pct"], *divmod(int(time.time() - RUN["start"]), 60))
     bar = row.row(align=True)
     bar.ui_units_x = 18  # wide enough for the stage text
-    if hasattr(bar, "progress"):
-        bar.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
-    else:
-        bar.label(text=text)
+    bar.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
     row.operator("wm.ans_garage_cancel_import", text="", icon="CANCEL")
 
 
 def register():
     import bpy
     from bpy_extras.io_utils import ImportHelper
-    from bpy.props import StringProperty, IntProperty
+    from bpy.props import StringProperty
 
     class IMPORT_SCENE_OT_ans_garage_vehicle(bpy.types.Operator, ImportHelper):
         bl_idname = "import_scene.ans_garage_vehicle"
@@ -420,23 +407,27 @@ def register():
             self.layout.prop(self, "plate_library")
             self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export license plate library...")
 
-    class IMPORT_SCENE_OT_ans_garage_locate_tires(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.ans_garage_locate_tires"
-        bl_label = "Locate tire library"
+    class LocateLibrary(ImportHelper):
+        """Pick a library's index file; remembered in the scene and the add-on preferences."""
         filename_ext = ".json"
-        filter_glob: StringProperty(default="*tires.json", options={"HIDDEN"})
+        kind = index_file = ""
 
         def execute(self, context):
             folder = str(Path(self.filepath).parent)
-            if tire_index(folder) is None:
-                _TIRE_INDEX.pop(folder, None)
-                self.report({"ERROR"}, "Not a tire library (tires.json from An's Garage for Frosty)")
+            if library_index(self.kind, folder, reload=True) is None:
+                self.report({"ERROR"}, "Not a %s library (%s from An's Garage for Frosty)" % (self.kind, self.index_file))
                 return {"CANCELLED"}
-            context.scene["ans_garage_tire_library"] = folder
+            context.scene["ans_garage_%s_library" % self.kind] = folder
             addon = context.preferences.addons.get(__name__)
             if addon and getattr(addon, "preferences", None) is not None:
-                addon.preferences.tire_library = folder
+                setattr(addon.preferences, self.kind + "_library", folder)
             return {"FINISHED"}
+
+    class IMPORT_SCENE_OT_ans_garage_locate_tires(bpy.types.Operator, LocateLibrary):
+        bl_idname = "import_scene.ans_garage_locate_tires"
+        bl_label = "Locate tire library"
+        filter_glob: StringProperty(default="*tires.json", options={"HIDDEN"})
+        kind, index_file = "tire", "tires.json"
 
     class OBJECT_OT_ans_garage_tire(bpy.types.Operator):
         bl_idname = "object.ans_garage_tire"
@@ -461,24 +452,11 @@ def register():
                 self.report({"WARNING"}, "; ".join(notes))
             return {"FINISHED"}
 
-    class IMPORT_SCENE_OT_ans_garage_locate_plates(bpy.types.Operator, ImportHelper):
+    class IMPORT_SCENE_OT_ans_garage_locate_plates(bpy.types.Operator, LocateLibrary):
         bl_idname = "import_scene.ans_garage_locate_plates"
         bl_label = "Locate license plate library"
-        filename_ext = ".json"
         filter_glob: StringProperty(default="*plates.json", options={"HIDDEN"})
-
-        def execute(self, context):
-            folder = str(Path(self.filepath).parent)
-            _PLATE_INDEX.pop(folder, None)
-            if plate_index(folder) is None:
-                _PLATE_INDEX.pop(folder, None)
-                self.report({"ERROR"}, "Not a license plate library (plates.json from An's Garage for Frosty)")
-                return {"CANCELLED"}
-            context.scene["ans_garage_plate_library"] = folder
-            addon = context.preferences.addons.get(__name__)
-            if addon and getattr(addon, "preferences", None) is not None:
-                addon.preferences.plate_library = folder
-            return {"FINISHED"}
+        kind, index_file = "plate", "plates.json"
 
     def plate_items(self, context):
         index = plate_index(plate_library(context)) if context else None
@@ -580,40 +558,6 @@ def register():
                 RUN["cancel"] = True
             return {"FINISHED"}
 
-    class IMPORT_SCENE_OT_ans_garage_assembly(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.ans_garage_assembly"
-        bl_label = "Assemble imported vehicle meshes"
-        bl_options = {"REGISTER", "UNDO"}
-        filename_ext = ".json"
-        filter_glob: StringProperty(default="*manifest.json", options={"HIDDEN"})
-        def execute(self, context):
-            try:
-                root, _ = assembly_module().assemble_existing(self.filepath)
-                add_moving_parts(root, bpy.data.texts.get("An's Garage assembly report"))
-                self.report({"INFO"}, "Assembly created. See the An's Garage sidebar and assembly report.")
-                return {"FINISHED"}
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
-                return {"CANCELLED"}
-
-    class IMPORT_SCENE_OT_ans_garage_material_slots(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.ans_garage_material_slots"
-        bl_label = "Restore vehicle material slots"
-        bl_options = {"REGISTER", "UNDO"}
-        filename_ext = ".json"
-        filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
-        def execute(self, context):
-            try:
-                result = materials_module().reconstruct(self.filepath)
-                surfaces_module().apply_supported_surfaces(export_path=self.filepath)
-                failed = sum(x.get("Severity") == "assignment_failed" for x in result["Issues"])
-                self.report({"WARNING" if failed else "INFO"},
-                            "%d objects assigned; %d failures. See material reconstruction report." % (len(result["Objects"]), failed))
-                return {"FINISHED"}
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
-                return {"CANCELLED"}
-
     class OBJECT_OT_ans_garage_build_materials(bpy.types.Operator):
         bl_idname = "object.ans_garage_build_materials"
         bl_label = "Build supported materials"
@@ -664,20 +608,13 @@ def register():
         bl_idname = "object.ans_garage_variant"
         bl_label = "Switch vehicle part"
         bl_options = {"REGISTER", "UNDO"}
-        # UI operator invocations normally reuse last-used properties. In 0.4.1
-        # a previous preset="Stock" survived a subsequent single-part click and
-        # silently reapplied Stock. These are explicit button arguments.
+        # Explicit button arguments (SKIP_SAVE): an operator otherwise reuses its last-used properties.
         root: StringProperty(options={"SKIP_SAVE"})
         group: StringProperty(options={"SKIP_SAVE"})
         option: StringProperty(options={"SKIP_SAVE"})
-        preset: StringProperty(options={"SKIP_SAVE"})  # Legacy scripting API.
         def execute(self, context):
             try:
-                collection = bpy.data.collections[self.root]
-                if self.preset:
-                    assembly_module().apply_preset(collection, self.preset)
-                else:
-                    assembly_module().set_variant(collection, self.group, self.option)
+                assembly_module().set_variant(bpy.data.collections[self.root], self.group, self.option)
                 return {"FINISHED"}
             except Exception as exc:
                 self.report({"ERROR"}, str(exc))
@@ -698,26 +635,6 @@ def register():
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
 
-    class OBJECT_OT_ans_garage_material_row(bpy.types.Operator):
-        bl_idname = "object.ans_garage_material_row"
-        bl_label = "Select source material database row"
-        bl_options = {"REGISTER", "UNDO"}
-        database_guid: StringProperty()
-        row: IntProperty()
-        def execute(self, context):
-            try:
-                obj = context.active_object
-                if not obj or not obj.get("unbound_materials_path"):
-                    raise ValueError("Select a mesh with restored vehicle material slots")
-                materials_module().apply_material_variant(obj["unbound_materials_path"],
-                    obj["unbound_mesh_id"], self.database_guid, self.row, context.selected_objects)
-                surfaces_module().apply_supported_surfaces(context.selected_objects)
-                self.report({"INFO"}, "Source row selected. Supported surfaces rebuilt; see An's Garage surface report.")
-                return {"FINISHED"}
-            except Exception as exc:
-                self.report({"ERROR"}, str(exc))
-                return {"CANCELLED"}
-
     class VIEW3D_PT_ans_garage_vehicle(bpy.types.Panel):
         bl_label = "An's Garage %d.%d.%d" % bl_info["version"]
         bl_idname = "VIEW3D_PT_ans_garage_vehicle"
@@ -732,10 +649,7 @@ def register():
                 run = self.layout.box()
                 wrapped(run, context, "Importing " + RUN["name"], icon="IMPORT")
                 text = "%d%%" % RUN["pct"]
-                if hasattr(run, "progress"):
-                    run.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
-                else:
-                    run.label(text=text)
+                run.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
                 run.label(text=RUN["stage"] + ("  %d / %d" % (RUN["done"], RUN["total"]) if RUN["total"] > 1 else ""))
                 run.label(text="Elapsed %d:%02d" % divmod(int(time.time() - RUN["start"]), 60))
                 wrapped(run, context, "Leave the scene alone until it finishes", icon="INFO")
@@ -792,7 +706,6 @@ def register():
                             op = box.operator("object.ans_garage_variant", text=text,
                                               depress=not variant.hide_viewport)
                             op.root, op.group, op.option = root.name, key, variant["unbound_option"]
-                            op.preset = ""  # Explicit even when replacing an already-loaded older add-on.
                 current = json.loads(root.get("ans_garage_tire_json") or '{"Name": "Stock", "Lettering": "Plain"}')
                 tires = box.box()
                 wrapped(tires, context, "Tires: %s%s" % (current["Name"], ", brand lettering" if current["Name"] != "Stock"
@@ -854,28 +767,19 @@ def register():
                 material = obj.active_material
                 built = material and material.get("unbound_surface_profile")
                 wrapped(box, context, str(material.get("unbound_status", "")) if built else "Surface shader is unresolved")
-                box.prop(obj, '["unbound_show_material_rows"]', text="Source material variants",
-                         icon="TRIA_DOWN" if obj["unbound_show_material_rows"] else "TRIA_RIGHT", emboss=False)
-                if obj["unbound_show_material_rows"]:
-                    for row in json.loads(obj["unbound_material_variants_json"]):
-                        op = box.operator("object.ans_garage_material_row",
-                            text=row["Hash"] + " / " + row["DatabaseGuid"][:8] + ":" + str(row["Row"]))
-                        op.database_guid, op.row = row["DatabaseGuid"], row["Row"]
 
     def menu(self, context):
         self.layout.operator(IMPORT_SCENE_OT_ans_garage_vehicle.bl_idname, text="An's Garage vehicle (.json)")
-        self.layout.operator(IMPORT_SCENE_OT_ans_garage_assembly.bl_idname, text="An's Garage: assemble imported meshes")
-        self.layout.operator(IMPORT_SCENE_OT_ans_garage_material_slots.bl_idname, text="An's Garage: restore material slots")
 
     global _registered_classes, _menu
     _registered_classes = [AnsGaragePreferences, IMPORT_SCENE_OT_ans_garage_locate_tires, OBJECT_OT_ans_garage_tire,
                            IMPORT_SCENE_OT_ans_garage_locate_plates, OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
-                           IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
+                           IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
                            IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,
                            OBJECT_OT_ans_garage_variant, OBJECT_OT_ans_garage_preset,
-                           OBJECT_OT_ans_garage_material_row, VIEW3D_PT_ans_garage_vehicle]
+                           VIEW3D_PT_ans_garage_vehicle]
     _menu = menu
     for cls in _registered_classes:
         bpy.utils.register_class(cls)

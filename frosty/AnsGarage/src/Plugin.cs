@@ -19,10 +19,10 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("AnsGarage")]
-[assembly: AssemblyVersion("1.0.4.0")]
+[assembly: AssemblyVersion(AnsGarage.Core.Version + ".0")]
 [assembly: PluginDisplayName("An's Garage for Frosty")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("1.0.4.0")]
+[assembly: PluginVersion(AnsGarage.Core.Version + ".0")]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.TireLibraryMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.PlateLibraryMenu))]
@@ -194,7 +194,7 @@ namespace AnsGarage
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "1.0.4";
+        public string PluginVersion = Core.Version;
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion, Blueprint;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
@@ -393,7 +393,7 @@ namespace AnsGarage
                 if(!Cancel && !Library) {
                     task.Update("Shader default textures");
                     Time("Shader default textures", () => {
-                        try { ExportShaderDefaults(output); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }
+                        try { ExportShaderDefaults(output,true); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }
                     });
                 }
             }
@@ -402,18 +402,41 @@ namespace AnsGarage
         }
         // Shared textures that vehicle shaders read by default (swatch atlases, trim swatches, flake normals, grime masks).
         // The asset list ships next to the plugin (generated from the Blender add-on's compiled shader profiles).
-        public static void ExportShaderDefaults(string output)
+        // They are the same for every car (about 180 MB), so a vehicle export writes them once into a shader-defaults
+        // folder next to the car folders, where the Blender add-on also looks, and skips them when that folder already
+        // holds every listed texture. shared=false writes them inside the given folder (headless "defaults" mode).
+        public static void ExportShaderDefaults(string output,bool shared=false)
         {
             string list=Path.Combine(Path.GetDirectoryName(typeof(Batch).Assembly.Location),"UnboundShaderDefaults.json");
             if(!File.Exists(list)) throw new FileNotFoundException("UnboundShaderDefaults.json missing next to the plugin");
             var names=Newtonsoft.Json.Linq.JArray.Parse(File.ReadAllText(list)).Select(t=>(string)t).ToList();
-            var run=new MaterialRun(Path.Combine(output,"shader-defaults"),"shader defaults");
+            string target=shared?Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output).TrimEnd('\\','/')),"shader-defaults")
+                                :Path.Combine(output,"shader-defaults");
+            if(shared && HasTextures(target,names)) return;
+            var run=new MaterialRun(target,"shader defaults");
             foreach(string name in names) {
                 var entry=App.AssetManager.GetEbxEntry(name);
                 if(entry==null) { run.Issue(name,"Texture asset not found"); continue; }
                 try { run.ExportTextureAsset(entry); } catch(Exception ex) { run.Issue(name,ex); }
             }
             run.SaveTextureIndex("Exported by An's Garage for Frosty; game data, keep private.");
+        }
+        // True when the folder's textures.json has every listed asset: exported with its file present, or already tried
+        // and failed (two black default textures always fail the exact-payload check; retrying gives the same result).
+        private static bool HasTextures(string folder,List<string> names)
+        {
+            string index=Path.Combine(folder,"textures.json");
+            if(!File.Exists(index)) return false;
+            try {
+                var present=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach(var t in (Newtonsoft.Json.Linq.JArray)Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(index))["Textures"]) {
+                    string path=(string)t["Path"];
+                    bool exported=(string)t["Status"]=="exported" && path!=null && File.Exists(Path.Combine(folder,path));
+                    if(!exported && (string)t["Status"]!="unsupported_or_failed") continue;
+                    foreach(var a in (Newtonsoft.Json.Linq.JArray)t["Aliases"]??new Newtonsoft.Json.Linq.JArray()) present.Add((string)a["Asset"]);
+                }
+                return names.All(present.Contains);
+            } catch { return false; }
         }
         private void Export(MeshRecord record, FrostyTaskWindow task)
         {

@@ -1,68 +1,16 @@
-"""Verified shader profiles applied to existing source material slots.
+"""Builds each source material slot from its compiled source-shader profile (unbound_profiles.py).
 
-This module never edits geometry or guesses a UV layer from its ordinal/name.
-Version 0.5.0 supports the static base layer of one exact Unbound tire shader.
-Version 0.6.0 adds compiled source-shader profiles (unbound_profiles.py) for the other deferred shaders.
+This module never edits geometry or guesses a UV layer from its ordinal/name. Shaders without a resolved profile stay
+unconnected and are reported.
 """
 import hashlib
 import json
 from pathlib import Path
 
-VERSION = "1.0.4"
-PROFILE = json.loads(Path(__file__).with_name("tire_shader_evidence.json").read_text(encoding="utf-8"))
-CORE_TEXTURES = ("RGB_Color_A_Smoothness", "RG_Normal_A_AO")
-
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
-
-def supported(state):
-    shader = state.get("Shader") or {}
-    expected = PROFILE["ShaderFileGuid"].replace("-", "") + ":" + PROFILE["ShaderClassGuid"].replace("-", "")
-    return (shader.get("Asset", "").casefold() == PROFILE["ShaderAsset"].casefold()
-            and shader.get("Node", "").lower() == expected)
-
-
-def validate_parameters(state):
-    """Fail closed on overrides whose effect the static profile cannot reproduce."""
-    params = state.get("Parameters", {})
-    for kind in ("BoolParameters", "ConditionalParameters", "VectorArrayParameters"):
-        if params.get(kind):
-            raise ValueError("Unsupported " + kind + "; source material preserved")
-    defaults = {k.casefold(): v for k, v in PROFILE["Defaults"].items()}
-    for key, parameter in params.get("VectorParameters", {}).items():
-        value = parameter.get("Value", {})
-        if not isinstance(value, dict) or key not in defaults:
-            raise ValueError("Unverified vector override: " + key)
-        actual = [value.get(c, 0) for c in "xyzw"]
-        if any(abs(a-b) > 1e-6 for a, b in zip(actual, defaults[key])):
-            raise ValueError("Non-default runtime parameter is unsupported: " + key)
-    allowed = {x.casefold() for x in CORE_TEXTURES} | {"rg_normalblur_a_aoblur"}
-    for b in state.get("TextureBindings", []):
-        if b["Parameter"].casefold() not in allowed:
-            raise ValueError("Unverified texture layer: " + b["Parameter"])
-    bindings = {b["Parameter"].casefold(): b for b in state["TextureBindings"]}
-    for name in CORE_TEXTURES:
-        if name.casefold() not in bindings:
-            raise ValueError("Missing required texture: " + name)
-    cs, no = (bindings[n.casefold()] for n in CORE_TEXTURES)
-    if cs.get("ColorSpace") != "sRGB" or cs.get("Format") != "BC7_SRGB":
-        raise ValueError("Unverified color/smoothness format or transfer function")
-    if no.get("Format") != "BC7_UNORM":
-        raise ValueError("Unverified normal/AO format")
-    return cs, no
-
-
-def source_uv(obj):
-    bindings = json.loads(obj.get("unbound_uv_bindings_json", "[]"))
-    usage = PROFILE["UV"][CORE_TEXTURES[0]]["SourceUsage"]
-    if PROFILE["UV"][CORE_TEXTURES[1]]["SourceUsage"] != usage:
-        raise ValueError("Profile needs separate texture UVs")
-    matches = [b for b in bindings if b.get("SourceUsage") == usage]
-    if len(matches) != 1 or matches[0].get("BlenderLayer") not in obj.data.uv_layers:
-        raise ValueError("Missing/ambiguous " + usage + " mapping; no default UV chosen")
-    return matches[0]["BlenderLayer"]
 
 
 def _inside(root, relative):
@@ -157,183 +105,24 @@ def tangent_basis(obj, mesh_record, root, layer, cache):
     return cache[cache_key]
 
 
-def load_texture(binding, root, colorspace):
-    import bpy
-    path = _inside(root, binding["Path"])
-    if not path.is_file():
-        raise FileNotFoundError("Missing texture: " + str(path))
-    for im in bpy.data.images:
-        if (im.get("unbound_resource_id") == binding["ResourceId"]
-                and im.get("unbound_source_path") == str(path)
-                and im.colorspace_settings.name == colorspace
-                and im.alpha_mode == "CHANNEL_PACKED" and im.size[0] > 0):
-            return im
-    im = bpy.data.images.load(str(path), check_existing=False)
-    im["unbound_resource_id"] = binding["ResourceId"]
-    im["unbound_source_path"] = str(path)
-    im["unbound_source_colorspace"] = binding["ColorSpace"]
-    im.colorspace_settings.name = colorspace
-    im.alpha_mode = "CHANNEL_PACKED"
-    if im.size[0] == 0:
-        raise ValueError("Blender could not decode DDS: " + str(path))
-    return im
 
-
-def static_tire_group():
-    import bpy
-    identity = PROFILE["Profile"] + "-math"
-    existing = next((g for g in bpy.data.node_groups if g.get("unbound_profile_math") == identity), None)
-    if existing:
-        return existing
-    g = bpy.data.node_groups.new("Unbound | Source tire base v1", "ShaderNodeTree")
-    g["unbound_profile_math"] = identity
-    for name, kind, direction in (
-        ("Source Color", "NodeSocketColor", "INPUT"), ("Smoothness", "NodeSocketFloat", "INPUT"),
-        ("Normal RG", "NodeSocketColor", "INPUT"), ("AO", "NodeSocketFloat", "INPUT"),
-        ("Base Color", "NodeSocketColor", "OUTPUT"), ("Roughness", "NodeSocketFloat", "OUTPUT"),
-        ("Normal XYZ", "NodeSocketVector", "OUTPUT")):
-        g.interface.new_socket(name=name, in_out=direction, socket_type=kind)
-    n, links = g.nodes, g.links
-    source = n.new("NodeGroupInput")
-    source.location = (-800, 100)
-    output = n.new("NodeGroupOutput")
-    output.location = (700, 100)
-    def math(op, a, b=None, label=""):
-        node = n.new("ShaderNodeMath")
-        node.operation, node.label = op, label
-        for i, value in enumerate((a, b)):
-            if value is None:
-                continue
-            if isinstance(value, (int, float)):
-                node.inputs[i].default_value = value
-            else:
-                links.new(value, node.inputs[i])
-        return node
-    ao = math("ADD", source.outputs["AO"], .05, "PS: AO + 0.05")
-    ao.location = (-500, 400)
-    sqrt = math("SQRT", ao.outputs[0], label="PS: sqrt(AO + 0.05)")
-    sqrt.location = (-300, 400)
-    color = n.new("ShaderNodeVectorMath")
-    color.operation, color.label = "SCALE", "Static source base color"
-    color.location = (200, 400)
-    links.new(source.outputs["Source Color"], color.inputs[0])
-    links.new(sqrt.outputs[0], color.inputs["Scale"])
-    links.new(color.outputs["Vector"], output.inputs["Base Color"])
-    rough = math("SUBTRACT", 1, source.outputs["Smoothness"], "Principled translation: 1 - smoothness")
-    rough.use_clamp = True
-    rough.location = (200, 200)
-    links.new(rough.outputs[0], output.inputs["Roughness"])
-    split = n.new("ShaderNodeSeparateColor")
-    split.mode, split.location = "RGB", (-600, -100)
-    links.new(source.outputs["Normal RG"], split.inputs["Color"])
-    components = []
-    for i, channel in enumerate(("Red", "Green")):
-        mul = math("MULTIPLY", split.outputs[channel], 2)
-        mul.location = (-400, -i*150-100)
-        sub = math("SUBTRACT", mul.outputs[0], 1, "Source " + "XY"[i])
-        sub.location = (-200, -i*150-100)
-        components.append(sub.outputs[0])
-    product = math("MULTIPLY", *components, label="Source: saturate(X*Y)")
-    product.use_clamp = True
-    product.location = (0, -400)
-    z = math("SUBTRACT", 1, product.outputs[0], "Source Z (not the usual square root)")
-    z.location = (200, -400)
-    combine = n.new("ShaderNodeCombineXYZ")
-    combine.location = (200, -100)
-    for socket, value in zip(combine.inputs, components + [z.outputs[0]]):
-        links.new(value, socket)
-    normalize = n.new("ShaderNodeVectorMath")
-    normalize.operation, normalize.location = "NORMALIZE", (400, -100)
-    links.new(combine.outputs[0], normalize.inputs[0])
-    links.new(normalize.outputs["Vector"], output.inputs["Normal XYZ"])
-    return g
-
-
-def make_material(source, state, layer, images, basis, identity):
-    import bpy
-    mat = source.copy()
-    try:
-        mat.name = source.name + " | Tire base"
-        mat.use_nodes = True
-        nodes, links = mat.node_tree.nodes, mat.node_tree.links
-        # Preserve all original raw nodes, but place them inside an inspection frame.
-        frame = nodes.new("NodeFrame")
-        frame.label = "Original source values / inactive inspection nodes"
-        for node in list(nodes):
-            if node != frame and node.parent is None:
-                node.parent = frame
-        frame.location = (-1600, -1000)
-        uv = nodes.new("ShaderNodeUVMap")
-        uv.uv_map, uv.label, uv.location = layer, "Verified source TexCoord0 → " + layer, (-900, 400)
-        samples = []
-        for i, (parameter, image) in enumerate(zip(CORE_TEXTURES, images)):
-            tex = nodes.new("ShaderNodeTexImage")
-            tex.image, tex.label, tex.location = image, parameter, (-650, 400-i*320)
-            tex.extension = "REPEAT"
-            tex["unbound_parameter_name"] = parameter
-            links.new(uv.outputs["UV"], tex.inputs["Vector"])
-            samples.append(tex)
-        cs, no = samples
-        math = nodes.new("ShaderNodeGroup")
-        math.node_tree, math.location = static_tire_group(), (-300, 400)
-        links.new(cs.outputs["Color"], math.inputs["Source Color"])
-        links.new(cs.outputs["Alpha"], math.inputs["Smoothness"])
-        links.new(no.outputs["Color"], math.inputs["Normal RG"])
-        links.new(no.outputs["Alpha"], math.inputs["AO"])
-        bsdf = nodes.new("ShaderNodeBsdfPrincipled")
-        bsdf.location, bsdf.label = (350, 400), "Partial tire base / Principled approximation"
-        bsdf.inputs["Metallic"].default_value = 0
-        bsdf.inputs["IOR"].default_value = 1.5
-        links.new(math.outputs["Base Color"], bsdf.inputs["Base Color"])
-        links.new(math.outputs["Roughness"], bsdf.inputs["Roughness"])
-        if basis["Signs"]:
-            scale = nodes.new("ShaderNodeVectorMath")
-            scale.operation, scale.location = "MULTIPLY", (-50, -150)
-            scale.inputs[1].default_value = tuple(.5*x for x in basis["Signs"])
-            links.new(math.outputs["Normal XYZ"], scale.inputs[0])
-            bias = nodes.new("ShaderNodeVectorMath")
-            bias.operation, bias.location = "ADD", (150, -150)
-            bias.inputs[1].default_value = (.5, .5, .5)
-            links.new(scale.outputs["Vector"], bias.inputs[0])
-            normal = nodes.new("ShaderNodeNormalMap")
-            normal.space, normal.uv_map, normal.location = "TANGENT", layer, (350, -150)
-            normal.label = "Source basis checked against this mesh's FBX"
-            links.new(bias.outputs["Vector"], normal.inputs["Color"])
-            links.new(normal.outputs["Normal"], bsdf.inputs["Normal"])
-        output = nodes.new("ShaderNodeOutputMaterial")
-        output.is_active_output, output.location = True, (700, 400)
-        links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
-        mat["unbound_surface_profile"] = PROFILE["Profile"]
-        mat["unbound_surface_key"] = identity
-        mat["unbound_status"] = "Partial tire base: original textures; Principled approximation"
-        mat["unbound_surface_evidence_json"] = canonical({
-            "Profile": PROFILE["Profile"], "ShaderDatabaseSHA256": PROFILE["DatabaseSHA256"],
-            "UVLayer": layer, "Basis": basis, "Unsupported": PROFILE["Unsupported"],
-            "RendererChoices": PROFILE["RendererChoices"]})
-        return mat
-    except Exception:
-        bpy.data.materials.remove(mat)
-        raise
-
-
-def apply_supported_surfaces(objects=None, export_path=None, progress=None):
-    """Build every supported slot now; progress(done, total) is called per object."""
+def apply_supported_surfaces(objects=None, export_path=None):
+    """Build every supported slot now."""
     steps = surface_steps(objects, export_path)
     while True:
         try:
-            done, total = next(steps)
+            next(steps)
         except StopIteration as stop:
             return stop.value
-        if progress:
-            progress(done, total)
 
 
 def surface_steps(objects=None, export_path=None):
     """Generator form of apply_supported_surfaces: yields (done, total) per object, returns the report."""
     import bpy
     objects = list(objects if objects is not None else bpy.context.scene.objects)
-    report = {"Version": VERSION, "Profile": PROFILE["Profile"], "Built": [], "AlreadyBuilt": [],
-              "Unsupported": [], "Issues": [], "Scope": PROFILE["Scope"],
+    from . import bl_info
+    report = {"Version": ".".join(map(str, bl_info["version"])), "Built": [], "AlreadyBuilt": [],
+              "Unsupported": [], "Issues": [],
               "CompiledProfiles": "Static-state source G-buffer formulas translated to Principled; "
                                   "see each built material's unbound_surface_evidence_json."}
     documents, basis_cache, material_cache, caches = {}, {}, {}, {}
@@ -364,36 +153,10 @@ def surface_steps(objects=None, export_path=None):
                 if obj.get("unbound_parameter_overrides_json"):
                     # Per-object values the player sets in the game (license plate text): parameter -> values.
                     state["ParameterOverrides"] = json.loads(obj["unbound_parameter_overrides_json"])
-                if not supported(state) or obj.get("unbound_compiled_profile_only"):
-                    profile_slot(obj, index, slot, material, state, export_path, documents, basis_cache,
-                                 material_cache, caches, report)
-                    continue
-                if material.node_tree and any(n.type == "OUTPUT_MATERIAL" and n.inputs["Surface"].is_linked
-                                              for n in material.node_tree.nodes):
-                    raise ValueError("Existing connected surface preserved")
-                cs, no = validate_parameters(state)
-                layer = source_uv(obj)
-                root, mesh = locate_export(obj, state, export_path, documents)
-                images = (load_texture(cs, root, "sRGB"), load_texture(no, root, "Non-Color"))
-                basis = tangent_basis(obj, mesh, root, layer, basis_cache)
-                identity = hashlib.sha256(canonical({
-                    "State": state, "Layer": layer, "Signs": basis["Signs"], "Root": str(root),
-                    "Profile": PROFILE["Profile"]}).encode()).hexdigest()
-                if identity not in material_cache:
-                    material_cache[identity] = make_material(material, state, layer, images, basis, identity)
-                slot.link = "OBJECT"
-                slot.material = material_cache[identity]
-                obj["unbound_materials_path"] = str(root / "materials.json")
-                obj["unbound_surface_uv_json"] = canonical([
-                    {"Parameter": p, "SourceUsage": PROFILE["UV"][p]["SourceUsage"], "BlenderLayer": layer,
-                     "Evidence": PROFILE["Profile"]} for p in CORE_TEXTURES])
-                report["Built"].append({"Object": obj.name, "Slot": index, "MeshId": obj["unbound_mesh_id"],
-                    "Material": slot.material.name, "UV": layer, "Basis": basis, "ExportRoot": str(root)})
-                if basis["Status"] == "disabled":
-                    report["Issues"].append({"Object": obj.name, "Issue": "Normal map disabled: " + basis["Reason"]})
+                profile_slot(obj, index, slot, material, state, export_path, documents, basis_cache,
+                             material_cache, caches, report)
             except Exception as exc:
                 report["Issues"].append({"Object": obj.name, "Slot": index, "Issue": str(exc)})
-    report["Limits"] = PROFILE["Unsupported"]
     report["Summary"] = summarize(report)
     text = bpy.data.texts.new("An's Garage surface report")
     text.write(json.dumps(report, indent=2))
@@ -402,11 +165,8 @@ def surface_steps(objects=None, export_path=None):
 
 
 def profiles_module():
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("unbound_profiles", Path(__file__).with_name("unbound_profiles.py"))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from . import unbound_profiles
+    return unbound_profiles
 
 
 def profile_slot(obj, index, slot, material, state, export_path, documents, basis_cache, material_cache, caches, report):
@@ -578,7 +338,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
 
 def summarize(report):
     from collections import Counter
-    built = Counter((b.get("Shader") or PROFILE["ShaderAsset"]).rsplit("/", 1)[-1] for b in report["Built"])
+    built = Counter((b.get("Shader") or "?").rsplit("/", 1)[-1] for b in report["Built"])
     unsupported = Counter(((u.get("Shader") or {}).get("Asset") or "none").rsplit("/", 1)[-1] for u in report["Unsupported"])
     issues = Counter(i.get("Issue", "")[:120] for i in report["Issues"])
     return {"BuiltSlots": sum(built.values()), "BuiltByShader": dict(built),

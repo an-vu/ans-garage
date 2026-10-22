@@ -70,6 +70,8 @@ static JToken Flat(object o, int depth) {
  }
  return obj;
 }
+// The plugin reports progress to a Frosty task window; headless runs give it one that is never shown.
+static FrostyTaskWindow NoWindow() { return (FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow)); }
 class Logger : FrostySdk.Interfaces.ILogger {
 public void Log(string text,params object[] args){Console.WriteLine(text,args);}
 public void LogWarning(string text,params object[] args){Console.WriteLine(text,args);}
@@ -156,14 +158,14 @@ static void Run(string[] a) {
  }
  if(mode=="plates") {
   // License plate library: a[5] = output folder.
-  var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));
+  var t=NoWindow();
   var index=PlateLibrary.Export(Path.GetFullPath(a[5]),t);
   Console.WriteLine("PLATES "+((JArray)index["Plates"]).Count);
   return;
  }
  if(mode=="tires") {
   // Tire library (Falken and Toyo): a[5] = output folder.
-  var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));
+  var t=NoWindow();
   var index=TireLibrary.Export(Path.GetFullPath(a[5]),t);
   Console.WriteLine("TIRES "+((JArray)index["Tires"]).Count+" items, "+((JObject)index["Blueprints"]).Count+" meshes");
   return;
@@ -253,7 +255,7 @@ static void Run(string[] a) {
   var existing=new Batch(manifest.Scope,"",folder);
   existing.Manifest.Meshes.AddRange(manifest.Meshes);
   var run=new AssemblyRun(existing.Manifest,folder) {Blueprint=a[6]};
-  var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));
+  var t=NoWindow();
   try {
    run.Run(); manifest.Errors.RemoveAll(e=>e.StartsWith("Assembly:"));
    foreach(var mesh in existing.Manifest.Meshes.Where(m=>m.Status=="pending").ToArray()) existing.ExportAdditional(mesh,t);
@@ -270,7 +272,7 @@ static void Run(string[] a) {
  }
  var batch=new Batch(a[5],"",a[6]);
  if(a.Length>7) batch.Blueprint=a[7];
- var task=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));
+ var task=NoWindow();
  task.PropertyChanged+=(sender,eventArgs)=> {if(eventArgs.PropertyName=="Status")Console.WriteLine(task.Status);};
  batch.Run(task);batch.Save();
  Console.WriteLine("BATCH EXPORTED "+batch.Manifest.Meshes.Count(x=>x.Status=="exported")+" ERRORS "+batch.Manifest.Errors.Count);

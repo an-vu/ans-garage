@@ -65,7 +65,6 @@ def ensure_library(folder):
                 bpy.context.scene.collection.objects.link(c)
                 lettered.append(c)
                 for x in (o, c):
-                    x["unbound_compiled_profile_only"] = True
                     x["unbound_override_textures"] = str(folder / "override-textures")
                 o["ans_garage_lettering"], c["ans_garage_lettering"] = "Plain", "Brand"
             remap = dict(zip(plain, lettered))

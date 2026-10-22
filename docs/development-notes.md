@@ -1,55 +1,53 @@
-# NFS Unbound → Blender: development notes, 0.7.0
+# Development notes
 
-This release makes the pipeline vehicle-agnostic and adds in-game names.
+How the pipeline works and what is still open. Release history: `CHANGELOG.md`. Data formats: `material-data.md`, `assembly-data.md`.
 
-## 1. Exporter 0.5.0 (C#, `frosty/AnsGarage/src`)
+## 1. Exporter (C#, `frosty/AnsGarage/src`)
 
-| Area | Implementation | Evidence |
-|---|---|---|
-| Vehicle list | `VehicleCatalog.Build()` (Names.cs): each `RaceVehicleItemData.RaceVehicle` bundle hash → the `RaceVehicleBlueprint` whose entity has that `VehicleBundleHash` | 200 vehicles, names verified for the Murciélago, M3 E46, i8, M3 GTR |
-| Shared folders | `Batch.Blueprint` → `AssemblyRun.Blueprint`; ambiguous folders now list the candidates | `car_bmw_m3e46_2003` holds 3 blueprints |
-| Names | `Names.ItemUi()`: `ItemUI` (`ItemUiMetaData`) Long/Medium/Short/Description/TypeName ids → `FsLocalizationPlugin.FsLocalizationStringDatabase` (created by reflection when the editor's database is absent) | `ID_STOCK_BUMPER` → "Stock", `ID_VC_BUMPERFRONT` → "Front Bumper" |
-| Kit brand | `DescriptionId` `ID_VC_<KIT>_01` → `ID_VC_<KIT>_02`, or `ID_VC_<BRANDKEY>_02` from the brand texture | Liberty Walk, Rocket Bunny, CSL, M2 Motoring, Speedhunters, DTM Fiberwerkz Widebody |
-| No name | `DisplayName` null; the brand texture key is kept (`apr`, `pandem`, `bigcountrylabs`, `carbon`) | Hash search of 20+ id spellings found no brand string id for these |
-| Shader defaults | `Batch.ExportShaderDefaults()` exports the assets in `UnboundShaderDefaults.json` with the normal texture path | 53 assets; 2 tiny BC1 black textures fail Frosty's DDS payload check and stay unexported |
-| Robustness | `MaterialRun.ReplaceFile()`: retried `File.Replace` | One BMW export failed on a transient lock before this |
+| Area | Implementation |
+|---|---|
+| Vehicle list | `VehicleCatalog.Build()` (Names.cs): each `RaceVehicleItemData.RaceVehicle` bundle hash → the `RaceVehicleBlueprint` whose entity has that `VehicleBundleHash` (200 vehicles), cached in `%LOCALAPPDATA%\AnsGarage\vehicle-catalog.json`. |
+| Shared folders | `Batch.Blueprint` → `AssemblyRun.Blueprint`; a folder holding several blueprints (the BMW M3 E46 folder has 3) needs the chosen blueprint. |
+| Names | `Names.ItemUi()`: `ItemUI` string ids → `FsLocalizationPlugin.FsLocalizationStringDatabase` (created by reflection when the editor's database is absent). Kit brand: `ID_VC_<KIT>_02`, else `BrandTitle` from the game's localized text for the logo key. |
+| Geometry, materials | `Batch` (Plugin.cs) writes LOD0 FBX per mesh and `MaterialRun` (Materials.cs) the material graph and DDS textures. A texture's raw payload is kept only for texture arrays, cube maps and formats the DDS writer doesn't support; every DDS is checked against the payload's SHA-256. |
+| Shader defaults | `Batch.ExportShaderDefaults()` writes the assets in `UnboundShaderDefaults.json` once into a `shader-defaults` folder next to the car folders and skips them when it is complete. Two tiny black textures always fail the exact-payload check. |
+| Assembly | `AssemblyRun` (Assembly.cs): blueprint graph, wheels, items, presets, components and `TrackData` (sequence keyframes for moving parts). |
+| Libraries | `TireLibrary` (Tires.cs) and `PlateLibrary` (Plates.cs), exported once through `LibraryMenu`. |
+| Version | `Core.Version` (Core.cs) is the only place the version is written. |
 
-The harness `tools/headless/ExportHarness.cs` (`tools/headless/export.ps1`) runs the same code headlessly. It loads a copy of the editor config, never the real one, and never prints keys.
+`tools/headless/ExportHarness.cs` (`tools/headless/export.ps1`) runs the same code without the Frosty window: export, assembly, defaults, tires, plates, catalog, scan (moving parts of every vehicle), and lookup modes. It loads a copy of the editor config, never the real one, and never prints keys.
 
-## 2. Vehicle-agnostic shader profiles (`tools/shader-compiler/compile_all.py`, schema 3)
+## 2. Shader profiles (`tools/shader-compiler/compile_all.py`, schema 3)
 
-- **Scope:** every shader in the v293 vehicle shader database (225), keyed by the DJB2-xor hash of the lower-case asset name. This is the database's own key, verified for all 26 Murciélago shaders.
-- **Parameters:** all symbolic except the static undamaged override `Ext_GlassDamage = 0`. The add-on specializes each material.
-- **Textures:** every material-bindable texture stays a sample. The add-on folds samples whose decoded texels are uniform, plus runtime-only textures without a default or binding (zero; same rule as before).
-- **Inputs:**
-  - Interpolants are named by vertex-declaration element (`Elem<i>.<k>`); the add-on maps them to the section's usages.
-  - Routing heuristics that need a role (`Pos` at element 0; a Half4 element as `Delta`) record it in `AssumedUsages`. The add-on rejects a section that disagrees.
-- **Constant-stub vertex programs** (skinned layouts): element routing is impossible. For usage layouts seen in exports (`known-layouts.json` in the shader data folder, 20 layouts from the Murciélago and the M3 E46), usage-named entries use the unanimous routing of the program's other known layouts (0.6.1 rule). They replace the stub entries for matching sections.
-- **External cbuffer:** in all 909 database programs where it is identifiable by size, it is `cb1`. This now breaks size ties, and a program without `cb1` reads no parameters.
-- **Result:** 112 shaders profiled and 3 unresolved. The other 110 contain only forward 2-target programs (effects, decals); none of those is used by the Murciélago or the M3 E46. 12.3 MB of JSON, 1.2 MB gzip.
+- **Scope:** every shader in the v293 vehicle shader database (225), keyed by the DJB2-xor hash of the lower-case asset name.
+- **Parameters:** all symbolic except the static undamaged override `Ext_GlassDamage = 0`; the add-on specializes each material.
+- **Textures:** every material-bindable texture stays a sample. The add-on folds samples whose texels are uniform, plus runtime-only textures without a default or binding.
+- **Inputs:** interpolants are named by vertex-declaration element (`Elem<i>.<k>`); routing assumptions are recorded in `AssumedUsages` and checked by the add-on.
+- **Constant-stub vertex programs** (skinned layouts): usage-named entries exist for layouts in `known-layouts.json` (shader data folder). Exporting more vehicles and re-running `compile_all.py` extends them.
+- **External cbuffer:** `cb1` wherever it is identifiable by size.
+- **Result:** 115 shaders profiled; the rest contain only forward effect/decal programs. 1.3 MB gzip.
 
-## 3. Add-on 0.7.0 changes (`unbound_profiles.py`, `unbound_surfaces.py`, `unbound_assembly.py`)
+## 3. Add-on (`blender/ans_garage`)
 
-- **Profile lookup:** by shader hash. Entries match by section formats (`Formats`) or usage layout (`Layouts`); `element_inputs()` maps the inputs and checks the assumptions.
-- **`Spec` additions:** input renaming, uniform-texture constants, and `substitute()`.
-- **`prove_constants()`:** after specialization, the offline simplifier's randomized constant proof (three seeds, exact equality).
-  - Inputs, view values and live parameters are branch-covering random leaves.
-  - Every texture sample is an independent random value, so nothing that depends on texture contents is folded. The offline version modeled textures as functions of their coordinates, which could fold a constant-coordinate sample.
-- **Per-instance vertex constants:** unknown ones stay symbolic. The slot is unsupported only if one still reaches an output.
-- **Texture arrays:** slices are extracted from the exported raw resource in the add-on (mip-major size check, SHA-256 check) and packed into the .blend. Pre-extracted slices are no longer needed.
-- **Names:** the assembly uses `VehicleName` and the item `UI` names; the set code is kept in `unbound_set_code` and added to the label only when two options share a name. Presets use their own name, else the brand all their items share, else the set code.
+- **Import** (`__init__.py`, modal, in slices): FBX → slot restore (`unbound_materials.py`) → surfaces (`unbound_surfaces.py` + `unbound_profiles.py`) → assembly (`unbound_assembly.py`) → moving parts (`unbound_animation.py`) → per-wheel surfaces.
+- **Surfaces:** every slot is built from its compiled profile: specialization (`Spec`, `prove_constants`, `settle`), permutation choice (`choose_entry`), node emission (`NodeBuilder`). Unresolved inputs fail closed with a reason in the surface report.
+- **Accepted runtime values, recorded on each material:**
+  - engine constants with a measured effect ≤ 0.1 are set to 0;
+  - glass permutations may differ by ≤ 0.12 in transmittance/reflectance;
+  - `cb2[44].w` (camera exposure) is accepted when the specialized outputs don't change across 1e-5–100;
+  - the LED license-plate permutation is a player customization: the printed plate is built.
+- **Assembly:** item meshes are placed at their own customization component; geometry already in car space keeps its place.
+- **Moving parts:** 0–1 sliders from the blueprint's animation graph; see `assembly-data.md`.
+- **Libraries:** tires (`unbound_tires.py`) and license plates (`unbound_plates.py`, with typed plate text) swap textures and meshes through per-object overrides (`unbound_texture_overrides_json`, `unbound_parameter_overrides_json`).
 
 ## 4. Validation
 
-Results are summarized in `CHANGELOG.md`; run `tests/run_all.py` to reproduce them. Tests: `tests/test_existing_full.py` (copy of the delivered scene), `tests/test_vehicle.py` (fresh import of any export), `tests/test_node_compiler.py` (Cycles bake vs Python for every entry the export selects), `tests/test_fresh.py` (install ZIP, fail-closed defaults).
+`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry), `tires`, `plates`, and `vehicle:<name>` for eight cars covering every moving-part pattern found by the scan of all 200 vehicles.
 
 ## 5. Open items
 
-1. **Light-glass permutations that disagree without a known selection rule:** one BMW M3 E46 `cs_lglass` lens. Its programs `04203732` (full, with extra lighting textures and the rainbow effect) and `5ac42833` (reduced) differ in transmittance by up to 0.47 on rare inputs (mean 0.005).
-   - Resolved: `cb2[44].w` (camera exposure) is accepted when the car's specialized outputs don't change across 1e-5–100, checked per material.
-   - Resolved: engine constants with a measured effect up to 0.1 are set to 0 and recorded on the material.
-   - Resolved: glass permutations may differ by up to 0.12 in transmittance/reflectance.
-2. **License plate:** resolved. The two programs differ only in the font (`licenseplatefont_no`, t2) or LED-mask (`license_plate/licenseplate_ledmask_a`, t6) texture; the printed plate is the stock look.
-3. **Kit parts without a localized name:** the exporter takes the brand name from the game's localized text; brands it lacks are spelled by hand (`BRAND_SPELLINGS`) or shown as the title-cased logo key.
-4. **Profiles for unseen skinned layouts:** usage-named entries exist only for layouts seen in exports. Exporting more vehicles and re-running `compile_all.py` extends them.
-5. **Other games:** NFS Heat and Hot Pursuit Remastered need their own shader databases, programs and Frosty profiles. The exporter, names and compiler structure carry over; the profiles do not.
+1. **Light glass needing live values:** 7 surfaces.
+   - P1 and Diablo SV lenses: `cb0[1].x` changes them by 0.11–0.21, over the 0.1 limit.
+   - BMW M3 E46: one `cs_lglass` lens whose programs `04203732` (full) and `5ac42833` (reduced) differ by up to 0.47 in transmittance; the selection rule is unknown.
+   - A frame capture of the running game would settle both.
+2. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.

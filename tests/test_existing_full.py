@@ -63,7 +63,7 @@ baseline = {m.name: digest(m) for m in bpy.data.meshes}
 before_objects = objects_state()
 before_sources = slot_sources()
 before_materials = {m.name for m in bpy.data.materials}
-check("Development add-on 1.0.4 loaded", addon.bl_info["version"] == (1, 0, 4))
+VERSION = ".".join(map(str, addon.bl_info["version"]))
 check("Baseline scene has 593 Unbound meshes", len(meshes) == 593, len(meshes))
 
 status = bpy.ops.import_scene.ans_garage_locate_export(filepath=materials)
@@ -122,7 +122,7 @@ switched = 0
 for g in groups:
     options = [v for v in g.children if "unbound_option" in v]
     for v in options:
-        ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"], preset="") == {"FINISHED"}
+        ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"]) == {"FINISHED"}
         switched += 1
 ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Presets and every individual part option still switch", ok, {"Presets": presets, "OptionsSwitched": switched})
@@ -136,7 +136,7 @@ bpy.ops.wm.open_mainfile(filepath=str(saved))
 check("Save/reopen keeps mesh data", {m.name: digest(m) for m in bpy.data.meshes} == baseline)
 check("Save/reopen keeps built materials",
       len([m for m in bpy.data.materials if m.get("unbound_surface_profile") == "unbound-compiled-gbuffer-v1"]) == len(built))
-result = {"Version": "1.0.4", "Checks": checks, "Summary": summary,
+result = {"Version": VERSION, "Checks": checks, "Summary": summary,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "existing-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

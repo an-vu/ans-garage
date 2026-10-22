@@ -14,7 +14,6 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "1.0.4"
 ENGINE_ZERO_MAX_EFFECT = 0.1
 # Largest output difference tolerated between permutations of one vertex layout (light glass: see-through/reflection).
 PERMUTATION_MAX = 0.1
@@ -41,10 +40,7 @@ def profiles():
     if _PROFILES is None:
         import gzip
         packed = Path(__file__).with_name("shader_profiles.json.gz")
-        if packed.is_file():
-            _PROFILES = json.loads(gzip.decompress(packed.read_bytes()).decode("utf-8"))
-        else:
-            _PROFILES = json.loads(Path(__file__).with_name("shader_profiles.json").read_text(encoding="utf-8"))
+        _PROFILES = json.loads(gzip.decompress(packed.read_bytes()).decode("utf-8"))
     return _PROFILES
 
 
@@ -61,19 +57,12 @@ def shader_key(asset):
 
 
 def profile_for(state):
-    asset = (state.get("Shader") or {}).get("Asset") or ""
-    found = profiles()["Profiles"].get(shader_key(asset))
-    if found is not None:
-        return found
-    for name, p in profiles()["Profiles"].items():
-        if name.casefold() == asset.casefold():
-            return p
-    return None
+    return profiles()["Profiles"].get(shader_key((state.get("Shader") or {}).get("Asset") or ""))
 
 
 def report_for(asset):
     report = profiles().get("Report", {})
-    return report.get(shader_key(asset)) or report.get(asset) or {}
+    return report.get(shader_key(asset)) or {}
 
 
 # ------------------------------------------------------------------ runtime vehicle inputs
@@ -782,7 +771,7 @@ class Images:
 
     def __init__(self, root, extra_folders=()):
         self.root = Path(root)
-        self.by_asset, self.cache, self.uniform_cache = {}, {}, {}
+        self.by_asset, self.cache, self.uniform_cache, self.paths = {}, {}, {}, {}
         doc = json.loads((self.root / "materials.json").read_text(encoding="utf-8-sig"))
         textures = {t["ResourceId"]: t for t in doc.get("Textures", [])}
         for n in doc.get("Nodes", []):
@@ -798,12 +787,17 @@ class Images:
                             self.by_asset.setdefault(alias["Asset"].casefold(), (folder, t))
 
     def _path(self, root, relative):
-        path = (Path(root) / relative).resolve()
-        if not path.is_relative_to(Path(root).resolve()):
-            raise ValueError("Texture path escapes its export folder")
-        if not path.is_file():
-            raise FileNotFoundError(str(path))
-        return path
+        # Resolved once per file: resolving touches the disk, and a car asks for the same textures thousands of times.
+        key = (str(root), relative)
+        if key not in self.paths:
+            base = Path(root).resolve()
+            path = (base / relative).resolve()
+            if not path.is_relative_to(base):
+                raise ValueError("Texture path escapes its export folder")
+            if not path.is_file():
+                raise FileNotFoundError(str(path))
+            self.paths[key] = path
+        return self.paths[key]
 
     def load(self, root, record, asset=None):
         import bpy
@@ -1295,7 +1289,7 @@ def make_profile_material(source, profile, group, connected, report_entry):
             links.new(gnode.outputs["Transmittance"], transparent.inputs["Color"])
             shader = transparent.outputs[0]
             if "Reflectance" in connected:
-                glossy = nodes.new("ShaderNodeBsdfAnisotropic") if not hasattr(bpy.types, "ShaderNodeBsdfGlossy") else nodes.new("ShaderNodeBsdfGlossy")
+                glossy = nodes.new("ShaderNodeBsdfGlossy")
                 glossy.location, glossy.label = (100, 200), "Reflection weighted by the source Fresnel term"
                 glossy.inputs["Roughness"].default_value = 0.0
                 links.new(gnode.outputs["Reflectance"], glossy.inputs["Color"])

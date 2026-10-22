@@ -8,8 +8,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 sys.setrecursionlimit(50000)
 import build_profile as bp
-import dag_tools as dt
-import dxil_eval as dx
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE.parent))
@@ -98,37 +96,3 @@ def overridden_params(shader, states, ext_defaults):
             if name.casefold() in ext_defaults:
                 found.add(ext_defaults[name.casefold()]["Name"])
     return found
-
-
-def main():
-    materials = sys.argv[1]
-    shader, ps = sys.argv[2], sys.argv[3]
-    root = Path(materials).parent
-    doc, states = vehicle_states(materials)
-    parsed = json.loads((DATA / "parsed.json").read_text())[0]
-    programs = json.loads((DATA / "vehicle-shader-programs.json").read_text())
-    consts, _ = bp.ap.constants_for(parsed, programs, shader, ps)
-    ext = {v["Name"].casefold(): v for v in consts["ExternalValues"]}
-    exposed = overridden_params(shader, states, ext) | {n for n in RUNTIME_EXPOSED if n.casefold() in ext}
-    bound = bindings_for(shader, states, root)
-    print("# exposed", sorted(exposed))
-    print("# bound", {k: (v if v == "image" else [round(x, 4) for x in v]) for k, v in bound.items()})
-    res = bp.build(shader, ps, None, exposed, bound=bound)
-    sem = bp.semantic(res)
-    roots = []
-    for k, v in sem.items():
-        if k == "RT4":
-            for kk, items in v.items():
-                for shift, scale, x in items:
-                    roots.append(("%s<<%d*%g" % (kk, shift, scale), x))
-        elif isinstance(v, list):
-            roots += [("%s[%d]" % (k, i), x) for i, x in enumerate(v)]
-        else:
-            roots.append((k, v))
-    print(dx.render(roots))
-    for a in res["assumptions"]:
-        print("# ASSUME", a)
-
-
-if __name__ == "__main__":
-    main()

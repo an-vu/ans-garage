@@ -32,10 +32,11 @@ def report():
     return json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
 
 
-ADDON_FILES = ["__init__.py", "shader_profiles.json.gz", "tire_shader_evidence.json", "unbound_animation.py", "unbound_assembly.py",
+ADDON_FILES = ["__init__.py", "shader_profiles.json.gz", "unbound_animation.py", "unbound_assembly.py",
                "unbound_materials.py", "unbound_plates.py", "unbound_profiles.py", "unbound_surfaces.py", "unbound_tires.py"]
 check("Install ZIP has exactly the add-on files", sorted(names) == ["ans_garage/" + n for n in ADDON_FILES], names)
-check("Version 1.0.4", unbound_batch.bl_info["version"] == (1, 0, 4))
+VERSION = ".".join(map(str, unbound_batch.bl_info["version"]))
+check("Installed version matches the ZIP's name", Path(args[0]).stem.endswith("-" + VERSION), VERSION)
 
 # Negative case first: export without shader-defaults must fail closed with an explicit reason.
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -87,12 +88,13 @@ for suffix, label in (("cs_rim", "rims"), ("caliper_LookDev", "brake calipers"),
     parts = [o for o, i in occupied if (o.material_slots[i].material.get("unbound_shader") or "").endswith(suffix)]
     check("All visible %s built (stock item colours, per-wheel front/rear selector)" % label,
           parts and all(o.material_slots[o["unbound_material_slot"]].material.get("unbound_surface_profile") for o in parts), len(parts))
-tires = [o for o in meshes if o.get("unbound_assembled") and
-         o.material_slots[o["unbound_material_slot"]].material.get("unbound_surface_profile") == "unbound-tire-static-v1"]
-check("Four assembled tires keep the verified 0.5 tire profile", len(tires) == 4, len(tires))
+tires = [o for o in meshes if o.get("unbound_assembled") and o.visible_get() and
+         (o.material_slots[o["unbound_material_slot"]].material.get("unbound_shader") or "").endswith("tire_max_lookdev")]
+check("Four assembled tires built from the compiled tire profile", len(tires) == 4 and all(
+    o.material_slots[o["unbound_material_slot"]].material.get("unbound_surface_profile") for o in tires), len(tires))
 saved = out_dir / "fresh.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "1.0.4", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
+result = {"Version": VERSION, "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "fresh-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

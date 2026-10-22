@@ -1,13 +1,12 @@
-"""Compile static-state G-buffer surface profiles for every deferred vehicle shader used by an export.
+"""Shader formula compiler library: turns a disassembled pixel program into a static-state surface formula.
 
-Output: blender/ans_garage/shader_profiles.json (formulas only; no game bytecode or textures).
-usage: profile_compiler.py <materials.json> <out.json> [shader-substring ...]
+Used by compile_all.py, which builds blender/ans_garage/shader_profiles.json.gz for every vehicle shader.
 """
 import hashlib
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -646,58 +645,3 @@ def compile_entries(shader, candidates, compile_fn, doc, states, root, programs,
     # Several distinct entries may serve one layout (permutation key unknown). The add-on decides after
     # specializing them with the material's and vehicle's actual values; the alternatives are kept here.
     return [prof for prof, _ in entries.values() if prof["Layouts"]]
-
-
-def main():
-    materials, out_path = sys.argv[1], Path(sys.argv[2])
-    only = sys.argv[3:]
-    root = Path(materials).parent
-    doc, states = mp.vehicle_states(materials)
-    programs = json.loads((DATA / "vehicle-shader-programs.json").read_text())
-    parsed = json.loads((DATA / "parsed.json").read_text())[0]
-    PARSED["p"] = parsed
-    layouts = layouts_from(doc)
-    RUNTIME_KEYS.update(mp.runtime_keys(materials))
-    used = sorted({(st["Shader"] or {}).get("Asset") for st in states if st.get("Shader")})
-    profiles, report = {}, {}
-    for shader in used:
-        if only and not any(o in shader for o in only):
-            continue
-        rep = report.setdefault(shader, {})
-        sols = Counter(s["PS"] for s in programs[shader]["Solutions"])
-        gbuf, fwd = [], []
-        for ps, count in sols.items():
-            text = (DATA / "asm" / (ps + ".asm")).read_text()
-            targets = len(re.findall(r"^; SV_Target\s+\d+\s+xyzw", text.split("define void")[0], re.M))
-            if targets >= 4:
-                gbuf.append((count, ps))
-            elif targets == 2 and "dx.op.discard" not in text:
-                fwd.append((count, ps))
-        if gbuf:
-            kind, entries = "gbuffer", compile_entries(shader, sorted(gbuf, reverse=True), compile_shader, doc, states, root,
-                                                       programs, parsed, layouts, rep)
-        else:
-            kind, entries = "forward_transmittance", compile_entries(shader, sorted(fwd, reverse=True), compile_forward, doc,
-                                                                     states, root, programs, parsed, layouts, rep)
-        if not entries:
-            rep["Status"] = "not_profiled"
-            rep["Reason"] = "No program could be profiled" if (gbuf or fwd) else "No G-buffer or dual-source program"
-            print(shader.rsplit("/", 1)[-1], rep["Status"])
-            continue
-        profiles[shader] = {"Shader": shader, "Kind": kind, "Entries": entries}
-        entries.sort(key=lambda e: -e["SolutionCount"])
-        rep["Status"] = "profiled" if any(not e["Unresolved"] for e in entries) else "unresolved"
-        rep["Entries"] = [{"Programs": e["Programs"], "Layouts": e["Layouts"], "Nodes": len(e["Nodes"]),
-                           "Unresolved": e["Unresolved"], "OmittedOutputs": sorted(e.get("OmittedOutputs", {})),
-                           "MaxSimplificationDifference": max(e["Verification"]["MaxAbsDifference"].values() or [0])}
-                          for e in entries]
-        print(shader.rsplit("/", 1)[-1], rep["Status"], [(len(e["Layouts"]), e["Unresolved"][:1]) for e in entries])
-    out = {"Schema": 2, "Generator": "profile_compiler.py (DXC disassembly of v293 vehicle shader DB; symbolic static-state "
-                                    "evaluation; one entry per program/vertex-layout result)",
-           "DatabaseSHA256": DB_SHA256, "Profiles": profiles, "Report": report}
-    out_path.write_text(json.dumps(out, separators=(",", ":")))
-    print("wrote", out_path, out_path.stat().st_size)
-
-
-if __name__ == "__main__":
-    main()

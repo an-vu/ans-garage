@@ -17,7 +17,7 @@ C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It expo
 | Assembly: blueprint, wheels, parts, presets, shared tires/brakes, in-game names, moving-part keyframes | `assembly.json` |
 | Geometry: LOD0 binary FBX per mesh, meters, hierarchy kept | `parts/*.fbx`, `manifest.json` |
 | Materials: source material graph, original DDS textures | `materials.json`, `textures/` |
-| Shader default textures (shared by all vehicles) | `shader-defaults/` |
+| Shader default textures (shared by all vehicles; written once next to the car folders) | `../shader-defaults/` |
 
 Import `manifest.json` in Blender with **File → Import → An's Garage vehicle (.json)**.
 

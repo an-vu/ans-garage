@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Windows.Forms;
 using Frosty.Core;
 using Frosty.Core.Windows;
 using Newtonsoft.Json.Linq;
@@ -12,31 +10,11 @@ namespace AnsGarage
 {
     public sealed class PlateLibraryMenu : MenuExtension
     {
-        private static int busy;
         public override string TopLevelMenuName { get { return "Tools"; } }
         public override string SubLevelMenuName { get { return "An's Garage"; } }
         public override string MenuItemName { get { return "Export license plate library..."; } }
-        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => Run()); } }
-        private static void Run()
-        {
-            if (Interlocked.Exchange(ref busy, 1) != 0) return;
-            try
-            {
-                using (var folder = new FolderBrowserDialog { Description = "Choose a folder for the license plate library (exported once, shared by all cars)" })
-                {
-                    if (folder.ShowDialog() != DialogResult.OK) return;
-                    string target = Path.Combine(folder.SelectedPath, "AnsGarage_PlateLibrary");
-                    Exception fatal = null; JObject index = null;
-                    FrostyTaskWindow.Show("An's Garage: export license plate library", "Reading plates", task => {
-                        try { index = PlateLibrary.Export(target, task); } catch (Exception ex) { fatal = ex; }
-                    }, true, task => { });
-                    MessageBox.Show(fatal != null ? "License plate library export failed: " + fatal.Message
-                        : "License plate library exported: " + ((JArray)index["Plates"]).Count + " plates.\n" + target, "An's Garage");
-                }
-            }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "An's Garage"); }
-            finally { Interlocked.Exchange(ref busy, 0); }
-        }
+        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => LibraryMenu.Run("license plate library",
+            "AnsGarage_PlateLibrary", PlateLibrary.Export, index => ((JArray)index["Plates"]).Count + " plates")); } }
     }
 
     // License plate backgrounds: real US states and territories, Japanese plates and the fictional NFS places. Game

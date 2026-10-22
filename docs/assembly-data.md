@@ -1,6 +1,6 @@
 # Vehicle assembly
 
-`src/Assembly.cs` extends discovery through actual vehicle/item/blueprint relationships. `blender/unbound_assembly.py` adds an assembly to the existing FBX importer.
+`frosty/AnsGarage/src/Assembly.cs` writes `assembly.json` from the actual vehicle/item/blueprint relationships. `blender/ans_garage/unbound_assembly.py` assembles the imported FBX parts from it.
 
 RaceVehicleBlueprint links rim customization components to RaceWheelComponentData through LinkConnections. MeshCustomizationTagWithFacing supplies front/rear and left/right flags. Four independent authored transforms are retained; symmetry is not assumed. Blender placement uses the imported FBX root conversion matrix.
 
@@ -45,6 +45,4 @@ The first source permutation is an explicit preview policy. Source template SubI
 - Tire width/diameter fitting uses TireConfig dimensions and TireMeshInfo reference dimensions. It changes object scale, not vertices. Inner-bead fit and engine tire deformation remain unknown.
 - Rim/brake source dimensions are retained. Runtime rim resizing, caliper offsets, loaded suspension and animation simulation are not reconstructed.
 
-Murciélago checks verify four exact rest centers, four tires, original body alignment, data preservation, variant switching and presets. Workbench preview renders were inspected for overall placement; they do not validate game-equivalent materials or suspension.
-
-A second discovery-only run on the BMW M3 E46 found four wheels, 99 items and 363 mesh uses with no assembly issues. No BMW FBX export, Blender assembly or appearance validation was performed. Production algorithms contain no Murciélago-specific offsets or asset IDs.
+Production algorithms contain no vehicle-specific offsets or asset IDs. The test suite (`tests/run_all.py`) assembles eight cars and checks placement, part switching, presets and moving parts on each.

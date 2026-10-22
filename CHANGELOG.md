@@ -2,6 +2,27 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.5
+
+- **Exports are about 85% smaller:** the Murciélago went from 443 MB to 60 MB.
+  - The shared shader default textures (about 240 MB, the same for every car) are written once into a `shader-defaults` folder next to the car folders and reused by every later export. The Blender add-on already looks there.
+  - Textures are no longer stored twice: the raw payload is kept only for texture arrays, cube maps and formats the DDS writer can't hold. Every DDS is still checked against it.
+  - Exports already on disk keep working.
+- **Exports are faster:** a second car skips the shared textures (Integra Type-R: 44 s → 38 s).
+- **Imports do less repeated work:**
+  - the add-on's modules and the 1.3 MB shader profiles load once instead of on every build;
+  - texture paths are resolved once instead of thousands of times;
+  - the assembly step no longer parses the whole `materials.json`.
+- **Stock tires use the compiled tire shader**, like every other material. The separate hand-written 0.5 tire material and `tire_shader_evidence.json` are gone.
+- **Removed legacy parts:**
+  - Blender: the **File → Import** entries "assemble imported meshes" and "restore material slots" (the import does both), the raw "Source material variants" row switcher, and pre-Blender-4 fallbacks.
+  - Frosty: the undocumented **Refresh materials of existing export...** menu.
+  - Tools: old command-line entry points of the shader compiler.
+- **Less duplication:**
+  - the version is written once per part (`bl_info`, `Core.Version`);
+  - the tire and plate libraries share one folder/index helper and one export menu helper.
+- **Docs** describe the current pipeline (`docs/development-notes.md`).
+
 ## 1.0.4
 
 - **Moving parts on more cars**, found by scanning all 200 cars' blueprints:

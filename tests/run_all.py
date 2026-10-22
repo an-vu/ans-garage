@@ -2,7 +2,7 @@
 
 usage: python tests/run_all.py [full|quick] [--jobs N] [test ...]
   test: existing, fresh, nodes, tires, plates, vehicle:<export folder name>
-  (no tests)  every test: existing, fresh, nodes, tires and each vehicle in VEHICLES that is exported
+  (no tests)  every test: existing, fresh, nodes, tires, plates and each vehicle in VEHICLES that is exported
   quick       nodes and vehicle:murcielago only
   full        run even tests whose inputs have not changed since they last passed
   --jobs N    Blender processes at once (default 4); the tests are independent
@@ -11,6 +11,8 @@ A test is skipped when its inputs (test script, the add-on files it uses, its da
 fingerprints are kept in <validation_dir>/latest/test-state.json. "fresh" rebuilds the install ZIP first
 (tools/package_release.py). Needs (in test_data_dir): input-merci-tires-0.5.0.blend, Murcielago-Export,
 Murcielago-Export-bare. Results go to <validation_dir>/latest.
+Manual tools in this folder (not run here): render_views.py (studio renders of an assembled car), DialogShot.cs
+(screenshots of the Frosty plugin's dialogs).
 """
 import hashlib
 import json

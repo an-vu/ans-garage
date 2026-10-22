@@ -16,26 +16,32 @@ namespace AnsGarage
 {
     public sealed class TireLibraryMenu : MenuExtension
     {
-        private static int busy;
         public override string TopLevelMenuName { get { return "Tools"; } }
         public override string SubLevelMenuName { get { return "An's Garage"; } }
         public override string MenuItemName { get { return "Export tire library..."; } }
-        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => Run()); } }
-        private static void Run()
+        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => LibraryMenu.Run("tire library",
+            "AnsGarage_TireLibrary", TireLibrary.Export, index => ((JArray)index["Tires"]).Count + " tires")); } }
+    }
+
+    // Shared by the library menus: pick a folder, export once with progress, report the result.
+    internal static class LibraryMenu
+    {
+        private static int busy;
+        public static void Run(string name, string folderName, Func<string, FrostyTaskWindow, JObject> export, Func<JObject, string> summary)
         {
             if (Interlocked.Exchange(ref busy, 1) != 0) return;
             try
             {
-                using (var folder = new FolderBrowserDialog { Description = "Choose a folder for the tire library (exported once, shared by all cars)" })
+                using (var folder = new FolderBrowserDialog { Description = "Choose a folder for the " + name + " (exported once, shared by all cars)" })
                 {
                     if (folder.ShowDialog() != DialogResult.OK) return;
-                    string target = Path.Combine(folder.SelectedPath, "AnsGarage_TireLibrary");
+                    string target = Path.Combine(folder.SelectedPath, folderName);
                     Exception fatal = null; JObject index = null;
-                    FrostyTaskWindow.Show("An's Garage: export tire library", "Reading tires", task => {
-                        try { index = TireLibrary.Export(target, task); } catch (Exception ex) { fatal = ex; }
+                    FrostyTaskWindow.Show("An's Garage: export " + name, "Reading game data", task => {
+                        try { index = export(target, task); } catch (Exception ex) { fatal = ex; }
                     }, true, task => { });
-                    MessageBox.Show(fatal != null ? "Tire library export failed: " + fatal.Message
-                        : "Tire library exported: " + ((JArray)index["Tires"]).Count + " tires.\n" + target, "An's Garage");
+                    MessageBox.Show(fatal != null ? "Export of the " + name + " failed: " + fatal.Message
+                        : char.ToUpper(name[0]) + name.Substring(1) + " exported: " + summary(index) + ".\n" + target, "An's Garage");
                 }
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "An's Garage"); }

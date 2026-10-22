@@ -71,15 +71,6 @@ def uv_bindings(section):
     return result
 
 
-def texture_uv_bindings(state, section):
-    layers = {b["SourceUsage"]: b["BlenderLayer"] for b in uv_bindings(section)}
-    return [{"Parameter": b["Parameter"], "SourceUsage": b.get("SourceUvUsage"),
-             "BlenderLayer": layers.get(b.get("SourceUvUsage")), "Evidence": b.get("UvEvidence"),
-             "Status": "explicit" if b.get("SourceUvUsage") in layers else
-                       "source_uv_missing_from_geometry" if b.get("SourceUvUsage") else "unknown"}
-            for b in state["TextureBindings"]]
-
-
 class Resolver:
     def __init__(self, document):
         if document.get("Schema") != 1:
@@ -399,8 +390,6 @@ def build_material(state, root, label, diagnostics):
             mat.node_tree.links.new(node.outputs["Color"], separate.inputs["Color"])
         # No vector input link: sampling is not used anywhere in a rendered surface.
         # Even a single available UV channel is not evidence the shader uses it.
-    diagnostics.append({"Material": label, "Issue": "Source slots/parameters restored; output disabled because shader sampling/composition is unresolved",
-                        "Shader": mat["unbound_shader"]})
     return mat
 
 
@@ -477,7 +466,6 @@ def reconstruct_steps(filepath, objects=None):
                     obj.material_slots[i].link = "OBJECT"
                     obj.material_slots[i].material = material
                 bindings = uv_bindings(section)
-                texture_bindings = texture_uv_bindings(states[section["MaterialSlot"]][0], section)
                 missing = [b["BlenderLayer"] for b in bindings if b["BlenderLayer"] not in obj.data.uv_layers]
                 if missing:
                     diagnostics.append({"Object": obj.name, "Issue": "Expected source UV layers missing", "Layers": missing})
@@ -486,16 +474,12 @@ def reconstruct_steps(filepath, objects=None):
                 if candidate.get("EquivalentSections"):
                     obj["unbound_equivalent_sections_json"] = canonical(candidate["EquivalentSections"])
                 obj["unbound_uv_bindings_json"] = canonical(bindings)
-                obj["unbound_texture_uv_json"] = canonical(texture_bindings)
                 obj["unbound_material_slot"] = section["MaterialSlot"]
                 obj["unbound_material_source"] = slots[section["MaterialSlot"]]["Source"]["Node"]
                 obj["unbound_materials_path"] = str(path)
-                if "unbound_show_material_rows" not in obj:
-                    obj["unbound_show_material_rows"] = False
-                obj["unbound_material_variants_json"] = canonical([{"DatabaseGuid":v["DatabaseGuid"],"Row":v["Row"],"Hash":v["Hash"]} for v in mesh["Variants"]])
                 report["Objects"].append({"Object": obj.name, "MeshId": meshid, "SectionIndex": section["SectionIndex"],
                     "MaterialSlot": section["MaterialSlot"], "FacesAssigned": len(obj.data.polygons),
-                    "UVBindings": bindings, "TextureUVBindings": texture_bindings,
+                    "UVBindings": bindings,
                     "RemovedDegenerateIndices": candidate["RemovedDegenerateIndices"]})
         except Exception as exc:
             diagnostics.append({"MeshId": meshid, "Issue": str(exc), "Severity": "assignment_failed"})
@@ -503,28 +487,3 @@ def reconstruct_steps(filepath, objects=None):
     text.write(json.dumps(report, indent=2))
     text["unbound_report"] = VERSION
     return report
-
-
-def apply_material_variant(filepath, meshid, database_guid, row, objects):
-    """Explicit DB selection, never selects the first arbitrary variation hash."""
-    path = Path(filepath).resolve().with_name("materials.json")
-    resolver = Resolver(json.loads(path.read_text(encoding="utf-8-sig")))
-    mesh = resolver.meshes[meshid]
-    rows = [v for v in mesh["Variants"] if v["DatabaseGuid"] == database_guid and v["Row"] == row]
-    if len(rows) != 1:
-        raise ValueError("Unknown/ambiguous material DB row")
-    targets = [o for o in objects if o.type == "MESH" and o.get("unbound_mesh_id") == meshid]
-    if any(len(o.material_slots) != len(mesh["Slots"]) or not o.data.get("unbound_slots_restored") for o in targets):
-        raise ValueError("Restore original slots first")
-    diagnostics = []
-    materials = [build_material(resolver.resolve(mesh, s, rows[0]), path.parent,
-                 "Variation " + rows[0]["Hash"] + " | " + s["Source"]["Node"][-8:], diagnostics) for s in mesh["Slots"]]
-    for obj in targets:
-        for slot, material in zip(obj.material_slots, materials):
-            slot.link = "OBJECT"
-            slot.material = material
-        obj["unbound_active_material_variant"] = canonical({"DatabaseGuid":database_guid,"Row":row,"Hash":rows[0]["Hash"]})
-        section = next(s for s in mesh["Sections"] if s["SectionIndex"] == obj["unbound_section_index"])
-        selected_state = resolver.resolve(mesh, mesh["Slots"][section["MaterialSlot"]], rows[0])
-        obj["unbound_texture_uv_json"] = canonical(texture_uv_bindings(selected_state, section))
-    return diagnostics

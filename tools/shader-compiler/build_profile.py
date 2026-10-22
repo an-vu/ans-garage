@@ -5,7 +5,6 @@ The profile is a simplified expression DAG (formulas only, no bytecode) over:
   view constants that remain after simplification (V:<reg>.<c>).
 """
 import json
-import struct
 import sys
 from pathlib import Path
 
@@ -258,22 +257,3 @@ def semantic(result):
         if cn:
             out["CoatNormal"] = cn
     return out
-
-
-if __name__ == "__main__":
-    shader, ps = sys.argv[1], sys.argv[2]
-    exposed = sys.argv[3].split(",") if len(sys.argv) > 3 and sys.argv[3] else []
-    res = build(shader, ps, None, exposed)
-    sem = semantic(res)
-    roots = []
-    for k, v in sem.items():
-        if k == "RT4":
-            for kk, items in v.items():
-                for shift, scale, x in items:
-                    roots.append(("%s<<%d*%g" % (kk, shift, scale), x))
-        elif isinstance(v, list):
-            roots += [("%s[%d]" % (k, i), x) for i, x in enumerate(v)]
-        else:
-            roots.append((k, v))
-    print(dx.render(roots))
-    print(json.dumps(res["assumptions"], indent=1))

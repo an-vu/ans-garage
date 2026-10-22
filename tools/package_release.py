@@ -22,7 +22,7 @@ if "--profiles" in sys.argv:
     src = Path(sys.argv[sys.argv.index("--profiles") + 1])
     (addon / "shader_profiles.json.gz").write_bytes(gzip.compress(src.read_bytes(), 9))
 version = ".".join(map(str, eval(re.search(r'"version": (\([^)]*\))', (addon / "__init__.py").read_text()).group(1))))
-plugin_version = re.search(r'PluginVersion\("(\d+\.\d+\.\d+)', (frosty / "src" / "Plugin.cs").read_text()).group(1)
+plugin_version = re.search(r'const string Version = "(\d+\.\d+\.\d+)"', (frosty / "src" / "Core.cs").read_text()).group(1)
 out = setting("release_dir") / version
 out.mkdir(parents=True, exist_ok=True)
 

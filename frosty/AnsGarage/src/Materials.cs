@@ -17,33 +17,8 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using TexturePlugin;
 
-[assembly: RegisterMenuExtension(typeof(AnsGarage.MaterialsMenu))]
 namespace AnsGarage
 {
-    public sealed class MaterialsMenu : MenuExtension
-    {
-        public override string TopLevelMenuName { get { return "Tools"; } }
-        public override string SubLevelMenuName { get { return "An's Garage"; } }
-        public override string MenuItemName { get { return "Refresh materials of existing export..."; } }
-        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => {
-            try {
-                if(!FrostySdk.ProfilesLibrary.IsLoaded(FrostySdk.ProfileVersion.NeedForSpeedUnbound)) throw new InvalidOperationException("Load NFS Unbound first.");
-                using(var dialog=new System.Windows.Forms.OpenFileDialog { Filter="Batch manifest|manifest.json",Title="Select the existing vehicle export manifest" }) {
-                    if(dialog.ShowDialog()!=System.Windows.Forms.DialogResult.OK) return;
-                    var manifest=JsonConvert.DeserializeObject<Manifest>(File.ReadAllText(dialog.FileName));
-                    if(manifest==null || manifest.Schema!=1) throw new InvalidDataException("Unsupported batch manifest.");
-                    var run=new MaterialRun(Path.GetDirectoryName(dialog.FileName),manifest.Scope);
-                    FrostyTaskWindow.Show("Extracting vehicle materials","",task=> {
-                        try { foreach(var mesh in manifest.Meshes) { if(run.Cancel) break; task.Update(mesh.Asset); run.Process(mesh); run.Save(); } }
-                        catch(Exception ex) { run.Issue("run",ex); }
-                        finally { run.Save(true); }
-                    },true,task=>run.Cancel=true);
-                    System.Windows.Forms.MessageBox.Show("Material extraction finished. Review materials.json and materials.log.\n"+run.Summary(),"An\'s Garage");
-                }
-            } catch(Exception ex) { System.Windows.Forms.MessageBox.Show(ex.Message,"An's Garage"); }
-        }); } }
-    }
-
     public sealed class MaterialRun
     {
         public volatile bool Cancel;
@@ -53,22 +28,17 @@ namespace AnsGarage
         private readonly Dictionary<string,JObject> nodes=new Dictionary<string,JObject>();
         private readonly Dictionary<ulong,JObject> textures=new Dictionary<ulong,JObject>();
         private readonly JArray issues=new JArray(), meshRecords=new JArray(), textureRecords=new JArray(), nodeRecords=new JArray();
-        private readonly Func<Guid,EbxAsset> loader;
-        private readonly Func<Guid,EbxAssetEntry> entryLookup;
-        // Public injection points are for tests; production uses Frosty's existing managers.
-        public MaterialRun(string directory,string scope,Func<Guid,EbxAsset> load=null,Func<Guid,EbxAssetEntry> lookup=null)
+        public MaterialRun(string directory,string scope)
         {
             output=directory;
-            loader=load ?? (g=> { var e=App.AssetManager.GetEbxEntry(g); return e==null?null:App.AssetManager.GetEbx(e); });
-            entryLookup=lookup ?? (g=>App.AssetManager.GetEbxEntry(g));
-            Document=new JObject {{"Schema", 1}, {"PluginVersion", "1.0.4"}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
+            Document=new JObject {{"Schema", 1}, {"PluginVersion", Core.Version}, {"Scope", scope}, {"CreatedUtc", DateTime.UtcNow.ToString("o")}, {"Status", "in_progress"}, {"Meshes", meshRecords}, {"Nodes", nodeRecords}, {"Textures", textureRecords}, {"Issues", issues}, {"Policy", "Raw source graph and ordered override layers. No inferred channel packing, UV selection, shader reconstruction or positional material matching."}, {"FbxMaterialPolicy", "Existing FBX is unchanged. Section.MaterialId maps to mesh.Materials; FBX exporter emits section geometry but disables FBX materials."}, {"Limits", new JObject {{"Nodes", 20000}, {"Depth", 48}, {"CollectionItems", 100000}}}};
         }
         public void Issue(string path,Exception ex) { Issue(path,ex.GetType().Name+": "+ex.Message); }
         public void Issue(string path,string message) { issues.Add(new JObject {{"Path", path}, {"Message", message}}); }
         private EbxAsset Load(Guid file)
         {
             EbxAsset value;
-            if(!assets.TryGetValue(file,out value)) { value=loader(file); if(value==null) throw new InvalidDataException("Missing EBX "+file); assets[file]=value; }
+            if(!assets.TryGetValue(file,out value)) { var e=App.AssetManager.GetEbxEntry(file); value=e==null?null:App.AssetManager.GetEbx(e); if(value==null) throw new InvalidDataException("Missing EBX "+file); assets[file]=value; }
             return value;
         }
         public static string ObjectKey(Guid file,object obj)
@@ -89,7 +59,7 @@ namespace AnsGarage
                 string key=ObjectKey(file,obj); result["Node"]=key;
                 if(nodes.ContainsKey(key)) return result;
                 if(depth>48 || nodes.Count>=20000) throw new InvalidDataException("Reference traversal limit reached; graph incomplete.");
-                var entry=entryLookup(file);
+                var entry=App.AssetManager.GetEbxEntry(file);
                 var node=new JObject {{"Id", key}, {"FileGuid", file}, {"Asset", entry==null?null:entry.Name}, {"Type", obj.GetType().Name}};
                 nodes.Add(key,node); nodeRecords.Add(node); // register before following cycles
                 node["Raw"]=Snapshot(obj,file,path,depth+1,new HashSet<object>(ReferenceComparer.Instance));
@@ -261,11 +231,18 @@ namespace AnsGarage
                     string safe=TextureTools.FileName(basename);
                     string folder="textures/"+rid.ToString("x16");
                     Directory.CreateDirectory(Path.Combine(output,folder));
-                    // Always preserve the original decompressed texture payload for unsupported DDS layouts/formats.
-                    string raw=folder+"/"+safe+".texture-data.bin";
-                    using(var stream=File.Create(Path.Combine(output,raw))) {texture.Data.Position=0;texture.Data.CopyTo(stream);}
-                    record["RawData"]=raw;record["RawSha256"]=TextureTools.HashFile(Path.Combine(output,raw));
-                    if(!TextureTools.Supported(texture.PixelFormat,texture.Type.ToString(),texture.Flags.ToString()))
+                    // The original payload's hash checks the DDS below. The payload itself is kept as a file only where
+                    // the DDS can't stand in for it: texture arrays and cube maps (the Blender add-on slices arrays from
+                    // it) and formats the DDS writer doesn't support. A plain 2D texture would otherwise be stored twice.
+                    texture.Data.Position=0;
+                    using(var sha=SHA256.Create()) record["RawSha256"]=BitConverter.ToString(sha.ComputeHash(texture.Data)).Replace("-","").ToLowerInvariant();
+                    bool supported=TextureTools.Supported(texture.PixelFormat,texture.Type.ToString(),texture.Flags.ToString());
+                    if(texture.Type!=TextureType.TT_2d || !supported) {
+                        string raw=folder+"/"+safe+".texture-data.bin";
+                        using(var stream=File.Create(Path.Combine(output,raw))) {texture.Data.Position=0;texture.Data.CopyTo(stream);}
+                        record["RawData"]=raw;
+                    }
+                    if(!supported)
                         throw new NotSupportedException("Unsupported native DDS format/layout; raw payload and metadata retained.");
                     string relative=folder+"/"+safe+".dds", path=Path.Combine(output,relative);
                     string pending=Path.Combine(Path.GetDirectoryName(path),safe+".partial.dds");
@@ -292,7 +269,7 @@ namespace AnsGarage
         public void SaveTextureIndex(string note)
         {
             Directory.CreateDirectory(output);
-            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion","1.0.4"},{"Scope","shader defaults"},
+            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion",Core.Version},{"Scope","shader defaults"},
                 {"Note",note},{"Textures",textureRecords},{"Issues",issues}});
         }
         public void Save(bool completed=false)

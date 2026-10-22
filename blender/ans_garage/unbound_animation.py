@@ -21,6 +21,8 @@ meshes (mirrors, hood, boot, spoiler) are parented to the empty.
 import json
 import math
 
+from .unbound_assembly import matrix_from_basis
+
 SAMPLES = 100
 # Euler order of TransformPart / Rotate* channels: yaw (Y), then pitch (X), then roll (Z). Not stated by the data; of
 # the six orders only those applying roll last open the P1's dihedral doors upward (the others swing them out at
@@ -137,7 +139,7 @@ def factor_matrix(factor, s):
         t = factor["Start"] + (factor["End"] - factor["Start"]) * s
         c = factor["Curves"]
         m = _trs([curve_value(c["Translate" + a], t) for a in "XYZ"], [curve_value(c["Rotate" + a], t) for a in "XYZ"])
-        origin = _basis(factor["Origin"])
+        origin = matrix_from_basis(factor["Origin"])
         return origin @ m @ origin.inverted()
     t = factor["Start"] + (factor["End"] - factor["Start"]) * s
     values = {"T": [0.0, 0.0, 0.0], "R": [0.0, 0.0, 0.0]}
@@ -145,12 +147,6 @@ def factor_matrix(factor, s):
         kind, axis = CHANNELS[name]
         values[kind][axis] = track_value(keys, t)
     return _trs(values["T"], values["R"]) if values else Matrix.Identity(4)
-
-
-def _basis(values):
-    from mathutils import Matrix
-    return Matrix(((values[0], values[3], values[6], values[9]), (values[1], values[4], values[7], values[10]),
-                   (values[2], values[5], values[8], values[11]), (0, 0, 0, 1)))
 
 
 # ------------------------------------------------------------------ source graph
@@ -421,10 +417,10 @@ def build(root):
         for c in reversed(g.ancestors(comp)):
             if c in moving:
                 if moving[c]["Field"] == "TransformOffset":
-                    m = m @ _basis(g.comps[c]["Transform"])
+                    m = m @ matrix_from_basis(g.comps[c]["Transform"])
                 m = m @ local_matrix(c, values)
             else:
-                m = m @ _basis(g.comps[c]["Transform"])
+                m = m @ matrix_from_basis(g.comps[c]["Transform"])
         return m
 
     # One empty chain per moving component: a fixed base (static transforms since the nearest moving ancestor), then
@@ -442,7 +438,7 @@ def build(root):
                     continue
                 if c == comp and moving[comp]["Field"] == "Transform":
                     continue
-                static = static @ _basis(g.comps[c]["Transform"])
+                static = static @ matrix_from_basis(g.comps[c]["Transform"])
             names = sorted({label_of[f["Control"]] for f in moving[comp]["Factors"]})
             base = bpy.data.objects.new("Moving | %s | %s" % (" + ".join(names), comp.rsplit(":", 1)[-1]), None)
             base.empty_display_size = 0.05

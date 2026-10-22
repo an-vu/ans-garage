@@ -1,3 +1,10 @@
+# 1.0.5
+
+- Vehicle exports write the shared shader default textures once into `shader-defaults` next to the car folders and skip them when it is complete. A car's own folder drops from about 450 MB to about 70 MB.
+- A texture's raw payload (`.texture-data.bin`) is written only for texture arrays, cube maps and unsupported formats; every DDS is still checked against the payload's SHA-256.
+- Removed **Refresh materials of existing export...** (undocumented; re-export instead).
+- `Core.Version` is the single version string; the tire and plate library menus share `LibraryMenu`.
+
 # 1.0.4
 
 - No changes; version kept in step with An's Garage for Blender 1.0.4. (The headless exporter gained a `scan` mode; it is a tool, not part of the plugin.)

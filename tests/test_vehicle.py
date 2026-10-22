@@ -25,7 +25,7 @@ def check(name, ok, detail=None):
     print(("PASS " if ok else "FAIL ") + name + ("" if detail is None else "  " + json.dumps(detail, ensure_ascii=False)[:600]))
 
 
-check("Add-on 1.0.4", addon.bl_info["version"] == (1, 0, 4))
+VERSION = ".".join(map(str, addon.bl_info["version"]))
 started = time.perf_counter()
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export / "manifest.json"))
 import_seconds = time.perf_counter() - started
@@ -49,8 +49,7 @@ for preset in presets:
     ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset=preset) == {"FINISHED"}
 for g in groups:
     for v in [v for v in g.children if "unbound_option" in v]:
-        ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"],
-                                             preset="") == {"FINISHED"}
+        ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"]) == {"FINISHED"}
         switched += 1
 ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Every preset and part option switches; Stock restored", ok and addon.assembly_module().current_preset(root) == "Stock",
@@ -117,7 +116,7 @@ check("Visible surfaces built", True, {"Visible": len(occupied), "Built": built,
 check("Visible unbuilt surfaces (reasons)", True, dict(unbuilt))
 saved = out_dir / ("vehicle-%s.blend" % label)
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "1.0.4", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
+result = {"Version": VERSION, "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / ("vehicle-%s.json" % label)).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

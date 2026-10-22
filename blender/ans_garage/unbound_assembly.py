@@ -75,13 +75,10 @@ def preset_label(preset, items_by_asset):
     return "Body kit " + code
 
 
-def option_name(item, permutation):
+def option_name(item):
     name = item["Asset"].rsplit("/", 1)[-1]
     match = re.search(r"_(set[^_]+(?:_.*)?)$", name, re.I)
-    label = "Stock" if item.get("Default") else (match.group(1).replace("_", " ").title() if match else name)
-    if permutation:
-        label += " / Source configuration " + str(permutation + 1)
-    return label
+    return "Stock" if item.get("Default") else (match.group(1).replace("_", " ").title() if match else name)
 
 
 def matrix_from_basis(values):
@@ -222,9 +219,6 @@ def assemble_existing(manifest_path):
     uses = defaultdict(list)
     for use in data["MeshUses"]:
         uses[use["BlueprintGuid"]].append(use)
-    material_path = path.with_name("materials.json")
-    material_data = json.loads(material_path.read_text(encoding="utf-8-sig")) if material_path.exists() else {"Meshes": []}
-    mats = {m["MeshId"]: m for m in material_data["Meshes"]}
     bpy.context.view_layer.update()
     # Exact conversion inherited from this native FBX's Blender root, avoiding a
     # separately guessed coordinate system. Rigid wheel roots carry FBX Y-up conversion.
@@ -286,21 +280,6 @@ def assemble_existing(manifest_path):
         o["unbound_assembled"] = True
         return o
 
-    def attach_metadata(clone, meshid):
-        original = re.sub(r"\.\d{3}$", "", clone["unbound_original_name"])
-        sections = mats.get(meshid, {}).get("Sections", [])
-        matches = [s for s in sections if s["Renderable"] and s["Name"] == original]
-        if not matches:
-            diagnostics.append("No unambiguous section name for " + records[meshid]["Asset"] + "/" + original)
-        clone["unbound_section_candidates_json"] = json.dumps([s["SectionIndex"] for s in matches])
-        slots = sorted({s["MaterialSlot"] for s in matches})
-        clone["unbound_material_slot_indices_json"] = json.dumps(slots)
-        clone["unbound_materials_path"] = str(material_path)
-        clone["unbound_material_assignment_status"] = "exact_slot" if len(slots) == 1 else "unresolved_or_multiple"
-        clone["unbound_source_asset"] = records[meshid]["Asset"]
-        clone["unbound_file_guid"] = records[meshid]["FileGuid"]
-        clone["unbound_class_guid"] = records[meshid]["ClassGuid"]
-
     def instance(meshid, collection, label, parent=None, local=None, body=False):
         # Object copies share immutable geometry. Armature targets are remapped.
         originals = templates[meshid]
@@ -316,8 +295,6 @@ def assemble_existing(manifest_path):
             clone["unbound_assembled"] = True
             clone["unbound_original_name"] = source.name
             clone["unbound_baseline_matrix_world"] = json.dumps([list(r) for r in source.matrix_world])
-            if clone.type == "MESH":
-                attach_metadata(clone, meshid)
         for source, clone in mapping.items():
             clone.parent = mapping.get(source.parent, parent)
             if source.parent in mapping:
@@ -477,7 +454,7 @@ def assemble_existing(manifest_path):
         for text, same in names.items():
             for i in same:
                 code = set_code(i["Asset"])
-                label = text or option_name(i, 0)
+                label = text or option_name(i)
                 if text and len(same) > 1 and code:
                     label += " (" + code + ")"
                 option_label[i["Node"]] = label
@@ -499,7 +476,7 @@ def assemble_existing(manifest_path):
             if permutation.get("Deprecated"):
                 continue
             option = item["Node"] + "/" + str(index)
-            text = option_label.get(item["Node"]) or option_name(item, 0)
+            text = option_label.get(item["Node"]) or option_name(item)
             if index:
                 text += " / Source configuration " + str(index + 1)
             variant = col(group_label.get(group, group) + " | " + text, parent_col)
