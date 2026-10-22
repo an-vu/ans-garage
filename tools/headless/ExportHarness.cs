@@ -117,6 +117,13 @@ static void Run(string[] a) {
   Console.WriteLine("CATALOG "+rows.Count+" vehicles in "+sw.Elapsed.TotalSeconds.ToString("0")+" s; localization: "+Names.Status+"; cached: "+(VehicleCatalog.Cached()!=null));
   return;
  }
+ if(mode=="plates") {
+  // License plate library: a[5] = output folder.
+  var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));
+  var index=PlateLibrary.Export(Path.GetFullPath(a[5]),t);
+  Console.WriteLine("PLATES "+((JArray)index["Plates"]).Count);
+  return;
+ }
  if(mode=="tires") {
   // Tire library (Falken and Toyo): a[5] = output folder.
   var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));

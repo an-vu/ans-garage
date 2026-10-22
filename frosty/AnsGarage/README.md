@@ -27,6 +27,8 @@ The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\
 
 **Tools → An's Garage → Export tire library...** exports the Falken and Toyo tires once, for the Blender add-on's Tires section.
 
+**Tools → An's Garage → Export license plate library...** exports the real license plate backgrounds once, for the Blender add-on's License plate section.
+
 ## Build
 
 ```powershell

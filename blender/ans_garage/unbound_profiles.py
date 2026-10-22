@@ -14,7 +14,7 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 ENGINE_ZERO_MAX_EFFECT = 0.1
 # Largest output difference tolerated between permutations of one vertex layout (light glass: see-through/reflection).
 PERMUTATION_MAX = 0.1
@@ -322,7 +322,13 @@ def parameter_values(profile, state, runtime):
             default = [float(int.from_bytes(__import__("struct").pack("<f", x), "little")) for x in default]
         v = by_name.get(e["Name"].casefold(), default)
         rt = runtime.get(e["Key"].casefold())
-        if rt:
+        chosen = (state.get("ParameterOverrides") or {}).get(e["Name"])
+        if chosen is not None:
+            # A runtime value the player sets in the game (the license plate text), chosen in the sidebar.
+            v = [float(x) for x in chosen] + v[len(chosen):]
+            applied.append({"Parameter": e["Name"], "Value": v, "Origin": "chosen in the An's Garage sidebar",
+                            "Precedence": "player setting in the game; not stored in the vehicle's data"})
+        elif rt:
             v = rt["Value"] + default[len(rt["Value"]):]
             applied.append({"Parameter": e["Name"], "Value": v, "Origin": rt["Origin"],
                             "Precedence": "runtime vehicle parameter overrides material value"
@@ -1072,6 +1078,23 @@ def stock_permutation(entry):
             if key in asset:
                 return labels
     return None
+
+
+# License plate text, as the plate shader reads it: seven character cells; Ext_LicensePlateText1.xyzw holds cells 1-4
+# and Ext_LicensePlateText2.xyz cells 5-7 (its w picks one of the plate's two text layouts and is left as it is). Each
+# value is a cell of the plate font (licenseplatefont_no, 22 per row): 0-9 are digits, 10-35 are A-Z, 36 is empty.
+PLATE_TEXT_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+PLATE_TEXT_CELLS = 7
+PLATE_BLANK = 36.0
+
+
+def plate_text_values(text):
+    """Parameter overrides that put `text` (A-Z, 0-9, spaces; at most 7, centred) on a license plate."""
+    chars = [c for c in (text or "").upper() if c in PLATE_TEXT_CHARS or c == " "][:PLATE_TEXT_CELLS]
+    left = (PLATE_TEXT_CELLS - len(chars)) // 2
+    cells = [" "] * left + chars + [" "] * (PLATE_TEXT_CELLS - left - len(chars))
+    values = [PLATE_BLANK if c == " " else float(PLATE_TEXT_CHARS.index(c)) for c in cells]
+    return {"Ext_LicensePlateText1": values[:4], "Ext_LicensePlateText2": values[4:]}
 
 
 def view_node_name(constant):

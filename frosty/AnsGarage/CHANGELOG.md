@@ -1,3 +1,10 @@
+# 1.0.3
+
+- **Tools → An's Garage → Export license plate library...** exports the real plate backgrounds once into `AnsGarage_PlateLibrary` (`plates.json` + `textures/`): US states and territories, Japanese plates and NFS places.
+  - Labels are written by hand, because plates have no localized names.
+  - Two game item keys are misspelled (`neewjersey`, `olimpiccity`); their textures are spelled correctly and are what the library uses.
+- Headless exporter: `plates <out dir>` mode.
+
 # 1.0.2
 
 - No changes; version kept in step with An's Garage for Blender 1.0.2.

@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 2), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 3), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -88,6 +88,37 @@ def materials_module():
 def tires_module():
     from . import unbound_tires
     return unbound_tires
+
+
+def plates_module():
+    from . import unbound_plates
+    return unbound_plates
+
+
+_PLATE_INDEX = {}
+_PLATE_ITEMS = []  # Blender keeps only references to enum item strings: hold them here
+
+
+def plate_library(context):
+    """License plate library folder: the add-on preference, else the scene's (set by Locate plate library)."""
+    addon = context.preferences.addons.get(__name__)
+    folder = getattr(getattr(addon, "preferences", None), "plate_library", "") if addon else ""
+    return folder or context.scene.get("ans_garage_plate_library", "")
+
+
+def plate_index(folder):
+    if folder not in _PLATE_INDEX:
+        try:
+            _PLATE_INDEX[folder] = plates_module().load_index(folder)
+        except (OSError, ValueError):
+            _PLATE_INDEX[folder] = None
+    return _PLATE_INDEX[folder]
+
+
+def plate_label(index, key):
+    if key == "Stock" or not index:
+        return "Stock (car's own)" if key == "Stock" else key
+    return next((p["Label"] for p in index["Plates"] if p["Key"] == key), key)
 
 
 def animation_module():
@@ -380,10 +411,14 @@ def register():
         bl_idname = __name__
         tire_library: StringProperty(name="Tire library folder", subtype="DIR_PATH",
                                      description="Folder made by Frosty: Tools > An's Garage > Export tire library...")
+        plate_library: StringProperty(name="License plate library folder", subtype="DIR_PATH",
+                                      description="Folder made by Frosty: Tools > An's Garage > Export license plate library...")
 
         def draw(self, context):
             self.layout.prop(self, "tire_library")
             self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export tire library...")
+            self.layout.prop(self, "plate_library")
+            self.layout.label(text="Export it once in Frosty: Tools > An's Garage > Export license plate library...")
 
     class IMPORT_SCENE_OT_ans_garage_locate_tires(bpy.types.Operator, ImportHelper):
         bl_idname = "import_scene.ans_garage_locate_tires"
@@ -424,6 +459,84 @@ def register():
                 return {"CANCELLED"}
             if notes:
                 self.report({"WARNING"}, "; ".join(notes))
+            return {"FINISHED"}
+
+    class IMPORT_SCENE_OT_ans_garage_locate_plates(bpy.types.Operator, ImportHelper):
+        bl_idname = "import_scene.ans_garage_locate_plates"
+        bl_label = "Locate license plate library"
+        filename_ext = ".json"
+        filter_glob: StringProperty(default="*plates.json", options={"HIDDEN"})
+
+        def execute(self, context):
+            folder = str(Path(self.filepath).parent)
+            _PLATE_INDEX.pop(folder, None)
+            if plate_index(folder) is None:
+                _PLATE_INDEX.pop(folder, None)
+                self.report({"ERROR"}, "Not a license plate library (plates.json from An's Garage for Frosty)")
+                return {"CANCELLED"}
+            context.scene["ans_garage_plate_library"] = folder
+            addon = context.preferences.addons.get(__name__)
+            if addon and getattr(addon, "preferences", None) is not None:
+                addon.preferences.plate_library = folder
+            return {"FINISHED"}
+
+    def plate_items(self, context):
+        index = plate_index(plate_library(context)) if context else None
+        items = [("Stock", "Stock (car's own)", "The car's own license plate")]
+        for p in (index or {}).get("Plates", []):
+            items.append((p["Key"], p["Label"], p["Group"]))
+        _PLATE_ITEMS[:] = items
+        return _PLATE_ITEMS
+
+    class OBJECT_OT_ans_garage_plate(bpy.types.Operator):
+        bl_idname = "object.ans_garage_plate"
+        bl_label = "Choose license plate"
+        bl_description = "Search the license plate library (type to filter, e.g. cal or japan)"
+        bl_options = {"REGISTER", "UNDO"}
+        bl_property = "plate"
+        root: StringProperty(options={"SKIP_SAVE"})
+        plate: bpy.props.EnumProperty(items=plate_items, name="Plate")
+
+        def invoke(self, context, event):
+            context.window_manager.invoke_search_popup(self)
+            return {"RUNNING_MODAL"}
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            folder = plate_library(context)
+            if root is None or (self.plate != "Stock" and not folder):
+                self.report({"ERROR"}, "Locate the license plate library first")
+                return {"CANCELLED"}
+            try:
+                count = plates_module().apply_plate(root, self.plate, folder)
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            self.report({"INFO"}, "%s on %d plates" % (plate_label(plate_index(folder), self.plate), count))
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_plate_text(bpy.types.Operator):
+        bl_idname = "object.ans_garage_plate_text"
+        bl_label = "License plate text"
+        bl_description = "Type the plate text: up to 7 letters, digits or spaces, drawn with the game's plate font"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+        text: StringProperty(name="Text", maxlen=7, description="A-Z, 0-9 and spaces; empty for a blank plate")
+
+        def invoke(self, context, event):
+            root = bpy.data.collections.get(self.root)
+            self.text = root.get("ans_garage_plate_text", "") if root else ""
+            return context.window_manager.invoke_props_dialog(self)
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            try:
+                plates_module().apply_text(root, self.text)
+            except Exception as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
             return {"FINISHED"}
 
     class OBJECT_OT_ans_garage_moving_parts(bpy.types.Operator):
@@ -699,6 +812,22 @@ def register():
                         for lettering, text in (("Plain", "Plain sidewall"), ("Brand", "Brand lettering")):
                             op = row.operator("object.ans_garage_tire", text=text, depress=current["Lettering"] == lettering)
                             op.root, op.tire, op.lettering = root.name, current["Name"], lettering
+                plates = box.box()
+                folder = plate_library(context)
+                pindex = plate_index(folder) if folder else None
+                current_plate = root.get("ans_garage_plate", "Stock")
+                wrapped(plates, context, "License plate: " + plate_label(pindex, current_plate), icon="TEXTURE")
+                text = root.get("ans_garage_plate_text", "")
+                op = plates.operator("object.ans_garage_plate_text", text="Plate text: " + (text or "(blank)") + "…")
+                op.root = root.name
+                if pindex is None:
+                    plates.operator("import_scene.ans_garage_locate_plates", text="Locate license plate library…")
+                else:
+                    row = plates.row(align=True)
+                    op = row.operator("object.ans_garage_plate", text="Choose plate…", icon="VIEWZOOM")
+                    op.root = root.name
+                    op = row.operator("object.ans_garage_plate", text="Stock", depress=current_plate == "Stock")
+                    op.root, op.plate = root.name, "Stock"
                 moving = box.box()
                 obj, controls = animation_module().controls(root)
                 if obj is not None and controls:
@@ -740,6 +869,7 @@ def register():
 
     global _registered_classes, _menu
     _registered_classes = [AnsGaragePreferences, IMPORT_SCENE_OT_ans_garage_locate_tires, OBJECT_OT_ans_garage_tire,
+                           IMPORT_SCENE_OT_ans_garage_locate_plates, OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
                            IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import, IMPORT_SCENE_OT_ans_garage_assembly, IMPORT_SCENE_OT_ans_garage_material_slots,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,

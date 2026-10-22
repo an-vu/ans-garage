@@ -2,6 +2,16 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.3
+
+- **License plate library:** put a real plate on any car.
+  - **Plates:** all 50 US states (plus classic Idaho), Washington DC, American Samoa, three Japanese plates, and NFS places (Lakeshore, Palm City, Rockport, Fortune Valley, Bayview, Olympic City, Palmont City, Fairhaven, Redview, Tri-City Bay, Canyon State, Sunshine Country, Merica City). No game logos, animated or themed plates.
+  - **Export once in Frosty:** **Tools → An's Garage → Export license plate library...**
+  - **In Blender:** use the sidebar's **License plate** section. **Choose plate…** searches the library (type "cal", "japan"...); **Stock** brings the car's own plate back. It applies to every plate on the car, in every bumper option.
+- **Plate text:** **Plate text…** in the same section. Up to 7 letters, digits or spaces, drawn with the game's own embossed plate font.
+  - The game packs the characters into `Ext_LicensePlateText1`/`2`: seven font cells, 0–9 then A–Z, 36 = empty.
+  - Plates now default to blank. 1.0.2 showed "0000000", because the game fills the text in at runtime and its default is 0 in every cell.
+
 ## 1.0.2
 
 - **License plates build on every car.** The plate shader comes in two versions that differ only in one texture: the printed plate font or an LED mask (`license_plate/licenseplate_ledmask_a`), a player customization. The printed plate is built, and the material records the LED version as skipped.

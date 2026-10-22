@@ -25,7 +25,7 @@ def check(name, ok, detail=None):
     print(("PASS " if ok else "FAIL ") + name + ("" if detail is None else "  " + json.dumps(detail, ensure_ascii=False)[:600]))
 
 
-check("Add-on 1.0.2", addon.bl_info["version"] == (1, 0, 2))
+check("Add-on 1.0.3", addon.bl_info["version"] == (1, 0, 3))
 started = time.perf_counter()
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export / "manifest.json"))
 import_seconds = time.perf_counter() - started
@@ -117,7 +117,7 @@ check("Visible surfaces built", True, {"Visible": len(occupied), "Built": built,
 check("Visible unbuilt surfaces (reasons)", True, dict(unbuilt))
 saved = out_dir / ("vehicle-%s.blend" % label)
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "1.0.2", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
+result = {"Version": "1.0.3", "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / ("vehicle-%s.json" % label)).write_text(json.dumps(result, indent=1, ensure_ascii=False), encoding="utf-8")
 print("PASSED", result["Passed"], "FAILED", result["Failed"])
