@@ -1,3 +1,7 @@
+# 1.0.2
+
+- No changes; version kept in step with An's Garage for Blender 1.0.2.
+
 # 1.0.1
 
 - **Choose vehicle...** shows a two-column table, Car and Folder (the folder's own name; the full path on hover). Click a header to sort.

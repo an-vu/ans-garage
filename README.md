@@ -37,7 +37,9 @@ powershell -File frosty\AnsGarage\build.ps1                       # Frosty plugi
 powershell -File tools\headless\export.ps1 export <vehicle folder> <out dir> [blueprint]
 python tools\shader-compiler\compile_all.py <shader_data_dir>\profiles-agnostic.json --jobs 12
 python tools\package_release.py --profiles <shader_data_dir>\profiles-agnostic.json
-python tests\run_all.py                                           # existing, fresh, nodes
+python tests\run_all.py                                           # every test, 4 at a time; unchanged ones skipped
+python tests\run_all.py quick                                     # nodes + Murciélago only
+python tests\run_all.py full --jobs 6                             # re-run everything, 6 at a time
 ```
 
 - **Shader compiler input:** `<shader_data_dir>`, made locally from the installed game: `parsed.json`, the program tables, `asm/` (DXC disassembly) and `shader-defaults/`.

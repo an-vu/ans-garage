@@ -14,11 +14,14 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 ENGINE_ZERO_MAX_EFFECT = 0.1
 # Largest output difference tolerated between permutations of one vertex layout (light glass: see-through/reflection).
 PERMUTATION_MAX = 0.1
 PERMUTATION_GLASS_MAX = 0.12
+# Runtime view constants the compiler could not resolve (cb2[44].w: the camera exposure in the cs_lglass lenses) are
+# accepted only when the car's specialized outputs do not change at all across this range of values.
+VIEW_CONSTANT_RANGE = (1e-5, 1e-4, 1e-3, 0.01, 0.1, 0.5, 2.0, 10.0, 100.0)
 _PROFILES = None
 # Runtime vehicle customization -> shader parameter, by parameter-key equality (see SHADER-FINDINGS).
 # RaceVehicleCustomizationComponentData key field -> (RaceVehicleItemData field, component fallback field).
@@ -1054,6 +1057,55 @@ def specialize(profile, values, live, input_consts, rename, tex_consts):
     return spec, dict(outs)
 
 
+# Permutation pairs told apart by one default texture, where the other version is a player customization. The license
+# plate shader samples either the printed font (licenseplatefont_no, t2) or an LED mask
+# (license_plate/licenseplate_ledmask_a, t6); every other instruction of the two programs is the same (checked in the
+# disassembly). Compiled profiles keep the font slot, so the stock version is recognised by it.
+STOCK_PERMUTATION_TEXTURES = {"licenseplate/licenseplatefont": ("printed license plate", "LED license plate")}
+
+
+def stock_permutation(entry):
+    """(stock label, customization label) when a compiled entry samples a stock-marker texture, else None."""
+    for slot in (entry.get("Slots") or {}).values():
+        asset = (slot.get("DefaultAsset") or "").lower()
+        for key, labels in STOCK_PERMUTATION_TEXTURES.items():
+            if key in asset:
+                return labels
+    return None
+
+
+def view_node_name(constant):
+    """Formula node of a view-buffer constant: cb2[44].w -> View:44.w (None for anything else)."""
+    import re
+    m = re.fullmatch(r"cb2\[(\d+)\]\.([xyzw])", constant)
+    return "View:%s.%s" % m.groups() if m else None
+
+
+def testable_unresolved(entry):
+    """The entry's unresolved inputs that are view constants present in its formula, so the planner can test them."""
+    present = {n.get("name") for n in entry.get("Nodes", []) if n.get("op") == "view"}
+    return [u for u in entry.get("Unresolved", []) if view_node_name(u) in present]
+
+
+def view_independence(profile, values, live, input_consts, rename, tex_consts):
+    """Largest change of any connected output when the unresolved view constants sweep VIEW_CONSTANT_RANGE (unspecialized
+    formula, so no constant proof hides a dependence)."""
+    import numpy as np
+    names = [view_node_name(u) for u in testable_unresolved(profile)]
+    raw = Spec(profile, values, live, input_consts, rename, tex_consts)
+    outs = {k: raw.output(k) for k in profile["Outputs"] if k in CONNECTED_OUTPUTS}
+    ref = evaluate_spec(raw, outs, fixed={n: 1.0 for n in names})
+    worst = 0.0
+    for value in VIEW_CONSTANT_RANGE:
+        other = evaluate_spec(raw, outs, fixed={n: value for n in names})
+        for k, a in ref.items():
+            d = np.abs(a - other[k])
+            d = d[np.isfinite(d)]
+            if d.size:
+                worst = max(worst, float(d.max()))
+    return worst
+
+
 def plan(profile, state, runtime, live_names, images, root, input_consts=None, rename=None):
     """Everything that does not depend on the object's geometry: parameters, specialization, textures."""
     values, applied, issues = parameter_values(profile, state, runtime)
@@ -1100,6 +1152,17 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
     if not unsupported and any(n.startswith(("Unresolved:", "View:")) for n in names):
         unsupported = "Unresolved runtime inputs after specialization: " + ", ".join(
             sorted(n.split(":", 1)[1] for n in names if n.startswith(("Unresolved:", "View:"))))
+    view = None
+    if not unsupported and testable_unresolved(profile):
+        worst = view_independence(profile, values, live, input_consts, rename, tex_consts)
+        constants = testable_unresolved(profile)
+        if worst > 1e-6:
+            unsupported = "Runtime view constants %s (camera exposure) change the outputs by up to %.4f; not assumed" % (
+                ", ".join(constants), worst)
+        else:
+            view = {"Constants": constants, "Range": [VIEW_CONSTANT_RANGE[0], VIEW_CONSTANT_RANGE[-1]], "MaxDifference": worst,
+                    "Reason": "Runtime view constant (camera exposure) the exporter cannot read; with this car's material "
+                              "values no output changes across the range, so none is needed"}
     used_slots = {spec.nodes[i]["slot"] for i in used if spec.nodes[i]["op"] == "tex"}
     image_map, image_issues = {}, {}
     for slot in used_slots:
@@ -1113,7 +1176,7 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
     uses_frame = any(spec.nodes[i]["op"] == "frame" for i in used)
     inputs = sorted({spec.nodes[i]["name"] for i in used if spec.nodes[i]["op"] in ("input", "view")})
     return {"values": values, "applied": applied, "issues": issues, "spec": spec, "outs": outs,
-            "input_consts": input_consts, "unsupported": unsupported, "engine": engine,
+            "input_consts": input_consts, "unsupported": unsupported, "engine": engine, "view": view,
             "images": image_map, "image_issues": image_issues, "uses_frame": uses_frame, "inputs": inputs,
             "live": live, "folded_textures": tex_notes}
 

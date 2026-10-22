@@ -74,7 +74,7 @@ namespace AnsGarage
         public AssemblyRun(Manifest source,string directory)
         {
             manifest=source;output=directory;entries=App.AssetManager.EnumerateEbx().ToList();
-            Document=new JObject {{"Schema",1},{"PluginVersion","1.0.1"},{"Scope",source.Scope},{"CreatedUtc",DateTime.UtcNow.ToString("o")},
+            Document=new JObject {{"Schema",1},{"PluginVersion","1.0.2"},{"Scope",source.Scope},{"CreatedUtc",DateTime.UtcNow.ToString("o")},
                 {"Nodes",nodes},{"Components",components},{"Items",items},{"Wheels",wheels},{"MeshUses",meshUses},{"Issues",issues},
                 {"CoordinateSystem","Frostbite authored XYZ, Y up. Matrices are right/up/forward/translation vectors; meters."},
                 {"Policy","Source graph, rest placement and explicit item references. Runtime suspension simulation, shader deformation and arbitrary compatibility rules are not evaluated."}};

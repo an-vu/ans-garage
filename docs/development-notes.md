@@ -45,8 +45,11 @@ Results are summarized in `CHANGELOG.md`; run `tests/run_all.py` to reproduce th
 
 ## 5. Open items
 
-1. **Light-glass lenses that need engine constants:** M3 E46 `roboto/cs_lglass` needs the view exposure `cb2[44].w`, plus vertex-computed interpolants. (Engine constants with a measured effect up to 0.1 are set to 0 and recorded on the material; permutations may differ by up to 0.12 in glass transmittance/reflectance. This covers the Murciélago lenses: `cb0[1].x` effect 0.055–0.083, orange-lens permutations 0.111 apart.)
-2. **License plate:** program permutations disagree; the selection key is unknown.
-3. **Kit parts without a localized name:** shown as category + brand logo key + set code.
+1. **Light-glass permutations that disagree without a known selection rule:** one BMW M3 E46 `cs_lglass` lens. Its programs `04203732` (full, with extra lighting textures and the rainbow effect) and `5ac42833` (reduced) differ in transmittance by up to 0.47 on rare inputs (mean 0.005).
+   - Resolved: `cb2[44].w` (camera exposure) is accepted when the car's specialized outputs don't change across 1e-5–100, checked per material.
+   - Resolved: engine constants with a measured effect up to 0.1 are set to 0 and recorded on the material.
+   - Resolved: glass permutations may differ by up to 0.12 in transmittance/reflectance.
+2. **License plate:** resolved. The two programs differ only in the font (`licenseplatefont_no`, t2) or LED-mask (`license_plate/licenseplate_ledmask_a`, t6) texture; the printed plate is the stock look.
+3. **Kit parts without a localized name:** the exporter takes the brand name from the game's localized text; brands it lacks are spelled by hand (`BRAND_SPELLINGS`) or shown as the title-cased logo key.
 4. **Profiles for unseen skinned layouts:** usage-named entries exist only for layouts seen in exports. Exporting more vehicles and re-running `compile_all.py` extends them.
 5. **Other games:** NFS Heat and Hot Pursuit Remastered need their own shader databases, programs and Frosty profiles. The exporter, names and compiler structure carry over; the profiles do not.

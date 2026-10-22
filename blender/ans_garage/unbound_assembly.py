@@ -132,7 +132,8 @@ def _apply_selections(root, selections):
             raise ValueError("Unknown assembly variant for " + group + ": " + str(option))
         pending.extend((c, c["unbound_option"] != option) for c in choices)
     for collection, hidden in pending:
-        collection.hide_viewport = collection.hide_render = hidden
+        if collection.hide_viewport != hidden or collection.hide_render != hidden:
+            collection.hide_viewport = collection.hide_render = hidden
     _suppress_duplicates(root)
 
 
@@ -166,12 +167,16 @@ def _suppress_duplicates(root):
             walk(sub, visible)
     walk(root, True)
     view_layer = bpy.context.view_layer
+    in_layer = set(view_layer.objects.keys())
     for obj, duplicate in pending:
         # Excluded layer collections have no object Base in this view layer.
         # Their exclusion stays intact; render visibility can still be updated.
-        if view_layer.objects.get(obj.name) == obj:
+        # Only changed values are written: every write re-evaluates the scene (about 2 s per part switch on a car
+        # with 1,500 objects when all were rewritten).
+        if obj.name in in_layer and obj.hide_get(view_layer=view_layer) != duplicate:
             obj.hide_set(duplicate, view_layer=view_layer)
-        obj.hide_render = duplicate
+        if obj.hide_render != duplicate:
+            obj.hide_render = duplicate
     root["suppressed_exact_duplicate_instances"] = count
     root["unbound_variant_issues_json"] = json.dumps(issues)
 

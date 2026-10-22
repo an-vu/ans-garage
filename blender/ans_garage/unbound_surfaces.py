@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 PROFILE = json.loads(Path(__file__).with_name("tire_shader_evidence.json").read_text(encoding="utf-8"))
 CORE_TEXTURES = ("RGB_Color_A_Smoothness", "RG_Normal_A_AO")
 
@@ -430,6 +430,15 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"),
                                       "Reason": "No compiled program for vertex layout " + "/".join(layout)})
         return
+    # Permutations that only a player customization selects (the LED license plate) give way to the stock one.
+    stock = [e for e in candidates if P.stock_permutation(e)]
+    customization_notes = []
+    if stock and len(stock) < len(candidates):
+        labels = P.stock_permutation(stock[0])
+        customization_notes = [{"AlternateProgram": e["Programs"][0], "Status": "%s permutation: a player customization; "
+                                "the stock %s is built" % (labels[1], labels[0])}
+                               for e in candidates if e not in stock]
+        candidates = stock
     renames = []
     for entry in candidates:
         entry["ShaderAsset"] = shader
@@ -438,7 +447,9 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         except P.Unsupported as exc:
             report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"), "Reason": str(exc)})
             return
-    unresolved = sorted({u for e in candidates for u in e["Unresolved"]})
+    # View constants present in the formula are tested by the planner (after specialization); anything else unresolved
+    # stops here.
+    unresolved = sorted({u for e in candidates for u in e["Unresolved"] if u not in P.testable_unresolved(e)})
     if unresolved:
         report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"),
                                       "Reason": "Unresolved runtime inputs: " + ", ".join(unresolved)})
@@ -479,7 +490,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
     if isinstance(caches[akey], P.Unsupported):
         report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"), "Reason": str(caches[akey])})
         return
-    permutation_notes = caches[akey]
+    permutation_notes = customization_notes + caches[akey]
     entry, p = candidates[0], plans[0]
     uv = {b["SourceUsage"]: b["BlenderLayer"] for b in json.loads(obj.get("unbound_uv_bindings_json", "[]"))
           if b.get("BlenderLayer") in obj.data.uv_layers}
@@ -544,6 +555,8 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         entry_report["PermutationNotes"] = permutation_notes
     if p.get("engine"):
         entry_report["EngineConstantAssumption"] = p["engine"]
+    if p.get("view"):
+        entry_report["ViewConstantIndependence"] = p["view"]
     key = (material.name, identity)
     if key not in material_cache:
         material_cache[key] = P.make_profile_material(material, entry, group, connected, entry_report)

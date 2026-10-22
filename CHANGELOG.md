@@ -2,6 +2,14 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.2
+
+- **License plates build on every car.** The plate shader comes in two versions that differ only in one texture: the printed plate font or an LED mask (`license_plate/licenseplate_ledmask_a`), a player customization. The printed plate is built, and the material records the LED version as skipped.
+- **BMW-style light glass (`cs_lglass`) builds.** Its formula reads the camera exposure (`cb2[44].w`), which the renderer sets live. With the car's own material values no output changes for any exposure from 0.00001 to 100 (checked per material), so none is needed. The check is recorded on the material (`ViewConstantIndependence`); a material whose output did change would stay unbuilt.
+- **Results:** Murciélago 104/104 visible surfaces built (was 103), BMW M3 E46 106/107 (was 100). The BMW's last lens has two shader versions that disagree in transmittance by up to 0.47, and nothing says which one the game uses, so it stays unbuilt.
+- **Switching part options and presets is instant:** about 2 s → 0.01 s per click on the BMW M3 E46. Every switch used to rewrite the visibility of every object in the car (about 1,500), and each write made Blender re-evaluate the scene; now only changed values are written.
+- **Tests:** `tests/run_all.py` runs tests in parallel (`--jobs`, default 4) and skips tests whose inputs are unchanged since they last passed. `full` forces all; `quick` runs nodes + Murciélago. The whole suite takes about 3 minutes instead of 40.
+
 ## 1.0.1
 
 - **Item meshes are placed at their own customization component**, not only spoilers. The Diablo SV's pop-up headlights, modelled around their own origin, used to sit at the car's origin (0, 0, 0); they now sit in the nose. Geometry already in car space keeps its place, as before.
