@@ -243,6 +243,9 @@ namespace AnsGarage
                 }
             }
             var desired=new HashSet<Guid>(items.SelectMany(i=>i["Permutations"]).SelectMany(p=>p["Meshes"]).Select(m=>Guid.Parse((string)m["BlueprintGuid"])));
+            // Every size of a tire (small/medium/large sidewall): the game picks one from the rim-to-tire diameter ratio.
+            foreach(var info in items.Select(i=>i["TireMeshInfos"]).OfType<JArray>().SelectMany(a=>a))
+                foreach(var m in (info["Meshes"] as JArray)??new JArray()) {Guid g;if(Guid.TryParse((string)m["MeshGuid"],out g))desired.Add(g);}
             var cmiOwners=new Dictionary<Guid,List<JObject>>();
             foreach(var component in objects.Where(o=>Batch.Get(o,"CustomizableMeshInfos")!=null)) {
                 if(IsCancelled)break;

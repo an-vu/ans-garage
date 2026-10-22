@@ -9,6 +9,9 @@ from pathlib import Path
 
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wheel_fit  # noqa: E402
+
 args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, library, out_dir = Path(args[0]), Path(args[1]), Path(args[2]), Path(args[3])
 out_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +39,7 @@ addon.import_manifest(str(export / "manifest.json"))
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
 bpy.context.scene["ans_garage_rim_library"] = str(library)
 factory = next(c for c in root.children if c.get("unbound_choice_group") == "Rims")
+factory_rims = addon.assembly_module().wheels.factory_rims(json.loads(Path(root["unbound_assembly_path"]).read_text(encoding="utf-8-sig")))
 
 
 def library_rims():
@@ -58,8 +62,19 @@ for name in ("BBS LM", "Work Meister S1"):
           {"Instances": len(rims), "Seconds": round(time.time() - started, 1)})
     check("%s: surfaces built from the compiled shaders" % name, built and all(m.get("unbound_surface_profile") for m in built),
           sorted({m.name for m in built})[:4])
-    check("%s: scaled to the factory rim size" % name, all("scaled to the factory rim" in c.get("dimension_status", "") for c in rims),
-          rims[0].get("dimension_status") if rims else None)
+    # Resized like the game's wheel shader: the barrel to the factory rim diameter.
+    bpy.context.view_layer.update()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    fitted = [o for o in objs if o.get("unbound_wheel_fit")]
+    sizes = {o.name: wheel_fit.measure(o, depsgraph) for o in fitted}
+    wheel_of = {child.name: parent.name for parent in root.children_recursive for child in parent.children}
+    target = {c.name: factory_rims.get("Front" if wheel_of[c.name].startswith("Front") else "Rear") for c in rims}
+    main = [(o, target[c.name]) for c in rims for o in c.all_objects if o.name in sizes and "rim_main" in o.name.lower()]
+    check("%s: fitted per vertex to the factory rim size" % name,
+          len(main) == 4 and all(sizes[o.name]["FormulaError"] < 1e-5 for o in fitted)
+          and all(abs(sizes[o.name]["Radius"][1] - rim["Diameter"] / 2) < 0.006 for o, rim in main),
+          {"Status": rims[0].get("dimension_status") if rims else None,
+           "Rims": {o.name: [round(sizes[o.name]["Radius"][1], 4), round(rim["Diameter"] / 2, 4)] for o, rim in main}})
 paint = R.rim_paint(root)
 check("Rim colors are live per car (primary/secondary, front/rear)", len(paint) >= 2, [label for label, _ in paint])
 if paint:

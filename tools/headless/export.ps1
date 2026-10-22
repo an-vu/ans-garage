@@ -1,7 +1,7 @@
-param([Parameter(Mandatory=$true)][string]$Mode,[string]$A='',[string]$B='',[string]$C='')
+param([Parameter(Mandatory=$true)][string]$Mode,[string]$A='',[string]$B='',[string]$C='',[string]$D='')
 # Runs An's Garage for Frosty without opening Frosty (paths from settings.json; destinations must be absolute).
 #   catalog   <out.json>                         every vehicle by in-game name (also refreshes the picker cache)
-#   export    <vehicle folder> <out dir> [blueprint]
+#   export    <vehicle folder> <out dir> [blueprint] [static]   static (any position): no moving parts built on import
 #   assembly  <export dir> <blueprint>           re-run assembly for an existing export
 #   defaults  <export dir>                       shader default textures only
 #   liveries  <export dir> <list|all|k1|k2...>   list a car's stock liveries, or add them to an existing export
@@ -31,5 +31,5 @@ $exe = Join-Path $bin 'ExportHarness.exe'
 if ($LASTEXITCODE -ne 0) { throw 'compile failed' }
 $env:UNBOUND_FROSTY_CONFIG_COPY = Join-Path $work 'editor_config.copy.json'
 Push-Location $work
-try { & $exe $Settings.frosty_dir $plugin $work $Settings.game_dir $Mode $A $B $C } finally { Pop-Location }
+try { & $exe $Settings.frosty_dir $plugin $work $Settings.game_dir $Mode $A $B $C $D } finally { Pop-Location }
 if ($LASTEXITCODE -ne 0) { throw 'harness failed' }

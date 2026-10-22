@@ -1,14 +1,17 @@
 """Rim library: put a real-brand aftermarket rim (BBS, HRE, Rotiform, Work...) on a car.
 
-The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export rim library...) and imported once
-per .blend into a hidden collection. Choosing a rim hides the car's own wheel sets and places the library rim on every
-wheel's rotation empty, scaled from the rim's declared size (Diameter, Width) to the car's factory rim on that axle; the
-game resizes rims in the wheel shader instead. Stock brings the car's own wheel set back. A car's factory wheels come
-with its own export, never from the library.
+The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export rim library...); each brand is
+imported into a hidden collection the first time one of its rims is chosen. Choosing a rim hides the car's own wheel
+sets and places the library rim on every wheel's rotation empty, resized from its declared size (Diameter, Width) to the
+car's factory rim on that axle the way the game's wheel shader does it (Wheel fit: the barrel and back lip move, the hub
+and spokes by the rim's own vertex weights). Stock brings the car's own wheel set back. A car's factory wheels come with its own export, never from
+the library.
 """
 import json
 import math
 from pathlib import Path
+
+from . import unbound_wheels as wheels
 
 LIBRARY = "An's Garage rim library"
 STOCK = "Stock"
@@ -31,22 +34,24 @@ def _addon():
     return importlib.import_module(__package__)
 
 
-def ensure_library(folder):
-    """Import the library once (hidden collection): {mesh asset: [template objects]}."""
+def ensure_library(folder, brands):
+    """Import the given brand folders of the library once each (hidden collection): {mesh asset: [template objects]}.
+    Templates keep their source material slots only: placed copies are built against their car."""
     folder = Path(folder).resolve()
     index = load_index(folder)
-    lib, fill = _addon().library_collection(LIBRARY, "ans_garage_rim_library", folder)
-    if fill:
-        for brand in index["Folders"]:
-            manifest = folder / brand / "manifest.json"
-            objects = _addon().import_library_parts(manifest)
-            records = {m["Id"]: m for m in json.loads(manifest.read_text(encoding="utf-8-sig"))["Meshes"]}
-            for o in objects:
-                o["ans_garage_rim_mesh"] = records.get(o.get("unbound_mesh_id"), {}).get("Asset", "")
-                for col in list(o.users_collection):
-                    col.objects.unlink(o)
-                lib.objects.link(o)
-            _addon().surfaces_module().apply_supported_surfaces(objects, manifest)
+    lib, _ = _addon().library_collection(LIBRARY, "ans_garage_rim_library", folder)
+    done = set(lib.get("ans_garage_rim_brands", []))
+    for brand in sorted(set(brands) - done):
+        manifest = folder / brand / "manifest.json"
+        objects = _addon().import_library_parts(manifest)
+        records = {m["Id"]: m for m in json.loads(manifest.read_text(encoding="utf-8-sig"))["Meshes"]}
+        for o in objects:
+            o["ans_garage_rim_mesh"] = records.get(o.get("unbound_mesh_id"), {}).get("Asset", "")
+            for col in list(o.users_collection):
+                col.objects.unlink(o)
+            lib.objects.link(o)
+        done.add(brand)
+        lib["ans_garage_rim_brands"] = sorted(done)
         _addon().finish_library(lib)
     templates = {}
     for o in lib.all_objects:
@@ -96,14 +101,15 @@ def apply_rim(root, name, folder):
     if not assembly.is_file():
         raise FileNotFoundError("This car's export folder has moved: %s is missing. Put the export back where it was "
                                 "imported from to change its rims." % assembly)
-    index, templates = ensure_library(folder)
+    index = load_index(folder)
+    choices = [r for r in index["Rims"] if r["Name"] == name]
+    if not choices:
+        raise ValueError("Rim %s is not in the library" % name)
+    index, templates = ensure_library(folder, {r["Folder"] for r in choices})
     data = json.loads(assembly.read_text(encoding="utf-8-sig"))
     conversion = Matrix([tuple(r) for r in json.loads(root["fbx_to_blender_matrix"])])
     inverse = conversion.inverted()
     stock = {i.get("Location"): i["Raw"] for i in data["Items"] if i["Type"] == "RimsItemData" and i["Default"]}
-    choices = [r for r in index["Rims"] if r["Name"] == name]
-    if not choices:
-        raise ValueError("Rim %s is not in the library" % name)
     notes, placed = [], []
     for wheel in data["Wheels"]:
         facing = wheel["Facing"]
@@ -124,15 +130,18 @@ def apply_rim(root, name, folder):
             notes.append("%s: library mesh %s not imported" % (wheel["Name"], desc["Mesh"]))
             continue
         rotation = Matrix.Rotation(math.pi, 4, "Y") if desc["Rotate"] else Matrix.Identity(4)
-        radial, axial = car["Diameter"] / rim["Diameter"], car["Width"] / rim["Width"]
-        local = conversion @ rotation @ Matrix.Diagonal((axial, radial, radial, 1)) @ inverse
+        local = conversion @ rotation @ inverse
+        offsets = wheels.rim_offsets(rim, car["Diameter"], car["Width"])
         inst = bpy.data.collections.new("Rim | " + name)
         wheel_col.children.link(inst)
         inst["ans_garage_library_rim"] = True
         inst["source_item"] = rim["Asset"]
-        inst["dimension_status"] = ("Library rim %.3f x %.3f m scaled to the factory rim %.3f x %.3f m (object scale; the game "
-                                    "resizes rims in the wheel shader)" % (rim["Diameter"], rim["Width"], car["Diameter"], car["Width"]))
-        placed.extend(_addon().place_copies(sources, inst, spin, local))
+        inst["dimension_status"] = ("Library rim %.3f x %.3f m fitted per vertex (Wheel fit) to the factory rim %.3f x %.3f m: "
+                                    "barrel %+.4f m, back lip %+.4f m"
+                                    % (rim["Diameter"], rim["Width"], car["Diameter"], car["Width"], offsets[1], offsets[2]))
+        copies = _addon().place_copies(sources, inst, spin, local)
+        wheels.fit(copies, offsets)
+        placed.extend(copies)
     # Built against the car: rim shaders read per-wheel inputs (front or rear) and the car's rim paint.
     slots = []
     for o in placed:

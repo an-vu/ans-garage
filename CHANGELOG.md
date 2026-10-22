@@ -2,6 +2,19 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.9
+
+- **Exact tire fit:** tires are reshaped per vertex the way the game's tire shader does it, instead of scaling the whole tire.
+  - The tread goes to the car's tire diameter, the bead to the rim and the sidewalls to the section width; the sidewall in between stretches. Before, the bead grew with the tire and could end up outside the rim lip (5 mm on the Murciélago's rear).
+  - The game has three sidewall sizes per tire (small, medium, large) and picks one from the rim-to-tire diameter ratio. The car export now includes all three and the right one is placed (the Murciélago: small at the front, medium at the rear). Exports from before 1.0.9 hold only the small one and still import.
+  - In Blender this is a **Wheel fit** geometry-nodes modifier on each tire. Its three offsets are the shader's (`g_wheelCustomizeParam` W.y, W.x + W.z, W.w), worked out from the car's tire configuration and the part sizes; the game capture will confirm the game's own values.
+- **Library rims** are resized the same way: the barrel and lip to the factory rim's diameter, the back lip to its width, the hub and spokes following each rim's own vertex weights. Before, the whole rim was scaled.
+- **Library tires** pick their sidewall size with their own thresholds (off-road tires use lower ones) and are fitted per vertex. Re-export the tire library to record the thresholds; older ones use the stock tire's.
+- **Export options:** a **Moving parts** tick box (ticked by default). Untick it for a static model; **Add moving parts** in Blender still builds them later.
+- **Export folder named after the car** (its in-game name, " (2)" etc. if it exists), instead of `Unbound_<date>_<id>`.
+- **Faster import:** about twice as fast (the Murciélago: 76 s → 36 s). FBX files load into a staging scene through the FBX reader directly, mesh signatures use numpy, compiled shader checks and textures are cached. The rim library imports a brand the first time one of its rims is chosen.
+- **Tests:** 12 at a time by default; `static` (static export); every vehicle test checks the scene keeps its frame rate and the stock tire fit (formula, size, sidewall choice); `tires` and `rims` check the library fit.
+
 ## 1.0.8
 
 - **The car's own wheel sets:** a **Wheels** choice in the car's parts. 31 of the 200 cars have more than one factory set (the Aventador S has four; the BMW M3 E46 has Stock, Custom and RZR). Body kits that come with their own wheels switch them too. The game names every set "Stock", so the others show their set code.

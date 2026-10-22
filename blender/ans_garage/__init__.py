@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 8), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 9), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -257,6 +257,53 @@ def vehicle_label(filepath):
     return name or path.parent.name
 
 
+FBX_OPTIONS = dict(global_scale=1.0, use_manual_orientation=False, bake_space_transform=False, use_anim=False,
+                   automatic_bone_orientation=False, ignore_leaf_bones=False, use_prepost_rot=True)
+
+
+def fbx_reader(staging):
+    """Import one FBX file: (path) -> the new objects, linked to the scene's collection. Calls the FBX add-on's reader
+    directly with the import operator's own defaults plus FBX_OPTIONS, skipping the operator wrapper (an undo step and
+    scene update per file), into the empty `staging` scene (the reader deselects every object of its scene and sets
+    the scene's frame rate for each file). A file the reader can't take there (skinned meshes need an active object
+    for their armature) is read the usual way into the current scene; so is everything if that reader is missing."""
+    import bpy
+    try:
+        from io_scene_fbx import import_fbx
+        rna = bpy.ops.import_scene.fbx.get_rna_type()
+        skip = {"rna_type", "filter_glob", "directory", "ui_tab", "filepath", "files"}
+        options = {p.identifier: (tuple(p.default_array) if getattr(p, "is_array", False) else p.default)
+                   for p in rna.properties if p.identifier not in skip and not p.is_readonly}
+        options.update(FBX_OPTIONS)
+    except Exception:
+        import_fbx = None
+
+    class Reports:
+        def report(self, kind, message):
+            if "ERROR" in kind:
+                raise RuntimeError(message)
+
+    def usual(path):
+        before = set(bpy.data.objects)
+        if "FINISHED" not in bpy.ops.import_scene.fbx(filepath=path, **FBX_OPTIONS):
+            raise RuntimeError("Blender FBX importer did not finish")
+        return list(set(bpy.data.objects) - before)
+
+    def read(path):
+        if import_fbx is None:
+            return usual(path)
+        try:
+            with bpy.context.temp_override(scene=staging, view_layer=staging.view_layers[0]):
+                if "FINISHED" not in import_fbx.load(Reports(), bpy.context, filepath=path, **options):
+                    raise RuntimeError("Blender FBX importer did not finish")
+            return list(staging.objects)
+        except Exception:
+            for obj in list(staging.objects):
+                bpy.data.objects.remove(obj, do_unlink=True)
+            return usual(path)
+    return read
+
+
 def import_steps(filepath, assemble=True, materials=True):
     """The vehicle import as a generator: yields (stage, percent, done, total) after each unit of work and returns
     (count, failures). The sidebar import runs it in short slices so Blender stays responsive."""
@@ -283,49 +330,64 @@ def import_steps(filepath, assemble=True, materials=True):
     failures = []
     imported_objects = []
     count = 0
-    for index, mesh in enumerate(records):
-        yield "Importing parts", 20.0 * index / max(1, len(records)), index, len(records)
-        before = set(bpy.data.objects)
-        try:
-            status = bpy.ops.import_scene.fbx(
-                filepath=str(files[mesh["Id"]]), global_scale=1.0,
-                use_manual_orientation=False, bake_space_transform=False,
-                use_anim=False, automatic_bone_orientation=False,
-                ignore_leaf_bones=False, use_prepost_rot=True)
-            if "FINISHED" not in status:
-                raise RuntimeError("Blender FBX importer did not finish")
-            added = set(bpy.data.objects) - before
-            if not added:
-                raise RuntimeError("FBX produced no objects")
-            part = collection(mesh["Asset"].split("/")[-1] + " | " + mesh["Id"][:12], parts)
-            part["asset"] = mesh["Asset"]
-            part["file_guid"] = mesh["FileGuid"]
-            part["class_guid"] = mesh["ClassGuid"]
-            part["raw_composite_transforms_json"] = json.dumps(mesh.get("CompositeTransforms", []))
-            for obj in added:
-                # Collection linking does not change parent, matrix_basis or matrix_world.
-                part.objects.link(obj)
-                for old in list(obj.users_collection):
-                    if old != part:
-                        old.objects.unlink(obj)
-                obj["unbound_mesh_id"] = mesh["Id"]
-            imported_objects.extend(added)
-            for variant in mesh.get("Variants", []):
-                key = (variant["DatabaseGuid"], variant["Hash"])
-                if key not in variant_collections:
-                    vc = collection(variant["Hash"] + " | " + variant["DatabaseGuid"][:8], variants)
-                    vc["database"] = variant["Database"]
-                    vc["variation_hash"] = variant["Hash"]
-                    variant_collections[key] = vc
-                vc = variant_collections[key]
-                if part.name not in vc.children:
-                    vc.children.link(part)
-            part["variant_records_json"] = json.dumps(mesh.get("Variants", []))
-            count += 1
-        except Exception as exc:
-            for obj in set(bpy.data.objects) - before:
-                bpy.data.objects.remove(obj, do_unlink=True)
-            failures.append(mesh["Asset"] + ": " + str(exc))
+    # Blender's FBX importer starts and stops a thread pool for every file; for hundreds of small part files that costs
+    # more than it saves (about 9 s on a 368-part car), so parts are read single-threaded. Restored afterwards.
+    # Each file is read into an empty staging scene: the importer deselects every object of its scene and sets the
+    # scene's frame rate for each file, which on the user's scene grows with every part already imported (and changed
+    # its fps). The new objects are then exactly the staging scene's, moved into the car's collections.
+    staging = bpy.data.scenes.new("An's Garage import (staging)")
+    try:
+        from io_scene_fbx import fbx_utils_threading as fbx_threads
+    except ImportError:
+        fbx_threads = None
+    threaded = getattr(fbx_threads, "_MULTITHREADING_ENABLED", None)
+    if fbx_threads is not None:
+        fbx_threads._MULTITHREADING_ENABLED = False
+    try:
+        read_fbx = fbx_reader(staging)
+        for index, mesh in enumerate(records):
+            yield "Importing parts", 20.0 * index / max(1, len(records)), index, len(records)
+            added = []
+            try:
+                added = read_fbx(str(files[mesh["Id"]]))
+                if not added:
+                    raise RuntimeError("FBX produced no objects")
+                part = collection(mesh["Asset"].split("/")[-1] + " | " + mesh["Id"][:12], parts)
+                part["asset"] = mesh["Asset"]
+                part["file_guid"] = mesh["FileGuid"]
+                part["class_guid"] = mesh["ClassGuid"]
+                part["raw_composite_transforms_json"] = json.dumps(mesh.get("CompositeTransforms", []))
+                for obj in added:
+                    # Collection linking does not change parent, matrix_basis or matrix_world.
+                    part.objects.link(obj)
+                    for old in list(obj.users_collection):
+                        if old != part:
+                            old.objects.unlink(obj)
+                    obj["unbound_mesh_id"] = mesh["Id"]
+                imported_objects.extend(added)
+                for variant in mesh.get("Variants", []):
+                    key = (variant["DatabaseGuid"], variant["Hash"])
+                    if key not in variant_collections:
+                        vc = collection(variant["Hash"] + " | " + variant["DatabaseGuid"][:8], variants)
+                        vc["database"] = variant["Database"]
+                        vc["variation_hash"] = variant["Hash"]
+                        variant_collections[key] = vc
+                    vc = variant_collections[key]
+                    if part.name not in vc.children:
+                        vc.children.link(part)
+                part["variant_records_json"] = json.dumps(mesh.get("Variants", []))
+                count += 1
+            except Exception as exc:
+                for obj in added + list(staging.objects):
+                    if obj.name in bpy.data.objects:
+                        bpy.data.objects.remove(obj, do_unlink=True)
+                failures.append(mesh["Asset"] + ": " + str(exc))
+    finally:
+        if fbx_threads is not None:
+            fbx_threads._MULTITHREADING_ENABLED = threaded
+        for obj in list(staging.objects):
+            bpy.data.objects.remove(obj, do_unlink=True)
+        bpy.data.scenes.remove(staging)
     report = bpy.data.texts.new("An's Garage import report")
     report.write("Imported %d/%d meshes\n" % (count, len(records)) + "\n".join(failures))
     if materials and path.with_name("materials.json").is_file():
@@ -354,14 +416,19 @@ def import_steps(filepath, assemble=True, materials=True):
             failures.append("Assembly: " + str(exc))
             report.write("\nAssembly: " + str(exc))
         else:
-            yield "Adding moving parts", 78.0, 0, 1
-            add_moving_parts(root, report)
+            if manifest.get("MovingParts", True):
+                yield "Adding moving parts", 78.0, 0, 1
+                add_moving_parts(root, report)
+            else:
+                root["ans_garage_static_export"] = True
+                report.write("\nMoving parts: not built (exported as a static model; Add moving parts builds them)")
             if materials and path.with_name("materials.json").is_file():
                 # Per-wheel inputs (front/rear selectors) exist only on assembled wheel parts.
                 surface_report = yield from _scaled(surfaces_module().surface_steps(None, path),
                                                     "Building per-wheel materials", 80.0, 100.0)
                 report.write("\nAfter assembly: %d more slots built (per-wheel inputs); %d issues." %
                              (len(surface_report["Built"]), len(surface_report["Issues"])))
+    materials_module().FBX_TREES.clear()
     yield "Finishing", 100.0, 1, 1
     return count, failures
 
@@ -1078,6 +1145,8 @@ def register():
                 elif root.get("ans_garage_moving_parts_json"):
                     wrapped(moving, context, "Moving parts: none in this car's data", icon="ARMATURE_DATA")
                 else:
+                    if root.get("ans_garage_static_export"):
+                        wrapped(moving, context, "Exported as a static model", icon="ARMATURE_DATA")
                     moving.operator("object.ans_garage_moving_parts", icon="ARMATURE_DATA").root = root.name
                 wrapped(box, context, "Limits: see the An's Garage assembly report in the Text Editor")
             obj = context.active_object

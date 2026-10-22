@@ -9,6 +9,8 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
+from . import unbound_wheels as wheels
+
 
 def category(item):
     """Presentation labels use actual item type/location, never compatibility guesses."""
@@ -359,33 +361,48 @@ def assemble_existing(manifest_path):
                 diagnostics.append("Unresolved wheel facing: " + item["Asset"])
                 continue
             c, steering, spin = wheel_controls[facing["Name"]]
-            rotation = Matrix.Rotation(math.pi, 4, "Y") if desc["Rotate"] else Matrix.Identity(4)
-            scaling = Matrix.Identity(4)
+            blueprint, rotate, offsets = desc["BlueprintGuid"], desc["Rotate"], None
             status = "Original authored rim/part dimensions retained; runtime shader resize not applied."
             if item["Type"] == "TiresItemData":
-                info = next((i for i in (item.get("TireMeshInfos") or []) if any(m["MeshGuid"] == desc["BlueprintGuid"] for m in i["Meshes"])), None)
+                infos = item.get("TireMeshInfos") or []
+                info = next((i for i in infos if any(m["MeshGuid"] == blueprint for m in i["Meshes"])), None)
                 axle = "Front" if facing["Front"] else "Rear"
                 outer = tire_config.get("Diameter" + axle)
                 width = tire_config.get("SectionWidth" + axle)
-                if info and outer and width and info["OuterDiameter"] > 0 and info["Width"] > 0:
-                    # Reversible object scale from declared dimensions. No mesh edit;
-                    # no claim to reproduce Frostbite's inner/outer-radius shader.
-                    scaling = Matrix.Diagonal((width / 1000.0 / info["Width"], outer / info["OuterDiameter"], outer / info["OuterDiameter"], 1))
-                    status = "Experimental dimensional fit: source width/outer diameter to vehicle tire config; inner bead/shader deformation unverified."
+                rim = wheels.rim_diameter(data, tire_config, axle)
+                if info and outer and width and rim:
+                    # The sidewall size the game picks for this rim; exports before 1.0.9 hold only the default one.
+                    chosen = wheels.tire_size(infos, rim, outer, item["Raw"]["SmallToMedRatio"], item["Raw"]["MedToLargeRatio"])
+                    tag = ((desc.get("Raw") or {}).get("Tag") or {}).get("Asset", "").lower()
+                    mesh = next((m for m in chosen["Meshes"] if ((m.get("Tag") or {}).get("Asset") or "").lower() == tag), chosen["Meshes"][0])
+                    if mesh["MeshGuid"] in uses:
+                        blueprint, rotate, info = mesh["MeshGuid"], mesh["Rotate"], chosen
+                    offsets = wheels.tire_offsets(info, outer, rim, width)
+                    status = ("Wheel fit (the game's tire shader, per vertex): %.3f m sidewall mesh, tread %+.4f m, bead %+.4f m, "
+                              "each side %+.4f m, from the tire configuration and the %.3f m rim%s"
+                              % (info["InnerDiameter"], offsets[0], offsets[1], offsets[2], rim,
+                                 "" if info is chosen else "; the game's %.3f m sidewall mesh is not in this export" % chosen["InnerDiameter"]))
                 else:
-                    status = "Tire dimensions unresolved: source scale preserved."
+                    status = "Tire dimensions unresolved: source size preserved."
                     diagnostics.append(status + " " + item["Asset"])
+                # Every size counts as placed: only one is shown.
+                for i in infos:
+                    for m in i["Meshes"]:
+                        used.update(u["MeshId"] for u in uses.get(m["MeshGuid"], []))
+            rotation = Matrix.Rotation(math.pi, 4, "Y") if rotate else Matrix.Identity(4)
             kind = {"RimsItemData": "Rim", "TiresItemData": "Tire", "BrakeDiscsItemData": "Brake Disc", "CalipersItemData": "Caliper"}[item["Type"]]
             parent = steering if item["Type"] == "CalipersItemData" else spin
-            for use in uses[desc["BlueprintGuid"]]:
+            for use in uses[blueprint]:
                 proxy = Matrix.Identity(4)
                 for matrix in use["TransformChain"]:
                     proxy = proxy @ matrix_from_basis(matrix)
-                inst = instance(use["MeshId"], collection or c, kind, parent, conversion @ rotation @ scaling @ proxy @ inverse)
+                inst = instance(use["MeshId"], collection or c, kind, parent, conversion @ rotation @ proxy @ inverse)
                 inst["source_item"] = item["Asset"]
-                inst["source_rotate_flag"] = desc["Rotate"]
+                inst["source_rotate_flag"] = rotate
                 inst["dimension_status"] = status
                 inst["source_item_json"] = json.dumps(item["Raw"])
+                if offsets:
+                    wheels.fit(inst.all_objects, offsets)
                 used.add(use["MeshId"])
 
     for item in data["Items"]:
@@ -570,8 +587,9 @@ def assemble_existing(manifest_path):
     _suppress_duplicates(root)
     diagnostics += [
         "Right-side Rotate flag interpreted as a half turn about source Y; outward rim facing checked, runtime implementation unavailable.",
-        "Tire fitting uses object scale from declared width/outer diameter; exact inner bead and shader deformation remain experimental.",
-        "Rim and brake shader sizing, caliper runtime offsets, loaded suspension and camber are not reconstructed.",
+        "Tires are fitted per vertex with the game's wheel shader formula (Wheel fit modifier); its inputs are derived from the "
+        "tire configuration and declared part sizes, not yet read from the running game.",
+        "Brake disc/caliper shader sizing, caliper runtime offsets, loaded suspension and camber are not reconstructed.",
         "Variant collections preserve item permutations; runtime restrictions/offsets are recorded, not guessed.",
         "Material IDs are custom metadata; no placeholder materials or shaders were generated."
     ]

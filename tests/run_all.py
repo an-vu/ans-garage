@@ -1,11 +1,11 @@
 """Run the Blender test suite with paths from settings.json.
 
 usage: python tests/run_all.py [full|quick] [--jobs N] [test ...]
-  test: existing, fresh, nodes, tires, plates, conditions, paint, liveries, rims, vehicle:<export folder name>
-  (no tests)  every test: existing, fresh, nodes, tires, plates, conditions, paint, liveries, rims and each vehicle in VEHICLES that is exported
+  test: existing, fresh, nodes, tires, plates, conditions, paint, liveries, rims, static, vehicle:<export folder name>
+  (no tests)  every test: existing, fresh, nodes, tires, plates, conditions, paint, liveries, rims, static and each vehicle in VEHICLES that is exported
   quick       nodes and vehicle:murcielago only
   full        run even tests whose inputs have not changed since they last passed
-  --jobs N    Blender processes at once (default 4); the tests are independent
+  --jobs N    Blender processes at once (default 12: on a 14-core laptop the run then takes as long as its longest test)
 
 A test is skipped when its inputs (test script, the add-on files it uses, its data) are unchanged since it last passed;
 fingerprints are kept in <validation_dir>/latest/test-state.json. "fresh" rebuilds the install ZIP first
@@ -97,6 +97,10 @@ def plan(test):
         args = ["--python", str(HERE / script), "--", str(REPO / "blender"), str(EXPORTS / "murcielago"),
                 str(EXPORTS / "rim-library"), str(OUT / "rims")]
         data = [EXPORTS / "murcielago" / f for f in EXPORT_FILES] + [EXPORTS / "rim-library" / "rims.json"]
+    elif test == "static":
+        script = "test_static.py"
+        args = ["--python", str(HERE / script), "--", str(REPO / "blender"), str(EXPORTS / "murcielago"), str(OUT / "static")]
+        data = [EXPORTS / "murcielago" / f for f in EXPORT_FILES]
     elif test.startswith("vehicle:"):
         name = test.split(":", 1)[1]
         script = "test_vehicle.py"
@@ -133,7 +137,7 @@ def run(test):
 
 def main(argv):
     OUT.mkdir(parents=True, exist_ok=True)
-    jobs, force, tests = 4, False, []
+    jobs, force, tests = 12, False, []
     args = list(argv)
     while args:
         a = args.pop(0)
@@ -146,7 +150,7 @@ def main(argv):
         else:
             tests.append(a)
     if not tests:
-        tests = ["existing", "fresh", "nodes", "tires"] + ["plates"] * (EXPORTS / "plate-library" / "plates.json").is_file() + ["conditions", "paint"] + ["liveries"] * (EXPORTS / "murcielago" / "liveries" / "liveries.json").is_file() + ["rims"] * (EXPORTS / "rim-library" / "rims.json").is_file() + ["vehicle:" + v for v in VEHICLES if (EXPORTS / v / "manifest.json").is_file()]
+        tests = ["existing", "fresh", "nodes", "tires"] + ["plates"] * (EXPORTS / "plate-library" / "plates.json").is_file() + ["conditions", "paint", "static"] + ["liveries"] * (EXPORTS / "murcielago" / "liveries" / "liveries.json").is_file() + ["rims"] * (EXPORTS / "rim-library" / "rims.json").is_file() + ["vehicle:" + v for v in VEHICLES if (EXPORTS / v / "manifest.json").is_file()]
     if "fresh" in tests:
         # The install test always checks the current code: rebuild the ZIP first (a few seconds).
         subprocess.run([sys.executable, "-I", str(REPO / "tools" / "package_release.py")], check=True, stdout=subprocess.DEVNULL)

@@ -2,13 +2,15 @@
 
 The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export tire library...) and imported
 once per .blend into a hidden collection: each tire mesh in a plain and a brand-lettered version. Choosing a tire
-hides the car's stock tire instances and places the library tire the same way the stock tire is placed: the size
-whose inner (rim) diameter matches the stock tire, scaled to the car's tire configuration, on the wheel's rotation
-empty. Nothing about the car's wheel or tire size changes.
+hides the car's stock tire instances and places the library tire the same way the stock tire is placed: the sidewall
+size the game picks for the car's rim, fitted per vertex to the car's tire configuration (Wheel fit), on the wheel's
+rotation empty. Nothing about the car's wheel or tire size changes.
 """
 import json
 import math
 from pathlib import Path
+
+from . import unbound_wheels as wheels
 
 LIBRARY = "An's Garage tire library"
 STOCK = "Stock"
@@ -129,36 +131,30 @@ def apply_tire(root, name, lettering, folder):
         if spin is None or wheel_col is None:
             notes.append("%s: wheel controls not found" % wheel["Name"])
             continue
-        # Stock tire size on this wheel: the TireMeshInfo holding the stock mesh placed there.
-        stock_inner = None
-        for item in stock_items:
-            for perm in item["Permutations"][:1]:
-                for desc in perm["Meshes"]:
-                    if (desc.get("Facing") or {}).get("Name") != wheel["Name"]:
-                        continue
-                    for info in (item.get("TireMeshInfos") or []):
-                        if any(m["MeshGuid"] == desc["BlueprintGuid"] for m in info["Meshes"]):
-                            stock_inner = info["InnerDiameter"]
         tire = next((t for t in index["Tires"] if t["Name"] == name and t["Lettering"] == lettering
                      and t["Position"] == "ItemPosition_" + axle), None)
-        if tire is None or stock_inner is None:
-            notes.append("%s: %s" % (wheel["Name"], "no library tire for this axle" if tire is None else "stock tire size unknown"))
+        outer, width = tire_config.get("Diameter" + axle), tire_config.get("SectionWidth" + axle)
+        rim = wheels.rim_diameter(data, tire_config, axle)
+        if tire is None or not (outer and width and rim):
+            notes.append("%s: %s" % (wheel["Name"], "no library tire for this axle" if tire is None else "tire size unknown"))
             continue
-        size = min(tire["Sizes"], key=lambda s: abs(s["InnerDiameter"] - stock_inner))
+        # The game's sidewall-size thresholds (libraries exported before 1.0.9 don't record them: the stock tire's).
+        stock = (stock_items[0]["Raw"] if stock_items else {})
+        size = wheels.tire_size(tire["Sizes"], rim, outer, tire.get("SmallToMedRatio") or stock.get("SmallToMedRatio", 0.77),
+                                tire.get("MedToLargeRatio") or stock.get("MedToLargeRatio", 0.71))
         desc = next((m for m in size["Meshes"] if side in (m.get("Tag") or "").lower()), size["Meshes"][0])
         sources = templates.get((desc["Mesh"].lower(), lettering), [])
         if not sources:
             notes.append("%s: library mesh %s not imported" % (wheel["Name"], desc["Mesh"]))
             continue
         rotation = Matrix.Rotation(math.pi, 4, "Y") if desc["Rotate"] else Matrix.Identity(4)
-        outer, width = tire_config.get("Diameter" + axle), tire_config.get("SectionWidth" + axle)
-        scaling = (Matrix.Diagonal((width / 1000.0 / size["Width"], outer / size["OuterDiameter"], outer / size["OuterDiameter"], 1))
-                   if outer and width else Matrix.Identity(4))
-        local = conversion @ rotation @ scaling @ inverse
+        local = conversion @ rotation @ inverse
         inst = bpy.data.collections.new("Tire | " + name)
         wheel_col.children.link(inst)
         inst["ans_garage_library_tire"] = True
         inst["source_item"] = tire["Asset"]
-        inst["dimension_status"] = "Library tire at the stock tire's rim size (inner diameter %.3f m), scaled to the car's tire configuration" % size["InnerDiameter"]
-        _addon().place_copies(sources, inst, spin, local)
+        offsets = wheels.tire_offsets(size, outer, rim, width)
+        inst["dimension_status"] = ("Library tire, %.3f m sidewall mesh fitted per vertex (Wheel fit): tread %+.4f m, bead %+.4f m, "
+                                    "each side %+.4f m" % ((size["InnerDiameter"],) + offsets))
+        wheels.fit(_addon().place_copies(sources, inst, spin, local), offsets)
     return notes

@@ -846,7 +846,7 @@ class Images:
 
     def __init__(self, root, extra_folders=()):
         self.root = Path(root)
-        self.by_asset, self.cache, self.uniform_cache, self.paths = {}, {}, {}, {}
+        self.by_asset, self.cache, self.uniform_cache, self.paths, self.constants = {}, {}, {}, {}, {}
         doc = json.loads((self.root / "materials.json").read_text(encoding="utf-8-sig"))
         textures = {t["ResourceId"]: t for t in doc.get("Textures", [])}
         for n in doc.get("Nodes", []):
@@ -979,6 +979,9 @@ class Images:
         Reading an image's pixels is the expensive part, so the answer is computed once per image file and kept in
         memory and on the image (keyed by file size and modification time, so a changed file is checked again)."""
         import numpy as np
+        quick = (str(root), binding.get("Path"), binding.get("Asset"), binding.get("ColorSpace"))
+        if quick in self.uniform_cache:
+            return self.uniform_cache[quick]["Value"]
         image = self.load(root, binding, binding.get("Asset"))
         path = Path(image["unbound_source_path"])
         stat = path.stat()
@@ -998,7 +1001,7 @@ class Images:
             cached = {"Value": v}
             image["unbound_uniform_key"] = key
             image["unbound_uniform_json"] = json.dumps(cached)
-        self.uniform_cache[(str(path), key)] = cached
+        self.uniform_cache[(str(path), key)] = self.uniform_cache[quick] = cached
         return cached["Value"]
 
 
@@ -1253,7 +1256,17 @@ OUTPUT_SOCKETS = (("Base Color", "NodeSocketColor"), ("Metallic", "NodeSocketFlo
 
 
 def texture_constants(profile, sources, images):
-    """{slot: [r, g, b, a]} for sampled textures that are uniform (or zero by the static-state rule), with notes."""
+    """{slot: [r, g, b, a]} for sampled textures that are uniform (or zero by the static-state rule), with notes.
+    Remembered per profile and texture sources for the resolver's lifetime (one build)."""
+    key = (id(profile), json.dumps(sorted((k, v[0], v[1] if isinstance(v[1], str) else v[1].get("Path") or v[1].get("Asset"))
+                                          for k, v in sources.items()), default=str))
+    if key not in images.constants:
+        images.constants[key] = _texture_constants(profile, sources, images)
+    consts, notes = images.constants[key]
+    return dict(consts), list(notes)
+
+
+def _texture_constants(profile, sources, images):
     consts, notes = {}, []
     for slot, src in sources.items():
         if src[0] == "zero":
@@ -1367,7 +1380,40 @@ def plan(profile, state, runtime, live_fields, images, root, input_consts=None, 
     sources, bind_issues = check_bindings(profile, state, root, images)
     issues += bind_issues
     tex_consts, tex_notes = texture_constants(profile, sources, images)
+    spec, outs, input_consts, used, unsupported, engine, view = checked(profile, values, live, input_consts, rename, tex_consts)
+    outs, input_consts = dict(outs), dict(input_consts)  # shared by every slot with the same formulas
+    used_slots = {spec.nodes[i]["slot"] for i in used if spec.nodes[i]["op"] == "tex"}
+    image_map, image_issues = {}, {}
+    for slot in used_slots:
+        src = sources.get(slot)
+        try:
+            if not src or src[0] == "unsupported":
+                raise ValueError(src[1] if src else "no source")
+            image_map[slot] = images.resolve(src)
+        except Exception as exc:
+            image_issues[slot] = str(exc)
+    uses_frame = any(spec.nodes[i]["op"] == "frame" for i in used)
+    inputs = sorted({spec.nodes[i]["name"] for i in used if spec.nodes[i]["op"] in ("input", "view")})
+    return {"values": values, "applied": applied, "issues": issues, "spec": spec, "outs": outs,
+            "input_consts": input_consts, "unsupported": unsupported, "engine": engine, "view": view,
+            "images": image_map, "image_issues": image_issues, "uses_frame": uses_frame, "inputs": inputs,
+            "live": live, "live_fields": dict(live_fields), "conditions": sorted({n for n, _ in live if n in CONDITIONS}), "folded_textures": tex_notes}
+
+
+_CHECKED = {}
+
+
+def checked(profile, values, live, input_consts, rename, tex_consts):
+    """Specialized formulas and the checks that depend only on them (engine constants, view constants): (spec, outs,
+    input constants, used nodes, unsupported reason, engine note, view note). Shared between slots whose formulas are
+    identical (many materials differ only in name), like specialize()."""
     spec, outs = specialize(profile, values, live, input_consts, rename, tex_consts)
+    if id(spec) not in _CHECKED:
+        _CHECKED[id(spec)] = _check(profile, values, live, dict(input_consts), rename, tex_consts, spec, outs)
+    return _CHECKED[id(spec)]
+
+
+def _check(profile, values, live, input_consts, rename, tex_consts, spec, outs):
     connected = {k: outs[k] for k in CONNECTED_OUTPUTS + ("Emissive",) if k in outs}
     used = reachable(spec, [x for v in connected.values() for x in (v if isinstance(v, list) else [v])])
     names = {spec.nodes[i].get("name", "") for i in used if spec.nodes[i]["op"] in ("input", "view")}
@@ -1415,22 +1461,7 @@ def plan(profile, state, runtime, live_fields, images, root, input_consts=None, 
             view = {"Constants": constants, "Range": [VIEW_CONSTANT_RANGE[0], VIEW_CONSTANT_RANGE[-1]], "MaxDifference": worst,
                     "Reason": "Runtime view constant (camera exposure) the exporter cannot read; with this car's material "
                               "values no output changes across the range, so none is needed"}
-    used_slots = {spec.nodes[i]["slot"] for i in used if spec.nodes[i]["op"] == "tex"}
-    image_map, image_issues = {}, {}
-    for slot in used_slots:
-        src = sources.get(slot)
-        try:
-            if not src or src[0] == "unsupported":
-                raise ValueError(src[1] if src else "no source")
-            image_map[slot] = images.resolve(src)
-        except Exception as exc:
-            image_issues[slot] = str(exc)
-    uses_frame = any(spec.nodes[i]["op"] == "frame" for i in used)
-    inputs = sorted({spec.nodes[i]["name"] for i in used if spec.nodes[i]["op"] in ("input", "view")})
-    return {"values": values, "applied": applied, "issues": issues, "spec": spec, "outs": outs,
-            "input_consts": input_consts, "unsupported": unsupported, "engine": engine, "view": view,
-            "images": image_map, "image_issues": image_issues, "uses_frame": uses_frame, "inputs": inputs,
-            "live": live, "live_fields": dict(live_fields), "conditions": sorted({n for n, _ in live if n in CONDITIONS}), "folded_textures": tex_notes}
+    return spec, outs, input_consts, used, unsupported, engine, view
 
 
 def build_group(profile, p, ctx, identity, label):

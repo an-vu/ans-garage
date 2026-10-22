@@ -10,6 +10,9 @@ from pathlib import Path
 
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wheel_fit  # noqa: E402
+
 args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, out_dir, label = Path(args[0]), Path(args[1]), Path(args[2]), args[3]
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -27,9 +30,12 @@ def check(name, ok, detail=None):
 
 VERSION = ".".join(map(str, addon.bl_info["version"]))
 started = time.perf_counter()
+bpy.context.scene.render.fps, bpy.context.scene.render.fps_base = 25, 1.0
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export / "manifest.json"))
 import_seconds = time.perf_counter() - started
 check("Import operator finished", status == {"FINISHED"}, {"Status": list(status), "Seconds": round(import_seconds, 1)})
+check("The scene keeps its frame rate and no staging scene is left", bpy.context.scene.render.fps == 25
+      and len(bpy.data.scenes) == 1, {"Fps": bpy.context.scene.render.fps, "Scenes": [s.name for s in bpy.data.scenes]})
 imp = bpy.data.texts.get("An's Garage import report")
 print("IMPORT REPORT", (imp.as_string()[:4000] if imp else "none"))
 if not any(c.get("unbound_assembly_path") for c in bpy.context.scene.collection.children):
@@ -62,6 +68,42 @@ for v in [v for v in (rims.children if rims else []) if "unbound_option" in v]:
 addon.assembly_module().apply_preset(root, "Stock")
 check("Each of the car's wheel sets mounts on all four wheels", rims is not None and rim_sets and all(n == 4 for n in rim_sets.values())
       and next(v for v in rims.children if "unbound_option" in v and not v.hide_viewport)["unbound_label"] == "Stock", rim_sets)
+# Stock tires: the game's tire shader per vertex, at the car's tire size, in the sidewall size the game picks.
+data = json.loads(Path(root["unbound_assembly_path"]).read_text(encoding="utf-8-sig"))
+tire_config = {n["Id"]: n for n in data["Nodes"]}[data["TireConfig"]]["Raw"]
+factory_rims = addon.assembly_module().wheels.factory_rims(data)
+blueprint_of = {u["MeshId"]: u["BlueprintGuid"] for u in data["MeshUses"]}
+bpy.context.view_layer.update()
+depsgraph = bpy.context.evaluated_depsgraph_get()
+tires, sizes_exported = {}, True
+for w in data["Wheels"]:
+    axle = "Front" if w["Facing"]["Front"] else "Rear"
+    diameter, width = tire_config["Diameter" + axle], tire_config["SectionWidth" + axle] / 1000
+    rim = factory_rims[axle]["Diameter"] if axle in factory_rims else tire_config["RimDiameter" + axle]
+    wheel = next(c for c in root.children_recursive if c.name.split(".")[0] == w["Name"])
+    for inst in [c for c in wheel.children if json.loads(c.get("source_item_json", "{}")).get("Type") == "TiresItemData"]:
+        item = next(i for i in data["Items"] if i["Asset"] == inst["source_item"])
+        infos = sorted(item["TireMeshInfos"], key=lambda x: -x["InnerDiameter"])
+        ratio = rim / diameter
+        expected = infos[min(0 if ratio >= item["Raw"]["SmallToMedRatio"] else 1 if ratio >= item["Raw"]["MedToLargeRatio"] else 2, len(infos) - 1)]
+        sizes_exported &= all(m["MeshGuid"] in blueprint_of.values() for i in infos for m in i["Meshes"])
+        for o in inst.all_objects:
+            if o.type == "MESH":
+                m = wheel_fit.measure(o, depsgraph) if o.get("unbound_wheel_fit") else None
+                placed = next((i for i in infos if any(x["MeshGuid"] == blueprint_of.get(o.get("unbound_mesh_id")) for x in i["Meshes"])), None)
+                tires[w["Name"]] = m and {"FormulaError": m["FormulaError"],
+                                          "Tread": [round(m["Radius"][1], 4), round(diameter / 2, 4)],
+                                          "Bead": [round(m["Radius"][0], 4), round(rim / 2, 4)],
+                                          "Width": [round(m["Width"], 4), round(width, 4)],
+                                          "Sidewall": [placed and placed["InnerDiameter"], expected["InnerDiameter"]]}
+check("Stock tires fitted per vertex with the game's tire shader formula",
+      len(tires) == len(data["Wheels"]) and all(t and t["FormulaError"] < 1e-5 for t in tires.values()), tires)
+check("Stock tires at the car's tire size: tread at the diameter, bead at the rim, width at the section width",
+      tires and all(t and abs(t["Tread"][0] - t["Tread"][1]) < 0.005 and abs(t["Bead"][0] - t["Bead"][1]) < 0.005
+                    and 0 <= t["Width"][0] - t["Width"][1] < 0.04 for t in tires.values()))
+check("Stock tire sidewall size as the game picks it (rim/tire ratio)" + ("" if sizes_exported else ": export before 1.0.9 holds one size"),
+      tires and (not sizes_exported or all(t and t["Sidewall"][0] == t["Sidewall"][1] for t in tires.values())),
+      {k: t and t["Sidewall"] for k, t in tires.items()})
 moving = json.loads(root.get("ans_garage_moving_parts_json") or "null") if root else None
 check("Moving parts built from the source graph", moving is not None and all(c["Attached"] > 0 for c in moving["Controls"]),
       moving and {"Controls": ["%s/%s" % (c["Group"], c["Label"]) for c in moving["Controls"]], "Issues": moving["Issues"],

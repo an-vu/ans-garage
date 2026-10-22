@@ -302,7 +302,10 @@ static void Run(string[] a) {
   return;
  }
  var batch=new Batch(a[5],"",a[6]);
- if(a.Length>7) batch.Blueprint=a[7];
+ // Optional, in any order (PowerShell drops empty arguments): a blueprint name and "static".
+ var extra=a.Skip(7).Where(x=>x.Length>0).ToList();
+ if(extra.Remove("static")) batch.Manifest.MovingParts=false;
+ if(extra.Count>0) batch.Blueprint=extra[0];
  var task=NoWindow();
  task.PropertyChanged+=(sender,eventArgs)=> {if(eventArgs.PropertyName=="Status")Console.WriteLine(task.Status);};
  batch.Run(task);batch.Save();

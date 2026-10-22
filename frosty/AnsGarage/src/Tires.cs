@@ -127,7 +127,9 @@ namespace AnsGarage
                 object location = Batch.Get(item, "Location");
                 tires.Add(new JObject { { "Asset", e.Name }, { "Brand", char.ToUpper(brand[0]) + brand.Substring(1) },
                     { "Name", (string)ui["LongName"] ?? leaf }, { "Position", location == null ? null : location.ToString() },
-                    { "Lettering", bomb >= 0 ? "Brand" : "Plain" }, { "Sizes", sizes }, { "UI", ui } });
+                    { "Lettering", bomb >= 0 ? "Brand" : "Plain" }, { "Sizes", sizes },
+                    { "SmallToMedRatio", Convert.ToDouble(Batch.Get(item, "SmallToMedRatio")) },
+                    { "MedToLargeRatio", Convert.ToDouble(Batch.Get(item, "MedToLargeRatio")) }, { "UI", ui } });
             }
             index["Tires"] = tires;
             index["Blueprints"] = blueprints;

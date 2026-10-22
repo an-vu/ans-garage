@@ -3,6 +3,7 @@
 No vehicle IDs, coordinates, material-name substring guesses or default UV choices.
 Pure Python resolution functions are also usable by inspection/test scripts.
 """
+import functools
 import hashlib
 import json
 import re
@@ -180,22 +181,51 @@ class Resolver:
         return states[0], roots, "equivalent_root_db"
 
 
-def _signature(vertices, faces):
-    # FBX doubles store the exact source float values; Blender stores floats.
-    import struct
+def _signature(vertices, counts, indices):
+    """SHA-256 of the vertices as little-endian float32 (FBX doubles store the exact source float values; Blender stores
+    floats), then every face as its vertex count and vertex indices (uint32)."""
+    import numpy as np
     h = hashlib.sha256()
-    for v in vertices:
-        h.update(struct.pack("<3f", *v))
-    for p in faces:
-        h.update(struct.pack("<I", len(p)))
-        h.update(struct.pack("<"+"I"*len(p), *p))
+    h.update(np.asarray(vertices, dtype=np.float64).astype("<f4").tobytes())
+    counts = np.asarray(counts, dtype=np.int64)
+    starts = np.cumsum(counts) - counts
+    h.update(np.insert(np.asarray(indices, dtype=np.int64), starts, counts).astype("<u4").tobytes())
     return h.hexdigest()
+
+
+def mesh_signature(mesh):
+    """_signature of a Blender mesh, read in bulk."""
+    import numpy as np
+    co = np.empty(len(mesh.vertices) * 3, dtype=np.float32)
+    mesh.vertices.foreach_get("co", co)
+    counts = np.empty(len(mesh.polygons), dtype=np.int64)
+    starts = np.empty(len(mesh.polygons), dtype=np.int64)
+    mesh.polygons.foreach_get("loop_total", counts)
+    mesh.polygons.foreach_get("loop_start", starts)
+    corners = np.empty(len(mesh.loops), dtype=np.int64)
+    mesh.loops.foreach_get("vertex_index", corners)
+    if not np.array_equal(starts, np.cumsum(counts) - counts):  # corners not stored in face order
+        corners = np.concatenate([corners[s:s + c] for s, c in zip(starts, counts)]) if len(counts) else corners
+    return _signature(co.reshape(-1, 3), counts, corners)
+
+
+FBX_TREES = {}
+
+
+def parsed_fbx(filepath):
+    """The parsed FBX tree of a part file, read once per import (FBX_TREES is cleared when an import or surface build
+    ends): the slot restore and the tangent check both need it."""
+    from io_scene_fbx import parse_fbx
+    key = str(Path(filepath).resolve())
+    if key not in FBX_TREES:
+        FBX_TREES[key] = parse_fbx.parse(key)[0]
+    return FBX_TREES[key]
 
 
 def fbx_sections(filepath, record):
     """Match native FBX section nodes by connection order and source names."""
-    from io_scene_fbx import parse_fbx
-    tree, version = parse_fbx.parse(str(filepath))
+    import numpy as np
+    tree = parsed_fbx(filepath)
     objects = next(e for e in tree.elems if e.id == b"Objects")
     connections = next(e for e in tree.elems if e.id == b"Connections")
     geometries = {e.props[0]: e for e in objects.elems if e.id == b"Geometry" and e.props[-1] == b"Mesh"}
@@ -222,7 +252,7 @@ def fbx_sections(filepath, record):
         geom = geometries[geometry_model[mid]]
         fields = {e.id: e for e in geom.elems}
         values = fields[b"Vertices"].props[0]
-        vertices = [values[i:i+3] for i in range(0, len(values), 3)]
+        vertices = np.asarray(values, dtype=np.float64).reshape(-1, 3)
         faces, pending, removed, duplicates, seen = [], [], [], [], set()
         for index in fields[b"PolygonVertexIndex"].props[0]:
             pending.append(index if index >= 0 else ~index)
@@ -239,14 +269,14 @@ def fbx_sections(filepath, record):
                 pending = []
         if len(faces) + len(removed) + len(duplicates) != section["PrimitiveCount"]:
             raise ValueError("FBX/source primitive count mismatch")
-        result.append({"Section": section, "Signature": _signature(vertices, faces),
+        result.append({"Section": section, "Signature": _signature(vertices, [len(f) for f in faces], [i for f in faces for i in f]),
                        "FbxGeometryId": str(geom.props[0]), "RemovedDegenerateIndices": removed,
                        "RemovedDuplicateFaces": duplicates})
     return result
 
 
 def match_object(obj, candidates):
-    signature = _signature([v.co for v in obj.data.vertices], [p.vertices for p in obj.data.polygons])
+    signature = mesh_signature(obj.data)
     matches = [c for c in candidates if c["Signature"] == signature]
     if len(matches) > 1:
         # Existing imports retain this name; assembled copies retain original_name.
@@ -305,6 +335,7 @@ def principled_group(family):
     return group
 
 
+@functools.lru_cache(maxsize=16384)
 def _safe_texture(root, relative):
     if not relative:
         raise ValueError("Missing exported texture path")

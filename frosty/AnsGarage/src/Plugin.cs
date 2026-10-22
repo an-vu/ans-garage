@@ -38,6 +38,19 @@ namespace AnsGarage
         public override string SubLevelMenuName { get { return "An's Garage"; } }
         public override string MenuItemName { get { return "Export vehicle..."; } }
         public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => Run()); } }
+        // The export folder is named after the car (its in-game name when picked with Choose vehicle..., else the vehicle
+        // folder's own name), without characters Windows doesn't allow; an existing folder gets " (2)", " (3)"...
+        public static string ExportFolder(string parent, string vehicleName, string scope)
+        {
+            string name = string.IsNullOrWhiteSpace(vehicleName) ? scope.Substring(scope.LastIndexOf('/') + 1) : vehicleName;
+            name = new string(name.Where(c => !Path.GetInvalidFileNameChars().Contains(c)).ToArray());
+            name = System.Text.RegularExpressions.Regex.Replace(name, @"\s+", " ").Trim().TrimEnd('.');
+            if (name.Length == 0) name = "Vehicle";
+            string target = Path.Combine(parent, name);
+            for (int n = 2; Directory.Exists(target) || File.Exists(target); n++) target = Path.Combine(parent, name + " (" + n + ")");
+            return target;
+        }
+
         private static void Run()
         {
             if (Interlocked.Exchange(ref busy, 1) != 0) return;
@@ -47,13 +60,14 @@ namespace AnsGarage
                 using (var options = new Options())
                 {
                     if (options.ShowDialog() != DialogResult.OK) return;
-                    using (var folder = new FolderBrowserDialog { Description = "Choose parent folder for a NEW export run" })
+                    using (var folder = new FolderBrowserDialog { Description = "Choose where to export: the car gets its own folder inside, named after it" })
                     {
                         if (folder.ShowDialog() != DialogResult.OK) return;
-                        string target = Path.Combine(folder.SelectedPath, "Unbound_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N").Substring(0,8));
+                        string target = ExportFolder(folder.SelectedPath, options.VehicleName, Core.Normalize(options.Prefix.Text));
                         var batch = new Batch(Core.Normalize(options.Prefix.Text), options.Skeleton.Text.Trim(), target);
                         if (options.Blueprint != null && Core.InScope(options.Blueprint, Core.Normalize(options.Prefix.Text))) batch.Blueprint = options.Blueprint;
                         batch.Liveries = Liveries.Checked(options.LiveryBox);
+                        batch.Manifest.MovingParts = options.MovingParts.Checked;
                         Exception fatal = null;
                         FrostyTaskWindow.Show("An's Garage: export vehicle", "Scanning databases", task => {
                             try { batch.Run(task); } catch (Exception ex) { fatal = ex; batch.Manifest.Errors.Add(ex.ToString()); }
@@ -98,9 +112,12 @@ namespace AnsGarage
     internal sealed class Options : Form
     {
         public readonly TextBox Prefix = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        public string Blueprint;
+        public string Blueprint, VehicleName;
+        private string picked;
         public readonly TextBox Skeleton = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         public readonly CheckedListBox LiveryBox = Liveries.Picker(new List<Liveries.Livery>());
+        public readonly CheckBox MovingParts = new CheckBox { Text = "Moving parts: doors, windows, hood, boot, active aero, pop-up lights (untick for a static model)",
+            Checked = true, AutoSize = true, Margin = new Padding(3, 10, 3, 3) };
         private readonly Label liveryNote = Ui.Text("Stock liveries: choose a vehicle to list them.");
         private string listed;
         private void ListLiveries()
@@ -120,9 +137,12 @@ namespace AnsGarage
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var choose = Ui.Button("Choose vehicle...");
-            choose.Click += (s,e) => { using (var picker = new VehiclePicker()) if (picker.ShowDialog(this) == DialogResult.OK) { Prefix.Text = picker.Folder; Blueprint = picker.Blueprint; ListLiveries(); } };
+            choose.Click += (s,e) => { using (var picker = new VehiclePicker()) if (picker.ShowDialog(this) == DialogResult.OK) { picked = Core.Normalize(picker.Folder); Prefix.Text = picker.Folder; Blueprint = picker.Blueprint; VehicleName = picker.VehicleName; ListLiveries(); } };
             Prefix.Leave += (s,e) => ListLiveries();
-            Prefix.TextChanged += (s,e) => { if (Blueprint != null && !Core.InScope(Blueprint, Core.Normalize(Prefix.Text))) Blueprint = null; };
+            Prefix.TextChanged += (s,e) => {
+                if (Blueprint != null && !Core.InScope(Blueprint, Core.Normalize(Prefix.Text))) Blueprint = null;
+                if (VehicleName != null && Core.Normalize(Prefix.Text) != picked) VehicleName = null;  // edited after picking
+            };
             g.Controls.Add(Ui.Text("Vehicle folder (or click Choose vehicle... to pick by in-game name):"), 0, 0); g.SetColumnSpan(g.GetControlFromPosition(0, 0), 2);
             g.Controls.Add(Prefix, 0, 1); g.Controls.Add(choose, 1, 1);
             var skel = Ui.Text("Skeleton asset path (optional; skinned meshes are skipped if empty):");
@@ -134,18 +154,19 @@ namespace AnsGarage
             liveryNote.MaximumSize = new Size(680, 0);
             g.Controls.Add(liveryNote, 0, 5); g.SetColumnSpan(liveryNote, 2);
             g.Controls.Add(LiveryBox, 0, 6); g.SetColumnSpan(LiveryBox, 2);
+            g.Controls.Add(MovingParts, 0, 7); g.SetColumnSpan(MovingParts, 2);
             var go = Ui.Button("Export...");
             go.Click += (s,e) => { if (Core.Normalize(Prefix.Text).Length == 0) { MessageBox.Show(this, "Enter a vehicle folder, or click Choose vehicle..."); return; } DialogResult=DialogResult.OK; };
             var cancel = Ui.Button("Cancel"); cancel.DialogResult = DialogResult.Cancel;
             var buttons = Ui.Buttons(cancel, go);
-            g.Controls.Add(buttons, 0, 7); g.SetColumnSpan(buttons, 2);
+            g.Controls.Add(buttons, 0, 8); g.SetColumnSpan(buttons, 2);
             Controls.Add(g); AcceptButton=go; CancelButton=cancel;
         }
     }
 
     internal sealed class VehiclePicker : Form
     {
-        public string Folder, Blueprint;
+        public string Folder, Blueprint, VehicleName;
         // Two columns: in-game name and the vehicle's folder; click a header to sort by it.
         private readonly ListView list = new ListView { Width = 900, Height = 480, View = View.Details, FullRowSelect = true,
             MultiSelect = false, HideSelection = false, Dock = DockStyle.Fill };
@@ -166,7 +187,7 @@ namespace AnsGarage
             Controls.Add(g);
             list.Columns.Add("Car", 420); list.Columns.Add("Folder", 440);
             list.ColumnClick += (s,e) => { sortColumn = e.Column; Fill(); };
-            ok.Click += (s,e) => { if (list.SelectedItems.Count == 0) return; var v = (VehicleCatalog.Vehicle)list.SelectedItems[0].Tag; Folder = v.Folder; Blueprint = v.Blueprint; DialogResult = DialogResult.OK; };
+            ok.Click += (s,e) => { if (list.SelectedItems.Count == 0) return; var v = (VehicleCatalog.Vehicle)list.SelectedItems[0].Tag; Folder = v.Folder; Blueprint = v.Blueprint; VehicleName = v.Name; DialogResult = DialogResult.OK; };
             list.DoubleClick += (s,e) => ok.PerformClick();
             search.TextChanged += (s,e) => Fill();
             refresh.Click += (s,e) => Start(true);
@@ -221,6 +242,8 @@ namespace AnsGarage
         public string VariantPolicy = "Database row/material references only; variation hashes are not body-kit assembly definitions. Shared geometry exported once.";
         public string Units = "Meters";
         public bool Cancelled;
+        // False when exported as a static model: the add-on builds no moving parts (it can still add them later).
+        public bool MovingParts = true;
         public int DatabasesScanned;
         public int DatabasesConsidered, DatabasesSkippedByDependencies;
         public List<MeshRecord> Meshes = new List<MeshRecord>();

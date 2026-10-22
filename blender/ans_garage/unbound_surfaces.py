@@ -3,6 +3,7 @@
 This module never edits geometry or guesses a UV layer from its ordinal/name. Shaders without a resolved profile stay
 unconnected and are reported.
 """
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -13,6 +14,7 @@ def canonical(value):
 
 
 
+@functools.lru_cache(maxsize=8192)
 def _inside(root, relative):
     path = (root / relative).resolve()
     if not path.is_relative_to(root.resolve()):
@@ -55,12 +57,12 @@ def locate_export(obj, state, explicit, documents):
 def tangent_basis(obj, mesh_record, root, layer, cache):
     """Compare this actual mesh's FBX basis with Blender, before wiring normals."""
     import numpy as np
-    from io_scene_fbx import parse_fbx
+    from .unbound_materials import parsed_fbx
     cache_key = (obj.data.as_pointer(), layer, str(root), obj.get("unbound_fbx_geometry_id"))
     if cache_key in cache:
         return cache[cache_key]
     try:
-        tree, _ = parse_fbx.parse(str(_inside(root, mesh_record["Fbx"])))
+        tree = parsed_fbx(_inside(root, mesh_record["Fbx"]))
         def child(node, name):
             return next((x for x in node.elems if x.id == name), None)
         objects = child(tree, b"Objects")
@@ -70,12 +72,15 @@ def tangent_basis(obj, mesh_record, root, layer, cache):
             raise ValueError("FBX section identity missing")
         g = geometries[0]
         source_positions = np.asarray(child(g, b"Vertices").props[0]).reshape(-1, 3)
-        positions = np.array([v.co[:] for v in obj.data.vertices])
+        positions = np.empty(len(obj.data.vertices) * 3, dtype=np.float32)
+        obj.data.vertices.foreach_get("co", positions)
+        positions = positions.reshape(-1, 3)
         if source_positions.shape != positions.shape or not np.allclose(source_positions, positions, atol=1e-6, rtol=0):
             raise ValueError("Mesh positions differ from source FBX")
         obj.data.calc_tangents(uvmap=layer)
-        loops = list(obj.data.loops)
-        indices = [loop.vertex_index for loop in loops]
+        loops = obj.data.loops
+        indices = np.empty(len(loops), dtype=np.int64)
+        loops.foreach_get("vertex_index", indices)
         result = {"Status": "verified_against_source_fbx", "MinimumDot": {}, "Signs": []}
         for name, field, attr in ((b"LayerElementTangent", b"Tangents", "tangent"),
                                   (b"LayerElementBinormal", b"Binormals", "bitangent"),
@@ -88,7 +93,9 @@ def tangent_basis(obj, mesh_record, root, layer, cache):
             if child(element, b"ReferenceInformationType").props[0] != b"Direct":
                 raise ValueError("Unsupported FBX basis indexing")
             values = np.asarray(child(element, field).props[0]).reshape(-1, 3)[indices]
-            blender = np.array([getattr(l, attr)[:] for l in loops])
+            blender = np.empty(len(loops) * 3, dtype=np.float32)
+            loops.foreach_get(attr, blender)
+            blender = blender.reshape(-1, 3)
             denom = np.linalg.norm(values, axis=1) * np.linalg.norm(blender, axis=1)
             if np.any(denom < 1e-12):
                 raise ValueError("Degenerate source/Blender tangent basis")
@@ -147,7 +154,11 @@ def surface_steps(objects=None, export_path=None):
                 report["AlreadyBuilt"].append({"Object": obj.name, "Slot": index})
                 continue  # Preserve user node edits, including edits to a generated graph.
             try:
-                state = json.loads(material["unbound_source_json"])
+                # Parsed once per material per build; each slot gets its own top level (overrides are set on it).
+                skey = ("state", material.name)
+                if skey not in caches:
+                    caches[skey] = json.loads(material["unbound_source_json"])
+                state = dict(caches[skey])
                 if obj.get("unbound_texture_overrides_json"):
                     # Per-object shader texture overrides (tire library lettering): parameter -> texture asset.
                     state["TextureOverrides"] = json.loads(obj["unbound_texture_overrides_json"])
@@ -159,6 +170,8 @@ def surface_steps(objects=None, export_path=None):
             except Exception as exc:
                 report["Issues"].append({"Object": obj.name, "Slot": index, "Issue": str(exc)})
     report["Summary"] = summarize(report)
+    from .unbound_materials import FBX_TREES
+    FBX_TREES.clear()
     text = bpy.data.texts.new("An's Garage surface report")
     text.write(json.dumps(report, indent=2))
     bpy.context.scene["unbound_surface_report"] = text.name
@@ -309,8 +322,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
             if caches[pkey]["unsupported"]:
                 return caches[pkey]["unsupported"]
             plans.append(caches[pkey])
-        akey = ("choice", shader, material.get("unbound_state_key"), "/".join(layout),
-                tuple(sorted(plans[0]["input_consts"].items())), conditions)
+        akey = ("choice",) + tuple(id(p["spec"]) for p in plans)  # depends only on the specialized formulas
         if akey not in caches:
             try:
                 caches[akey] = P.choose_entry(candidates, plans) if len(plans) > 1 else []
@@ -359,8 +371,12 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         else:
             basis = {"Status": "disabled", "Reason": "No TexCoord0 layer", "Signs": None}
         ctx["basis_signs"], ctx["basis_reason"] = basis.get("Signs"), basis.get("Reason", "")
+    fkey = ("formula", id(p["spec"]))
+    if fkey not in caches:  # the formula part, hashed once per specialized formula
+        caches[fkey] = hashlib.sha256(canonical({"Programs": entry["Programs"], "Nodes": p["spec"].nodes,
+                                                 "Outputs": p["outs"]}).encode()).hexdigest()
     identity = hashlib.sha256(canonical({
-        "Programs": entry["Programs"], "Nodes": p["spec"].nodes, "Outputs": p["outs"],
+        "Formula": caches[fkey],
         "Images": {str(k): [i.get("unbound_source_path") for i in (v if isinstance(v, list) else [v])]
                    for k, v in p["images"].items()},
         "UV": uv, "Colors": colors, "Signs": ctx.get("basis_signs"), "Axes": fb_to_blender,

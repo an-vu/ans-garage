@@ -1,3 +1,11 @@
+# 1.0.9
+
+- Vehicle exports include every size of the car's tires (each `TireMeshInfo` mesh: small, medium and large sidewall), not only the default permutation's.
+- The tire library index records each tire's `SmallToMedRatio` and `MedToLargeRatio`.
+- The export dialog has a **Moving parts** tick box (`MovingParts` in `manifest.json`; unticked = static model).
+- The export folder is named after the car (in-game name when picked with **Choose vehicle…**, else the vehicle folder's name).
+- Headless `export`: optional `static`; an empty blueprint argument means none.
+
 # 1.0.8
 
 - **Tools → An's Garage → Export rim library…**: real-brand aftermarket rims (16 brands, 122 models), one export folder per brand folder, indexed in `rims.json` (brand, name, axle, diameter, width, size options, default paint, meshes). Rim items are matched to meshes through their customizable or plain object blueprints; items whose meshes sit outside a real brand's folder (turbofans, LED and NFS-made wheels) are left out.

@@ -10,6 +10,9 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wheel_fit  # noqa: E402
+
 args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, library, out_dir = Path(args[0]), Path(args[1]), Path(args[2]), Path(args[3])
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -36,6 +39,10 @@ bpy.context.scene["ans_garage_tire_library"] = str(library)
 stock = [c for c in root.children_recursive if json.loads(c.get("source_item_json", "{}")).get("Type") == "TiresItemData"]
 bpy.context.view_layer.update()
 stock_size = size(stock[0].all_objects) if stock else None
+index = json.loads((library / "tires.json").read_text(encoding="utf-8-sig"))
+data = json.loads(Path(root["unbound_assembly_path"]).read_text(encoding="utf-8-sig"))
+tire_config = {n["Id"]: n for n in data["Nodes"]}[data["TireConfig"]]["Raw"]
+factory_rims = addon.assembly_module().wheels.factory_rims(data)
 check("Car has four stock tire instances", len(stock) == 4, len(stock))
 
 for name, lettering in (("Falken Azenis RT615K+", "Plain"), ("Falken Azenis RT615K+", "Brand"), ("Toyo Tires Proxes R888R", "Brand")):
@@ -61,6 +68,25 @@ for name, lettering in (("Falken Azenis RT615K+", "Plain"), ("Falken Azenis RT61
     check("%s (%s): same outer size as the stock tire" % (name, lettering),
           stock_size and lib_size and all(abs(a - b) < 0.03 for a, b in zip(sorted(stock_size)[1:], sorted(lib_size)[1:])),
           {"Stock": stock_size, "Library": lib_size})
+    # Fitted like the game's tire shader, in the sidewall size the game picks for the car's rim (the tire's thresholds).
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    wheel_of = {child.name: parent.name for parent in root.children_recursive for child in parent.children}
+    fits = {}
+    for c in lib:
+        axle = "Front" if wheel_of[c.name].startswith("Front") else "Rear"
+        tire = next(t for t in index["Tires"] if t["Name"] == name and t["Lettering"] == lettering and t["Position"] == "ItemPosition_" + axle)
+        diameter, ratio = tire_config["Diameter" + axle], factory_rims[axle]["Diameter"] / tire_config["Diameter" + axle]
+        sizes = sorted(tire["Sizes"], key=lambda x: -x["InnerDiameter"])
+        expected = sizes[min(0 if ratio >= tire["SmallToMedRatio"] else 1 if ratio >= tire["MedToLargeRatio"] else 2, len(sizes) - 1)]
+        for o in c.all_objects:
+            if o.type == "MESH" and o.get("unbound_wheel_fit"):
+                m = wheel_fit.measure(o, depsgraph)
+                fits[wheel_of[c.name]] = {"FormulaError": m["FormulaError"], "Tread": round(m["Radius"][1], 4), "Target": round(diameter / 2, 4),
+                                          "Mesh": o.get("ans_garage_tire_mesh", "").rsplit("/", 1)[-1],
+                                          "SizeOk": o.get("ans_garage_tire_mesh", "").lower() in [x["Mesh"].lower() for x in expected["Meshes"]]}
+    check("%s (%s): fitted per vertex to the car's tire size, sidewall size picked like the game" % (name, lettering),
+          len(fits) == 4 and all(f["FormulaError"] < 1e-5 and abs(f["Tread"] - f["Target"]) < 0.005 and f["SizeOk"] for f in fits.values()),
+          fits)
 
 status = bpy.ops.object.ans_garage_tire(root=root.name, tire="Stock", lettering="Plain")
 check("Back to stock: library tires removed, stock shown",
