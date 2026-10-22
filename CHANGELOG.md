@@ -2,6 +2,16 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.4
+
+- **Moving parts on more cars**, found by scanning all 200 cars' blueprints:
+  - **Rear doors and rear windows** have proper slider names (Audi S5 Sportback, Charger SRT8, Crown Victoria, Explorer);
+  - the **Porsche Taycan's rear wing** moves (its stage logic comes through a spoiler prefab);
+  - the **Integra Type-R's radio antenna** gets an **Antenna** slider (the game's tracks call it "arial").
+- **Pop-up headlights work on all 12 cars that have them:** BMW M1, Camaro SS '67, Charger R/T '69, F40, Testarossa, NSX-R, Countach 25th, Diablo SV, MX-5 '96, RX-7 Spirit R, Cougar '67, 180SX. (On the '67 Camaro, '69 Charger and Cougar these are hidden headlight covers.)
+- **Tests:** the Taycan, Integra Type-R and Audi S5 Sportback are in the default suite.
+- **Headless exporter:** a `scan <out.json>` mode reads every vehicle's animation graph (about a minute for 200 cars).
+
 ## 1.0.3
 
 - **License plate library:** put a real plate on any car.

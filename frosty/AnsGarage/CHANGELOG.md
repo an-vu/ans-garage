@@ -1,3 +1,7 @@
+# 1.0.4
+
+- No changes; version kept in step with An's Garage for Blender 1.0.4. (The headless exporter gained a `scan` mode; it is a tool, not part of the plugin.)
+
 # 1.0.3
 
 - **Tools → An's Garage → Export license plate library...** exports the real plate backgrounds once into `AnsGarage_PlateLibrary` (`plates.json` + `textures/`): US states and territories, Japanese plates and NFS places.

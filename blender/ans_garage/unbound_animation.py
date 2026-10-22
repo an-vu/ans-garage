@@ -28,7 +28,10 @@ SAMPLES = 100
 EULER_ORDER = "ZXY"
 PROPERTY_LABELS = {"ldooropen": ("Doors", "Left door"), "rdooropen": ("Doors", "Right door"),
                    "ldoorwindowopen": ("Windows", "Left window"), "rdoorwindowopen": ("Windows", "Right window"),
-                   "hoodopen": ("Hood and boot", "Hood"), "bootopen": ("Hood and boot", "Boot")}
+                   "hoodopen": ("Hood and boot", "Hood"), "bootopen": ("Hood and boot", "Boot"),
+                   "ldoorrearopen": ("Doors", "Left rear door"), "rdoorrearopen": ("Doors", "Right rear door"),
+                   "ldoorrearwindowopen": ("Windows", "Left rear window"),
+                   "rdoorrearwindowopen": ("Windows", "Right rear window")}
 GROUPS = ("Active aero", "Lights", "Doors", "Windows", "Hood and boot", "Other")
 CHANNELS = {"TranslationX": ("T", 0), "TranslationY": ("T", 1), "TranslationZ": ("T", 2),
             "RotationX": ("R", 0), "RotationY": ("R", 1), "RotationZ": ("R", 2)}
@@ -222,6 +225,9 @@ def _sequences(g, moving, controls, skipped, issues):
             key, group = "aero", "Active aero"
         elif source == "MathEntityData" and any(g.type(s) == "AnimationComponentData" for s, _ in g.into(drivers[0][0], "Value")):
             key, group = "airbrake", "Active aero"
+        elif source == "LogicPrefabReferenceObjectData" and "spoiler" in (
+                (g.raw(drivers[0][0]).get("Blueprint") or {}).get("Asset") or "").lower():
+            key, group = "aero", "Active aero"  # the spoiler-stage prefab (vehicles/CarSpoilerAnim_3Stages) sets the time
         elif not drivers:
             key, group = None, None  # played by events (e.g. pop-up headlights): decided below
         else:
@@ -273,6 +279,8 @@ def _sequences(g, moving, controls, skipped, issues):
                     continue
                 if any("headlight" in x for x in names):
                     key, group, label = "popup_headlights", "Lights", "Pop-up headlights"
+                elif any("arial" in x or "aerial" in x or "antenna" in x for x in names):
+                    key, group, label = "antenna", "Other", "Antenna"  # the game's tracks spell it "arial"
                 else:
                     key, group, label = "sequence_" + node.rsplit(":", 1)[-1], "Other", ", ".join(sorted(set(names)))
             elif key == "aero":

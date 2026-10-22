@@ -14,7 +14,7 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 ENGINE_ZERO_MAX_EFFECT = 0.1
 # Largest output difference tolerated between permutations of one vertex layout (light glass: see-through/reflection).
 PERMUTATION_MAX = 0.1

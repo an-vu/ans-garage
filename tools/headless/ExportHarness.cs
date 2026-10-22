@@ -117,6 +117,43 @@ static void Run(string[] a) {
   Console.WriteLine("CATALOG "+rows.Count+" vehicles in "+sw.Elapsed.TotalSeconds.ToString("0")+" s; localization: "+Names.Status+"; cached: "+(VehicleCatalog.Cached()!=null));
   return;
  }
+ if(mode=="scan") {
+  // Moving-parts scan: every vehicle's blueprint, keeping only animation objects, the connections touching them and
+  // the names of their keyframe tracks (no geometry, no key data). a[5] = output json.
+  var keep=new System.Collections.Generic.HashSet<string>{"NamedAnimationPropertyEntityData","TransformAnimationEntityData",
+   "NormalisedRotationAnimationEntityData","NormalisedTranslationAnimationEntityData","SequenceEntityData",
+   "TransformHubEntityData","TransformBlendEntityData","TransformMultiplierEntityData","RealmTransformCombinerEntityData",
+   "AnimationComponentData","AnimateComponentEntityData","MathEntityData","CompareBoolEntityData"};
+  var vehicles=VehicleCatalog.Cached()??VehicleCatalog.BuildAndCache(m=>Console.WriteLine(m));
+  var result=new JArray();
+  foreach(var v in vehicles) {
+   try {
+    var entry=am.GetEbxEntry(v.Blueprint); if(entry==null) continue;
+    var asset=am.GetEbx(entry);
+    var objects=new JObject(); var types=new System.Collections.Generic.Dictionary<string,string>();
+    foreach(var o in asset.Objects) {
+     string id=InstanceId(o), type=o.GetType().Name; types[id]=type;
+     if(keep.Contains(type)||type.Contains("Anim")||type.Contains("Sequence")||type.EndsWith("PropertyTrackData")) objects[id]=Flat(o,0);
+    }
+    var root=Flat(asset.RootObject,0);
+    var links=new JArray();
+    foreach(string kind in new[]{"PropertyConnections","LinkConnections","EventConnections"})
+     foreach(var c in (root[kind] as JArray)??new JArray()) {
+      string s=((string)c["Source"]??"").TrimStart('#'), t=((string)c["Target"]??"").TrimStart('#');
+      if(!objects.ContainsKey(s)&&!objects.ContainsKey(t)) continue;
+      c["Kind"]=kind; c["SourceType"]=types.ContainsKey(s)?types[s]:s; c["TargetType"]=types.ContainsKey(t)?types[t]:t;
+      links.Add(c);
+     }
+    var tracks=new JObject();
+    foreach(var rid in Resources) { var re=am.GetResEntry(rid); tracks[rid.ToString("x16")]=re==null?null:re.Name; }
+    Resources.Clear();
+    result.Add(new JObject{{"Vehicle",v.Name},{"Blueprint",v.Blueprint},{"Objects",objects},{"Connections",links},{"Tracks",tracks}});
+   } catch(Exception ex) { result.Add(new JObject{{"Vehicle",v.Name},{"Blueprint",v.Blueprint},{"Error",ex.Message}}); }
+  }
+  File.WriteAllText(a[5],result.ToString(Formatting.Indented));
+  Console.WriteLine("SCANNED "+result.Count);
+  return;
+ }
  if(mode=="plates") {
   // License plate library: a[5] = output folder.
   var t=(FrostyTaskWindow)FormatterServices.GetUninitializedObject(typeof(FrostyTaskWindow));

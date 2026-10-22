@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 PROFILE = json.loads(Path(__file__).with_name("tire_shader_evidence.json").read_text(encoding="utf-8"))
 CORE_TEXTURES = ("RGB_Color_A_Smoothness", "RG_Normal_A_AO")
 
