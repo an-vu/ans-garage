@@ -170,6 +170,31 @@ static void Run(string[] a) {
   Console.WriteLine("TIRES "+((JArray)index["Tires"]).Count+" items, "+((JObject)index["Blueprints"]).Count+" meshes");
   return;
  }
+ if(mode=="liveries") {
+  // Stock liveries of an existing export: a[5] = export folder; a[6] = "list", "all" or keys (key1|key2).
+  string export=Path.GetFullPath(a[5]);
+  string scope=(string)JObject.Parse(File.ReadAllText(Path.Combine(export,"manifest.json")))["Scope"];
+  var all=Liveries.Find(scope);
+  foreach(var l in all) Console.WriteLine("LIVERY "+l.Key+" | "+l.Label+" | "+l.Diffuse);
+  if(a[6]!="list") {
+   var wanted=new System.Collections.Generic.HashSet<string>(a[6].Split('|'),StringComparer.OrdinalIgnoreCase);
+   var index=Liveries.Export(export,all.Where(l=>a[6]=="all"||wanted.Contains(l.Key)),NoWindow());
+   Console.WriteLine("LIVERIES "+((JArray)index["Liveries"]).Count);
+  }
+  return;
+ }
+ if(mode=="textures") {
+  // Named texture assets (name1|name2) as DDS into a[6]/textures, with textures.json (game data; keep private).
+  var run=new MaterialRun(Path.Combine(Path.GetFullPath(a[6]),"textures"),"textures");
+  foreach(var name in a[5].Split('|')) {
+   var e=am.GetEbxEntry(name);
+   if(e==null) { run.Issue(name,"Texture asset not found"); continue; }
+   try { run.ExportTextureAsset(e); } catch(Exception ex) { run.Issue(name,ex); }
+  }
+  run.SaveTextureIndex("Textures exported by the An's Garage headless tool; game data, keep private.");
+  Console.WriteLine("TEXTURES done");
+  return;
+ }
  if(mode=="assets") {
   // EBX assets whose name contains any of the terms (term1|term2), with their types.
   var terms=a[5].Split('|');

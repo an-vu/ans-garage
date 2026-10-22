@@ -84,7 +84,7 @@ check("Built materials have a connected active output",
       all(any(n.type == "OUTPUT_MATERIAL" and n.is_active_output and n.inputs["Surface"].is_linked
               for n in m.node_tree.nodes) for m in built), len(built))
 check("Original source materials still present", before_materials <= {m.name for m in bpy.data.materials})
-paint = bpy.data.node_groups.get("Unbound | Runtime Ext_Carpaint_Diffuse")
+paint = next((g for g in bpy.data.node_groups if g.get("unbound_live_parameter") == "Ext_Carpaint_Diffuse"), None)
 rgb = next((n for n in paint.nodes if n.type == "RGB"), None) if paint else None
 check("Runtime paint control from RaceVehicleItemData.DefaultPaint",
       rgb is not None and np.allclose(rgb.outputs[0].default_value[:3], (0.767768741, 0.399131775, 0.00345915067), atol=1e-6),

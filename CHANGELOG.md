@@ -2,6 +2,27 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.7
+
+- **Paint finishes**, per car in the sidebar's new **Paint** section: the paint colour, a **Finish** list and **Stock / Gloss / Satin / Matte**.
+  - The game's paint shader knows 14 finish types (`Ext_Carpaint_Material.x`); types 3–13 each use a layer of the flake/carbon texture array.
+  - Names come from each layer's texture and the stock cars that use the type: Metallic flake (69 cars), Brushed metal (the DeLorean), Forged carbon, Damascus, Honeycomb carbon, four carbon weaves, two fine flakes. The game keeps its own name table in code, so the descriptive names get checked in the game capture (1.0.9).
+  - Gloss levels (`.z`) are measured from the shader: Gloss = full clear coat, Satin = softer coat, Matte = no coat.
+  - **Stock** is the car's own value. There's no "factory colour" list: the game has none per car (every manufacturer swatch is empty).
+- **Each car has its own paint:** paint colour and finish controls are per car. Before, a second car in the scene took the first car's paint.
+- **Stock liveries:** the game's own designs for a car (AI racers, rivals, story, delivery and police cars).
+  - Frosty's export dialog lists the car's liveries with a tick box each (all ticked); untick the ones you don't want.
+  - **Tools → An's Garage → Add liveries to an existing export…** adds skipped ones later without exporting the car again.
+  - Blender: a **Livery** picker per car (None = stock paint). A livery overrides the paint shader's livery textures on every paint slot.
+  - Most liveries belong to a car template in the game (the AI racer's, rival's or story car's setup). **Use its paint and plate text** gives the car that paint, finish and plate text, e.g. Rival: Medusa is gold metallic with an M3DUSA plate.
+  - Window glass also reads the livery in the game, but with one on it needs an unknown lighting constant (the same as the P1/Diablo lenses): windows keep their stock look, with the reason in their evidence.
+- **Fixes:**
+  - texture lookups are cached per car *and* per extra texture folder, so a whole-car rebuild can't give one part another part's plate or tire textures;
+  - texture overrides merge, so a plate and a livery on the same part keep each other;
+  - adding liveries later merges the texture index instead of replacing it.
+- **Headless tool:** `liveries` (list or add a car's liveries) and `textures` (export named textures, for research).
+- **Tests:** `paint` (two cars, separate paint, finishes) and `liveries` (apply, switch, none, windows stay stock, plate kept).
+
 ## 1.0.6
 
 - **Dirt, dust and wet:** a car still imports clean and dry. **Add dirt, dust and wet** in the sidebar rebuilds its surfaces with three 0–1 sliders (**Remove** goes back).

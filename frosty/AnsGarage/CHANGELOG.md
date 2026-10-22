@@ -1,3 +1,10 @@
+# 1.0.7
+
+- The export dialog lists the vehicle's stock liveries (its `StaticLiveryTexturesAsset`) with a tick box each, all ticked. The ticked ones are exported into `liveries/` with `liveries.json` (key, label, group, index, diffuse and material texture).
+- **Tools → An's Garage → Add liveries to an existing export…** adds the ones left out, without exporting the car again.
+- A livery's car template (`TemplateItemData` of the same name) is read for its paint, finish and plate text (`Car` in `liveries.json`).
+- `MaterialRun.SaveTextureIndex` can merge into an existing `textures.json` (used when liveries are added later).
+
 # 1.0.6
 
 - No changes; version kept in step with An's Garage for Blender 1.0.6.

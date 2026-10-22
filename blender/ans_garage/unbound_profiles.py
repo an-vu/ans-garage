@@ -852,7 +852,7 @@ class Images:
         for n in doc.get("Nodes", []):
             if n.get("Type") == "TextureAsset" and n.get("TextureResource") in textures:
                 self.by_asset.setdefault(n["Asset"].casefold(), (self.root, textures[n["TextureResource"]]))
-        for folder in (self.root / "shader-defaults", self.root.parent / "shader-defaults",
+        for folder in (self.root / "shader-defaults", self.root.parent / "shader-defaults", self.root / "liveries" / "textures",
                        *[Path(f) for f in extra_folders if f]):
             index = folder / "textures.json"
             if index.is_file():
@@ -1056,17 +1056,46 @@ def is_const(v, value=None):
 
 
 # ------------------------------------------------------------------ live runtime parameters
-def live_group(name, value):
-    """One shared, user-editable control per live runtime parameter (e.g. the vehicle paint)."""
+# Vehicle customization kept live, one control group per car: the paint colour and the paint finish.
+LIVE_FIELDS = ("PaintFacingColorParameter", "PaintMaterialParameter")
+# Paint finish (Ext_Carpaint_Material): x = finish type floor(16x), 0-13; types 3-13 sample layer (type - 3) of
+# paintnormalarray. z = gloss level floor(16z): 0 clear coat smoothness 1.0, 1 coat 0.70, 2 and above no clear coat
+# (measured on cs_pbr_carpaint_max), the garage's Gloss / Satin / Matte. y is left as the car has it. The game's
+# type -> name table is in its code: names come from each layer's texture and the stock cars that use the type, and
+# the descriptive ones are confirmed in the game capture (see the research notes).
+FINISHES = ((0, "Solid"), (1, "Metal, no flake"), (2, "Smooth metallic"), (3, "Metallic flake"), (4, "Brushed metal"),
+            (5, "Carbon weave 1"), (6, "Carbon weave 2"), (7, "Carbon weave 3"), (8, "Carbon weave 4"),
+            (9, "Forged carbon"), (10, "Damascus"), (11, "Fine flake 1"), (12, "Honeycomb carbon"), (13, "Fine flake 2"))
+GLOSS_LEVELS = ((0, "Gloss"), (1, "Satin"), (2, "Matte"))
+
+
+# Texture overrides a slot may go without: a livery shows wherever the shader can be built with it; a part whose shader
+# can't (window glass reads an unknown forward-lighting constant once a livery is on) keeps its stock look.
+OPTIONAL_OVERRIDES = ("Ext_T_Livery_Diffuse", "Ext_T_Livery_Material")
+
+
+def live_names(entry, runtime):
+    """External parameters of an entry that the car's runtime customization keeps live."""
+    return {e["Name"] for e in entry["Externals"] if runtime.get(e["Key"].casefold(), {}).get("Field") in LIVE_FIELDS}
+
+
+def runtime_group(scope, name):
+    """The car's control group for a live runtime parameter (scope: the car's export folder name), or None."""
     import bpy
-    gname = "Unbound | Runtime " + name
-    g = bpy.data.node_groups.get(gname)
-    if g and g.get("unbound_live_parameter") == name:
+    return next((g for g in bpy.data.node_groups if g.get("unbound_live_parameter") == name
+                 and g.get("unbound_live_scope") == scope), None)
+
+
+def live_group(name, value, scope):
+    """One user-editable control per live runtime parameter and car (e.g. the vehicle paint)."""
+    import bpy
+    g = runtime_group(scope, name)
+    if g:
         return g
-    g = bpy.data.node_groups.new(gname, "ShaderNodeTree")
-    g["unbound_live_parameter"] = name
-    g["unbound_note"] = ("Runtime vehicle input. Initial value from the vehicle data; edit the RGB node to repaint. "
-                         "Finish selectors are specialized at build time.")
+    g = bpy.data.node_groups.new("Unbound | Runtime %s | %s" % (name, scope), "ShaderNodeTree")
+    g["unbound_live_parameter"], g["unbound_live_scope"] = name, scope
+    g["unbound_stock_value"] = [float(v) for v in value]
+    g["unbound_note"] = "Runtime vehicle input. Initial value from the vehicle data; set it in the An's Garage sidebar."
     for c in "xyzw":
         g.interface.new_socket(name=c, in_out="OUTPUT", socket_type="NodeSocketFloat")
     out = g.nodes.new("NodeGroupOutput")
@@ -1101,6 +1130,30 @@ CONDITIONS = {"Ext_DirtColor_Amt": ("Dirt", "ans_garage_dirt", 0.033104799687862
               "Ext_DustColor_Amt": ("Dust", "ans_garage_dust", 0.1389549970626831),
               "WaterCycle": ("Wet", "ans_garage_wet", None)}
 WET_PHASE = (0.6, 0.1)
+
+
+def finish_value(scope):
+    """(finish type, gloss level) of the car's paint now, and (type, level) of its stock paint."""
+    g = runtime_group(scope, "Ext_Carpaint_Material")
+    if g is None:
+        return None, None
+    rgb = next(n for n in g.nodes if n.type == "RGB").outputs[0].default_value
+    stock = g["unbound_stock_value"]
+    level = lambda v: int(math.floor(16 * v + 1e-6))
+    return (level(rgb[0]), level(rgb[2])), (level(stock[0]), level(stock[2]))
+
+
+def set_finish(scope, finish=None, gloss=None):
+    """Set the car's paint finish type and/or gloss level; "Stock" restores the car's own value."""
+    g = runtime_group(scope, "Ext_Carpaint_Material")
+    if g is None:
+        raise ValueError("This car's paint has no finish control (rebuild its materials)")
+    rgb = next(n for n in g.nodes if n.type == "RGB").outputs[0]
+    value, stock = list(rgb.default_value), g["unbound_stock_value"]
+    for i, choice in ((0, finish), (2, gloss)):
+        if choice is not None:
+            value[i] = stock[i] if choice == "Stock" else (int(choice) + 0.25) / 16.0
+    rgb.default_value = value
 
 
 def condition_group(name):
@@ -1388,7 +1441,7 @@ def build_group(profile, p, ctx, identity, label):
                     n.node_tree = condition_group(name)
                     n.label = "Vehicle condition: " + CONDITIONS[name][0]
                 else:
-                    n.node_tree = live_group(name, [p["values"][(name, k)] for k in range(4)])
+                    n.node_tree = live_group(name, [p["values"][(name, k)] for k in range(4)], ctx["live_scope"])
                     n.label = "Runtime vehicle input: " + name
                 n.location = (-2600, 1400 - 200 * len(live_nodes))
                 live_nodes[name] = n

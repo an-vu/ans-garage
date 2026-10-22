@@ -262,7 +262,7 @@ def main():
               if any(x["Name"] in P.CONDITIONS for x in e["Externals"])]
     for shader, st, prof, layout, conditions in cases:
         prof.setdefault("Kind", P.profile_for(st).get("Kind")); prof["ShaderAsset"] = shader.split("#")[0]
-        live = {e["Name"] for e in prof["Externals"] if runtime.get(e["Key"].casefold(), {}).get("Field") == "PaintFacingColorParameter"}
+        live = P.live_names(prof, runtime)
         consts = {n["name"]: 1.0 for n in prof["Nodes"] if n["op"] == "input" and n["name"].startswith("VSConst:")}
         try:
             rename = P.element_inputs(prof, layout)

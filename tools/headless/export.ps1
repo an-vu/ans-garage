@@ -4,6 +4,7 @@ param([Parameter(Mandatory=$true)][string]$Mode,[string]$A='',[string]$B='',[str
 #   export    <vehicle folder> <out dir> [blueprint]
 #   assembly  <export dir> <blueprint>           re-run assembly for an existing export
 #   defaults  <export dir>                       shader default textures only
+#   liveries  <export dir> <list|all|k1|k2...>   list a car's stock liveries, or add them to an existing export
 #   hashes    <h1|h2|...> <out.json>             EBX assets whose name hash matches
 #   find-text <term1|term2|...> <out.json>       localized strings containing a term
 #   tires     <out dir>                          Falken and Toyo tire library (once, shared by all cars)
@@ -12,6 +13,7 @@ param([Parameter(Mandatory=$true)][string]$Mode,[string]$A='',[string]$B='',[str
 #   items     <EBX type> <out.json>              every asset of a type, with names and a field dump
 #   assets    <term1|term2|...> <out.json>       asset names containing a term
 #   dump      <asset1|asset2|...> <out.json>     every object of the named assets, with internal references by id
+#   textures  <asset1|asset2|...> <out dir>      named texture assets as DDS (research; game data, keep private)
 # Build the plugin first (frosty\AnsGarage\build.ps1). Do not run while Frosty uses the same work folder.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '..\settings.ps1')

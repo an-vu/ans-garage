@@ -13,6 +13,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 | Shader defaults | `Batch.ExportShaderDefaults()` writes the assets in `UnboundShaderDefaults.json` once into a `shader-defaults` folder next to the car folders and skips them when it is complete. Two tiny black textures always fail the exact-payload check. |
 | Assembly | `AssemblyRun` (Assembly.cs): blueprint graph, wheels, items, presets, components and `TrackData` (sequence keyframes for moving parts). |
 | Libraries | `TireLibrary` (Tires.cs) and `PlateLibrary` (Plates.cs), exported once through `LibraryMenu`. |
+| Liveries | `Liveries` (Liveries.cs): the car's `StaticLiveryTexturesAsset` (diffuse + material texture per livery), ticked in the export dialog or added later (`AddLiveriesMenu`); written to `<export>/liveries/liveries.json`. Labels come from the texture names without the car's own words; `Car` holds the paint, finish and plate text of the livery's `TemplateItemData`. |
 | Version | `Core.Version` (Core.cs) is the only place the version is written. |
 
 `tools/headless/ExportHarness.cs` (`tools/headless/export.ps1`) runs the same code without the Frosty window: export, assembly, defaults, tires, plates, catalog, scan (moving parts of every vehicle), and lookup modes. It loads a copy of the editor config, never the real one, and never prints keys.
@@ -45,7 +46,9 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
   - the LED license-plate permutation is a player customization: the printed plate is built.
 - **Assembly:** item meshes are placed at their own customization component; geometry already in car space keeps its place.
 - **Moving parts:** 0–1 sliders from the blueprint's animation graph; see `assembly-data.md`.
-- **Libraries:** tires (`unbound_tires.py`) and license plates (`unbound_plates.py`, with typed plate text) swap textures and meshes through per-object overrides (`unbound_texture_overrides_json`, `unbound_parameter_overrides_json`).
+- **Libraries:** tires (`unbound_tires.py`) and license plates (`unbound_plates.py`, with typed plate text) swap textures and meshes through per-object overrides (`unbound_texture_overrides_json`, merged by `set_texture_overrides`, and `unbound_parameter_overrides_json`).
+- **Paint, per car** (`LIVE_FIELDS`): the paint colour and finish (`Ext_Carpaint_Material`) stay live in "Unbound | Runtime <parameter> | <car>" groups, keyed by the export folder; a profile group with live paint belongs to its car. Finish = `floor(16x)` (14 types, `FINISHES`), gloss = `floor(16z)` (`GLOSS_LEVELS`).
+- **Liveries** (`unbound_liveries.py`): texture overrides of `Ext_T_Livery_Diffuse`/`Ext_T_Livery_Material` on every slot whose shader samples them. They are `OPTIONAL_OVERRIDES`: a slot that can't be built with them is built without, with `LiveryNotApplied` in its evidence.
 
 ## 4. Validation
 
@@ -57,7 +60,9 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
    - P1 and Diablo SV lenses: `cb0[1].x` changes them by 0.11–0.21, over the 0.1 limit.
    - BMW M3 E46: one `cs_lglass` lens whose programs `04203732` (full) and `5ac42833` (reduced) differ by up to 0.47 in transmittance; the selection rule is unknown.
    - A frame capture of the running game would settle both.
-2. **Dirt on some surfaces** (they stay clean when the controls are on):
+2. **Window glass with a livery:** with a livery on, `cs_pbr_glass_max` reads `cb0[1].x` (up to 0.85), the same unknown constant as the P1/Diablo lenses; windows keep their stock look.
+3. **Finish names:** the game's finish table is in code; descriptive names until the capture confirms them.
+4. **Dirt on some surfaces** (they stay clean when the controls are on):
    - light-glass permutations that agree clean (≤ 0.12) but disagree with dirt; the selection key is unknown;
    - calipers whose dirt reads `g_brakeAndCaliperCustomizeParam.z`, a per-instance constant the export doesn't have.
-3. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.
+5. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.

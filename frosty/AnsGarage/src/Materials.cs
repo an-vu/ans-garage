@@ -266,11 +266,19 @@ namespace AnsGarage
             var obj=Load(entry.Guid).RootObject;
             return ExportTexture(obj,entry.Guid,ObjectKey(entry.Guid,obj),entry.Name);
         }
-        public void SaveTextureIndex(string note)
+        // merge keeps the textures an earlier run already wrote to this folder (liveries added to an export later).
+        public void SaveTextureIndex(string note,bool merge=false)
         {
             Directory.CreateDirectory(output);
-            WriteJson(Path.Combine(output,"textures.json"),new JObject {{"Schema",1},{"PluginVersion",Core.Version},{"Scope","shader defaults"},
-                {"Note",note},{"Textures",textureRecords},{"Issues",issues}});
+            string path=Path.Combine(output,"textures.json");
+            var records=new JArray(textureRecords);
+            if(merge && File.Exists(path)) {
+                var known=new HashSet<string>(textureRecords.Select(t=>(string)t["ResourceId"]));
+                foreach(var t in (JObject.Parse(File.ReadAllText(path))["Textures"] as JArray) ?? new JArray())
+                    if(!known.Contains((string)t["ResourceId"])) records.Add(t);
+            }
+            WriteJson(path,new JObject {{"Schema",1},{"PluginVersion",Core.Version},{"Scope","shader defaults"},
+                {"Note",note},{"Textures",records},{"Issues",issues}});
         }
         public void Save(bool completed=false)
         {

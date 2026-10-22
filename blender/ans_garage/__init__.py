@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 6), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 7), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -123,6 +123,16 @@ def plate_label(index, key):
     if key == "Stock" or not index:
         return "Stock (car's own)" if key == "Stock" else key
     return next((p["Label"] for p in index["Plates"] if p["Key"] == key), key)
+
+
+def liveries_module():
+    from . import unbound_liveries
+    return unbound_liveries
+
+
+def car_scope(root):
+    """Key of a car's runtime controls (paint colour and finish): its export folder name."""
+    return Path(root["unbound_assembly_path"]).parent.name
 
 
 def animation_module():
@@ -312,7 +322,7 @@ def draw_status(self, context):
 def register():
     import bpy
     from bpy_extras.io_utils import ImportHelper
-    from bpy.props import BoolProperty, FloatProperty, StringProperty
+    from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
 
     class IMPORT_SCENE_OT_ans_garage_vehicle(bpy.types.Operator, ImportHelper):
         bl_idname = "import_scene.ans_garage_vehicle"
@@ -549,6 +559,111 @@ def register():
                 obj.update_tag()
             return {"FINISHED"}
 
+    profiles = surfaces_module().profiles_module()
+    finish_items = [("Stock", "Stock", "This car's own finish")] + [
+        (str(t), label, "The game's paint finish type %d" % t) for t, label in profiles.FINISHES]
+
+    livery_choices = []
+
+    def livery_items(self, context):
+        root = bpy.data.collections.get(self.root) if self.root else None
+        index = liveries_module().load_index(root) if root and root.get("unbound_assembly_path") else None
+        items = [("None", "None (stock paint)", "The car's own paint without a livery")]
+        for l in (index or {}).get("Liveries", []):
+            items.append((l["Key"], l["Label"], l["Group"]))
+        livery_choices[:] = items  # Blender keeps only the strings of a list that stays alive
+        return livery_choices
+
+    class OBJECT_OT_ans_garage_livery(bpy.types.Operator):
+        bl_idname = "object.ans_garage_livery"
+        bl_label = "Choose livery"
+        bl_description = "The car's stock liveries exported with it (type to filter)"
+        bl_options = {"REGISTER", "UNDO"}
+        bl_property = "livery"
+        root: StringProperty(options={"SKIP_SAVE"})
+        livery: EnumProperty(items=livery_items, name="Livery")
+        pick: BoolProperty(default=True, options={"SKIP_SAVE"})
+
+        def invoke(self, context, event):
+            if not self.pick:
+                return self.execute(context)
+            context.window_manager.invoke_search_popup(self)
+            return {"RUNNING_MODAL"}
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            try:
+                count = liveries_module().apply_livery(root, self.livery)
+            except ValueError as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            self.report({"INFO"}, "%d paint slots rebuilt" % count)
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_livery_car(bpy.types.Operator):
+        bl_idname = "object.ans_garage_livery_car"
+        bl_label = "Use the livery's paint"
+        bl_description = ("Give the car the paint colour, finish and plate text that go with this livery in the game "
+                          "(the AI racer's, rival's or story car's own setup)")
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            try:
+                liveries_module().use_livery_car(root, root.get("ans_garage_livery", "None"))
+            except ValueError as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_finish(bpy.types.Operator):
+        bl_idname = "object.ans_garage_finish"
+        bl_label = "Paint finish"
+        bl_description = "The game's paint finishes (type to filter); Stock is the car's own"
+        bl_options = {"REGISTER", "UNDO"}
+        bl_property = "finish"
+        root: StringProperty(options={"SKIP_SAVE"})
+        finish: EnumProperty(items=finish_items, name="Finish")
+
+        def invoke(self, context, event):
+            context.window_manager.invoke_search_popup(self)
+            return {"RUNNING_MODAL"}
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            try:
+                profiles.set_finish(car_scope(root), finish=self.finish)
+            except ValueError as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            return {"FINISHED"}
+
+    class OBJECT_OT_ans_garage_gloss(bpy.types.Operator):
+        bl_idname = "object.ans_garage_gloss"
+        bl_label = "Paint gloss"
+        bl_description = "Gloss, satin or matte clear coat, as in the game's garage; Stock is the car's own"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+        gloss: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            try:
+                profiles.set_finish(car_scope(root), gloss=self.gloss)
+            except ValueError as exc:
+                self.report({"ERROR"}, str(exc))
+                return {"CANCELLED"}
+            return {"FINISHED"}
+
     class OBJECT_OT_ans_garage_conditions(bpy.types.Operator):
         bl_idname = "object.ans_garage_conditions"
         bl_label = "Dirt, dust and wet"
@@ -686,10 +801,6 @@ def register():
                 if summary["UnsupportedSlots"] or summary["IssueSlots"]:
                     wrapped(surfaces, context, "Not a complete car: see the An's Garage surface report in the Text Editor",
                             icon="ERROR")
-            paint = bpy.data.node_groups.get("Unbound | Runtime Ext_Carpaint_Diffuse")
-            rgb = next((n for n in paint.nodes if n.type == "RGB"), None) if paint else None
-            if rgb:
-                surfaces.prop(rgb.outputs[0], "default_value", text="Vehicle paint")
             if summary:
                 if context.scene.get("ans_garage_conditions"):
                     wrapped(surfaces, context, "Dirt, dust and wet: 0 clean and dry", icon="MATFLUID")
@@ -730,6 +841,40 @@ def register():
                             op = box.operator("object.ans_garage_variant", text=text,
                                               depress=not variant.hide_viewport)
                             op.root, op.group, op.option = root.name, key, variant["unbound_option"]
+                scope = car_scope(root)
+                paint = profiles.runtime_group(scope, "Ext_Carpaint_Diffuse")
+                if paint:
+                    pbox = box.box()
+                    wrapped(pbox, context, "Paint", icon="COLOR")
+                    pbox.prop(next(n for n in paint.nodes if n.type == "RGB").outputs[0], "default_value", text="Color")
+                    now, stock = profiles.finish_value(scope)
+                    if now:
+                        names = dict(profiles.FINISHES)
+                        text = names.get(now[0], "Type %d" % now[0]) + (" (stock)" if now[0] == stock[0] else "")
+                        pbox.operator("object.ans_garage_finish", text="Finish: " + text, icon="DOWNARROW_HLT").root = root.name
+                        row = pbox.row(align=True)
+                        for key, label in [("Stock", "Stock")] + [(str(k), l) for k, l in profiles.GLOSS_LEVELS]:
+                            # Levels 2 and up render the same (no clear coat): shown as Matte.
+                            on = now[1] == stock[1] if key == "Stock" else now[1] != stock[1] and min(now[1], 2) == int(key)
+                            op = row.operator("object.ans_garage_gloss", text=label, depress=on)
+                            op.root, op.gloss = root.name, key
+                livery_index = liveries_module().load_index(root)
+                lbox = box.box()
+                current_livery = root.get("ans_garage_livery", "None")
+                label_now = next((l["Label"] for l in (livery_index or {}).get("Liveries", []) if l["Key"] == current_livery), "None")
+                wrapped(lbox, context, "Livery: " + label_now, icon="IMAGE_DATA")
+                if livery_index:
+                    row = lbox.row(align=True)
+                    op = row.operator("object.ans_garage_livery", text="Choose livery…", icon="VIEWZOOM")
+                    op.root = root.name
+                    op = row.operator("object.ans_garage_livery", text="None", depress=current_livery == "None")
+                    op.root, op.livery, op.pick = root.name, "None", False
+                    car = liveries_module().livery_car(root, current_livery) if current_livery != "None" else None
+                    if car:
+                        text = "Use its paint" + (" and plate text (%s)" % car["PlateText"] if car.get("PlateText") else "")
+                        lbox.operator("object.ans_garage_livery_car", text=text, icon="BRUSH_DATA").root = root.name
+                else:
+                    wrapped(lbox, context, "None exported with this car. Frosty: Tools > An's Garage > Add liveries to an existing export…")
                 current = json.loads(root.get("ans_garage_tire_json") or '{"Name": "Stock", "Lettering": "Plain"}')
                 tires = box.box()
                 wrapped(tires, context, "Tires: %s%s" % (current["Name"], ", brand lettering" if current["Name"] != "Stock"
@@ -799,7 +944,8 @@ def register():
     _registered_classes = [AnsGaragePreferences, IMPORT_SCENE_OT_ans_garage_locate_tires, OBJECT_OT_ans_garage_tire,
                            IMPORT_SCENE_OT_ans_garage_locate_plates, OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
-                           OBJECT_OT_ans_garage_conditions,
+                           OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_gloss,
+                           OBJECT_OT_ans_garage_livery, OBJECT_OT_ans_garage_livery_car,
                            IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
                            IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,

@@ -26,6 +26,7 @@ using Newtonsoft.Json;
 [assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.TireLibraryMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.PlateLibraryMenu))]
+[assembly: RegisterMenuExtension(typeof(AnsGarage.AddLiveriesMenu))]
 
 namespace AnsGarage
 {
@@ -51,6 +52,7 @@ namespace AnsGarage
                         string target = Path.Combine(folder.SelectedPath, "Unbound_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N").Substring(0,8));
                         var batch = new Batch(Core.Normalize(options.Prefix.Text), options.Skeleton.Text.Trim(), target);
                         if (options.Blueprint != null && Core.InScope(options.Blueprint, Core.Normalize(options.Prefix.Text))) batch.Blueprint = options.Blueprint;
+                        batch.Liveries = Liveries.Checked(options.LiveryBox);
                         Exception fatal = null;
                         FrostyTaskWindow.Show("An's Garage: export vehicle", "Scanning databases", task => {
                             try { batch.Run(task); } catch (Exception ex) { fatal = ex; batch.Manifest.Errors.Add(ex.ToString()); }
@@ -97,6 +99,19 @@ namespace AnsGarage
         public readonly TextBox Prefix = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         public string Blueprint;
         public readonly TextBox Skeleton = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        public readonly CheckedListBox LiveryBox = Liveries.Picker(new List<Liveries.Livery>());
+        private readonly Label liveryNote = Ui.Text("Stock liveries: choose a vehicle to list them.");
+        private string listed;
+        private void ListLiveries()
+        {
+            string scope = Core.Normalize(Prefix.Text);
+            if (scope == listed) return;
+            listed = scope;
+            var found = scope.Length == 0 ? new List<Liveries.Livery>() : Liveries.Find(scope);
+            Liveries.Fill(LiveryBox, found);
+            liveryNote.Text = found.Count == 0 ? "Stock liveries: none for this vehicle." :
+                "Stock liveries (" + found.Count + "): untick the ones you don't want. Others can be added later (Tools > An's Garage > Add liveries...).";
+        }
         public Options()
         {
             Ui.Setup(this, "An's Garage: export vehicle");
@@ -104,7 +119,8 @@ namespace AnsGarage
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var choose = Ui.Button("Choose vehicle...");
-            choose.Click += (s,e) => { using (var picker = new VehiclePicker()) if (picker.ShowDialog(this) == DialogResult.OK) { Prefix.Text = picker.Folder; Blueprint = picker.Blueprint; } };
+            choose.Click += (s,e) => { using (var picker = new VehiclePicker()) if (picker.ShowDialog(this) == DialogResult.OK) { Prefix.Text = picker.Folder; Blueprint = picker.Blueprint; ListLiveries(); } };
+            Prefix.Leave += (s,e) => ListLiveries();
             Prefix.TextChanged += (s,e) => { if (Blueprint != null && !Core.InScope(Blueprint, Core.Normalize(Prefix.Text))) Blueprint = null; };
             g.Controls.Add(Ui.Text("Vehicle folder (or click Choose vehicle... to pick by in-game name):"), 0, 0); g.SetColumnSpan(g.GetControlFromPosition(0, 0), 2);
             g.Controls.Add(Prefix, 0, 1); g.Controls.Add(choose, 1, 1);
@@ -114,11 +130,14 @@ namespace AnsGarage
             var info = Ui.Text("LOD0, binary FBX 2014, meters, hierarchy retained. Current loaded asset state.\nTextures, in-game part names, shader default textures and assembly data are exported.");
             info.MaximumSize = new Size(680, 0);
             g.Controls.Add(info, 0, 4); g.SetColumnSpan(info, 2);
+            liveryNote.MaximumSize = new Size(680, 0);
+            g.Controls.Add(liveryNote, 0, 5); g.SetColumnSpan(liveryNote, 2);
+            g.Controls.Add(LiveryBox, 0, 6); g.SetColumnSpan(LiveryBox, 2);
             var go = Ui.Button("Export...");
             go.Click += (s,e) => { if (Core.Normalize(Prefix.Text).Length == 0) { MessageBox.Show(this, "Enter a vehicle folder, or click Choose vehicle..."); return; } DialogResult=DialogResult.OK; };
             var cancel = Ui.Button("Cancel"); cancel.DialogResult = DialogResult.Cancel;
             var buttons = Ui.Buttons(cancel, go);
-            g.Controls.Add(buttons, 0, 5); g.SetColumnSpan(buttons, 2);
+            g.Controls.Add(buttons, 0, 7); g.SetColumnSpan(buttons, 2);
             Controls.Add(g); AcceptButton=go; CancelButton=cancel;
         }
     }
@@ -234,6 +253,8 @@ namespace AnsGarage
         public string Blueprint { get { return Manifest.Blueprint; } set { Manifest.Blueprint = value; } }
         // Library exports (shared parts such as the tire library) have no vehicle blueprint and no per-car shader defaults.
         public bool Library;
+        // Stock liveries chosen in the export dialog (none by default for scripted exports).
+        public List<Liveries.Livery> Liveries = new List<Liveries.Livery>();
         public Batch(string scope, string skeletonAsset, string directory)
         {
             prefix=scope; skeleton=skeletonAsset; output=directory;
@@ -394,6 +415,9 @@ namespace AnsGarage
                     task.Update("Shader default textures");
                     Time("Shader default textures", () => {
                         try { ExportShaderDefaults(output,true); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }
+                    });
+                    if(Liveries.Count>0) Time("Liveries", () => {
+                        try { AnsGarage.Liveries.Export(output,Liveries,task); } catch(Exception ex) { Manifest.Errors.Add("Liveries: "+ex.Message); }
                     });
                 }
             }

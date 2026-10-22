@@ -170,6 +170,21 @@ def profiles_module():
     return unbound_profiles
 
 
+def set_texture_overrides(obj, overrides):
+    """Merge parameter -> texture asset overrides into an object (None removes one), so plates and liveries on the
+    same part keep each other's."""
+    current = json.loads(obj.get("unbound_texture_overrides_json", "{}"))
+    for k, v in overrides.items():
+        if v is None:
+            current.pop(k, None)
+        else:
+            current[k] = v
+    if current:
+        obj["unbound_texture_overrides_json"] = json.dumps(current, sort_keys=True)
+    elif "unbound_texture_overrides_json" in obj:
+        del obj["unbound_texture_overrides_json"]
+
+
 def rebuild(slots):
     """Rebuild (object, slot index) pairs from their source materials with the current overrides and settings; returns
     (built, failed) report rows of those slots. The car's full surface report stays the current one."""
@@ -262,12 +277,15 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"),
                                       "Reason": "Unresolved runtime inputs: " + ", ".join(unresolved)})
         return
-    if ("images", str(root)) not in caches:
+    # One resolver per car and per extra texture folder (plate and tire libraries are per object).
+    ikey = ("images", str(root), obj.get("unbound_override_textures", ""))
+    if ikey not in caches:
         import bpy
-        caches[("images", str(root))] = P.Images(root, [bpy.context.scene.get("unbound_shader_defaults_path", ""),
-                                                        obj.get("unbound_override_textures", "")])
+        caches[ikey] = P.Images(root, [bpy.context.scene.get("unbound_shader_defaults_path", ""),
+                                       obj.get("unbound_override_textures", "")])
+    if ("runtime", str(root)) not in caches:
         caches[("runtime", str(root))] = P.runtime_values(root / "assembly.json")
-    images = caches[("images", str(root))]
+    images = caches[ikey]
     runtime, runtime_notes, assembly_doc = caches[("runtime", str(root))]
 
     def planned(conditions):
@@ -275,8 +293,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         plans = []
         for entry, rename in zip(candidates, renames):
             consts = P.input_constants(entry, obj, assembly_doc)
-            live_names = {e["Name"] for e in entry["Externals"]
-                          if runtime.get(e["Key"].casefold(), {}).get("Field") == "PaintFacingColorParameter"}
+            live_names = P.live_names(entry, runtime)
             pkey = (shader, material.get("unbound_state_key"), str(root), id(entry), tuple(sorted(consts.items())),
                     tuple(sorted(rename.items())), json.dumps(state.get("TextureOverrides"), sort_keys=True),
                     json.dumps(state.get("ParameterOverrides"), sort_keys=True), conditions)
@@ -296,11 +313,21 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
                 caches[akey] = exc
         return str(caches[akey]) if isinstance(caches[akey], P.Unsupported) else (plans, caches[akey])
 
-    try:
-        result, condition_issue = planned(caches["conditions"]), None
+    def attempt():
+        result, issue = planned(caches["conditions"]), None
         if isinstance(result, str) and caches["conditions"]:
             # Built clean and dry rather than not at all; the reason goes in the surface evidence.
-            result, condition_issue = planned(False), result
+            result, issue = planned(False), result
+        return result, issue
+
+    override_issue = None
+    try:
+        result, condition_issue = attempt()
+        optional = [k for k in state.get("TextureOverrides") or {} if k in P.OPTIONAL_OVERRIDES]
+        if isinstance(result, str) and optional:
+            state["TextureOverrides"] = {k: v for k, v in state["TextureOverrides"].items() if k not in optional}
+            override_issue = {"Overrides": optional, "Reason": result}
+            result, condition_issue = attempt()
     except P.Unsupported as exc:
         result = str(exc)
     if isinstance(result, str):
@@ -318,6 +345,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
             colors[usage] = {"name": name, "byte": attr.data_type == "BYTE_COLOR"}
     fb_to_blender, blender_to_fb = P.axis_matrices(obj)
     ctx = {"uv": uv, "colors": colors, "tangent_uv": uv.get("TexCoord0", ""), "fb_to_blender": fb_to_blender,
+           "live_scope": root.name,
            "blender_to_fb": blender_to_fb, "notes": []}
     basis = None
     if p["uses_frame"]:
@@ -331,7 +359,9 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         "Images": {str(k): [i.get("unbound_source_path") for i in (v if isinstance(v, list) else [v])]
                    for k, v in p["images"].items()},
         "UV": uv, "Colors": colors, "Signs": ctx.get("basis_signs"), "Axes": fb_to_blender,
-        "Live": sorted(map(list, p["live"]))}).encode()).hexdigest()
+        "Live": sorted(map(list, p["live"])),
+        # Runtime controls are per car: a group with live paint belongs to its car.
+        "Scope": root.name if any(n not in P.CONDITIONS for n, _ in p["live"]) else None}).encode()).hexdigest()
     label = "Unbound | %s | %s" % (shader.rsplit("/", 1)[-1], identity[:8])
     group, connected = P.build_group(entry, p, ctx, identity, label)
     unsupported = [{"Output": k, "Reason": v} for k, v in P.UNSUPPORTED_OUTPUTS.items() if k in entry["Outputs"]]
@@ -374,6 +404,8 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         entry_report["EngineConstantAssumption"] = p["engine"]
     if p.get("view"):
         entry_report["ViewConstantIndependence"] = p["view"]
+    if override_issue:
+        entry_report["LiveryNotApplied"] = dict(override_issue, Status="this part keeps its stock look")
     if condition_issue:
         entry_report["VehicleCondition"] = {"Status": "not applied: built clean and dry", "Reason": condition_issue}
     if p.get("conditions"):

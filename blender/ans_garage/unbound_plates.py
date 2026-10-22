@@ -10,6 +10,7 @@ from pathlib import Path
 
 STOCK = "Stock"
 PLATE_SHADER = "licenseplate_max"
+PLATE_PARAMETER = "Ext_T_LicensePlate_Diffuse"  # the library's plates.json "Parameter"
 
 
 def load_index(folder):
@@ -56,14 +57,13 @@ def apply_plate(root, key, folder):
     slots = plate_slots(root)
     if not slots:
         raise ValueError("This car has no license plate")
+    surfaces = _addon().surfaces_module()
     for o, i in slots:
+        surfaces.set_texture_overrides(o, {PLATE_PARAMETER: plate["Texture"] if plate else None})
         if plate:
-            o["unbound_texture_overrides_json"] = json.dumps({index["Parameter"]: plate["Texture"]})
             o["unbound_override_textures"] = str(Path(folder).resolve() / "textures")
-        else:
-            for prop in ("unbound_texture_overrides_json", "unbound_override_textures"):
-                if prop in o:
-                    del o[prop]
+        elif "unbound_override_textures" in o:
+            del o["unbound_override_textures"]
     root["ans_garage_plate"] = key
     return _rebuild(slots)
 
