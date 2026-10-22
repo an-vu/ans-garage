@@ -120,10 +120,74 @@ namespace AnsGarage
                 string brand = Text(id);
                 if (brand != null) { row["BrandNameId"] = id; row["BrandName"] = brand; break; }
             }
+            if (row["BrandKey"] != null && row["BrandName"] == null)
+            {
+                string source;
+                string title = BrandTitle((string)row["BrandKey"], out source);
+                if (title != null) { row["BrandTitle"] = title; row["BrandTitleSource"] = source; }
+            }
             row["Category"] = row["MediumName"];
             row["DisplayName"] = DisplayName(row);
             row["LocalizationStatus"] = Status;
             return row;
+        }
+
+        private static Dictionary<string, List<string>> exactTexts, leadingTexts;
+
+        private static string Normalize(string s)
+        {
+            return new string((s ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
+        }
+
+        // Brand name for a logo key (pandem, apr, t_custombrand_supertuners) from the game's own localized text:
+        // a string equal to the key (ignoring case, spaces and punctuation), else the leading words of localized
+        // names (APR from "APR GT250"). Mixed case is preferred over all capitals. Null when the text has no match.
+        public static string BrandTitle(string key, out string source)
+        {
+            source = null;
+            if (exactTexts == null)
+            {
+                exactTexts = new Dictionary<string, List<string>>(); leadingTexts = new Dictionary<string, List<string>>();
+                var db = Database();
+                var enumerate = db == null ? null : db.GetType().GetMethod("EnumerateStrings");
+                var get = db == null ? null : db.GetType().GetMethod("GetString", new[] { typeof(uint) });
+                if (enumerate != null && get != null)
+                    foreach (object id in (IEnumerable)enumerate.Invoke(db, null))
+                    {
+                        string text; try { text = ((string)get.Invoke(db, new object[] { Convert.ToUInt32(id) }) ?? "").Trim(); } catch { continue; }
+                        if (text.Length == 0 || text.Length > 60) continue;
+                        Add(exactTexts, Normalize(text), text);
+                        string[] words = text.Split(' ');
+                        for (int n = 1; n < Math.Min(words.Length, 4); ++n)
+                        {
+                            string lead = string.Join(" ", words, 0, n);
+                            Add(leadingTexts, Normalize(lead), lead);
+                        }
+                    }
+            }
+            string k = Normalize(key.StartsWith("t_custombrand_") ? key.Substring("t_custombrand_".Length) : key);
+            if (k.Length < 2) return null;
+            List<string> found;
+            if (exactTexts.TryGetValue(k, out found) && found.Any(t => t != t.ToUpperInvariant()))
+            { source = "localized text equal to the logo key"; return Pick(found); }
+            if (leadingTexts.TryGetValue(k, out found) && found.Count >= 2)
+            { source = "leading words of localized names"; return Pick(found); }
+            if (exactTexts.TryGetValue(k, out found)) { source = "localized text equal to the logo key"; return Pick(found); }
+            return null;
+        }
+
+        private static void Add(Dictionary<string, List<string>> map, string key, string text)
+        {
+            if (key.Length < 2) return;
+            List<string> list; if (!map.TryGetValue(key, out list)) map[key] = list = new List<string>();
+            list.Add(text);
+        }
+
+        // The most frequent spelling, mixed case before all capitals.
+        private static string Pick(List<string> found)
+        {
+            return found.GroupBy(t => t).OrderByDescending(g => g.Key != g.Key.ToUpperInvariant()).ThenByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.Ordinal).First().Key;
         }
 
         // Game UI convention observed in item data: stock items carry a LongName ("Stock");

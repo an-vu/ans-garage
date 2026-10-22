@@ -19,10 +19,10 @@ using MeshSetPlugin.Resources;
 using Newtonsoft.Json;
 
 [assembly: AssemblyTitle("AnsGarage")]
-[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
 [assembly: PluginDisplayName("An's Garage for Frosty")]
 [assembly: PluginAuthor("An Vu")]
-[assembly: PluginVersion("1.0.0.0")]
+[assembly: PluginVersion("1.0.1.0")]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.TireLibraryMenu))]
 
@@ -125,7 +125,10 @@ namespace AnsGarage
     internal sealed class VehiclePicker : Form
     {
         public string Folder, Blueprint;
-        private readonly ListBox list = new ListBox { Width = 640, Height = 420, IntegralHeight = false, Dock = DockStyle.Fill };
+        // Two columns: in-game name and the vehicle's folder; click a header to sort by it.
+        private readonly ListView list = new ListView { Width = 900, Height = 480, View = View.Details, FullRowSelect = true,
+            MultiSelect = false, HideSelection = false, Dock = DockStyle.Fill };
+        private int sortColumn;
         private readonly TextBox search = new TextBox { Dock = DockStyle.Fill };
         private readonly Label status = Ui.Text("");
         private readonly Button ok = Ui.Button("Select"), refresh = Ui.Button("Refresh list");
@@ -140,7 +143,9 @@ namespace AnsGarage
             var cancel = Ui.Button("Cancel"); cancel.DialogResult = DialogResult.Cancel;
             g.Controls.Add(Ui.Buttons(cancel, ok, refresh));
             Controls.Add(g);
-            ok.Click += (s,e) => { var v = list.SelectedItem as Row; if (v == null) return; Folder = v.Vehicle.Folder; Blueprint = v.Vehicle.Blueprint; DialogResult = DialogResult.OK; };
+            list.Columns.Add("Car", 420); list.Columns.Add("Folder", 440);
+            list.ColumnClick += (s,e) => { sortColumn = e.Column; Fill(); };
+            ok.Click += (s,e) => { if (list.SelectedItems.Count == 0) return; var v = (VehicleCatalog.Vehicle)list.SelectedItems[0].Tag; Folder = v.Folder; Blueprint = v.Blueprint; DialogResult = DialogResult.OK; };
             list.DoubleClick += (s,e) => ok.PerformClick();
             search.TextChanged += (s,e) => Fill();
             refresh.Click += (s,e) => Start(true);
@@ -167,13 +172,20 @@ namespace AnsGarage
             };
             worker.RunWorkerAsync();
         }
-        private sealed class Row { public VehicleCatalog.Vehicle Vehicle; public override string ToString() { return Vehicle.Name + "   (" + Vehicle.Folder + ")"; } }
+        private static string Leaf(string folder) { return folder.Substring(folder.LastIndexOf('/') + 1); }
         private void Fill()
         {
             list.BeginUpdate(); list.Items.Clear();
             string q = search.Text.Trim();
-            foreach (var v in vehicles.Where(v => q.Length == 0 || v.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || v.Folder.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0))
-                list.Items.Add(new Row { Vehicle = v });
+            var rows = vehicles.Where(v => q.Length == 0 || v.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || v.Folder.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);
+            rows = sortColumn == 0 ? rows.OrderBy(v => v.Name, StringComparer.CurrentCultureIgnoreCase) : rows.OrderBy(v => Leaf(v.Folder), StringComparer.OrdinalIgnoreCase);
+            foreach (var v in rows)
+            {
+                // The folder column shows the folder's own name; the full path stays searchable and in the tooltip.
+                var item = new ListViewItem(new[] { v.Name, Leaf(v.Folder) }) { Tag = v, ToolTipText = v.Folder };
+                list.Items.Add(item);
+            }
+            list.ShowItemToolTips = true;
             list.EndUpdate();
         }
     }
@@ -181,7 +193,7 @@ namespace AnsGarage
     public sealed class Manifest
     {
         public int Schema = 1;
-        public string PluginVersion = "1.0.0";
+        public string PluginVersion = "1.0.1";
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion, Blueprint;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";

@@ -2,6 +2,19 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.1
+
+- **Item meshes are placed at their own customization component**, not only spoilers. The Diablo SV's pop-up headlights, modelled around their own origin, used to sit at the car's origin (0, 0, 0); they now sit in the nose. Geometry already in car space keeps its place, as before.
+- **Pop-up headlights slider** (group *Lights*), from the game's opening sequence. The game plays an opening and a closing sequence on light events; the closing one is its reverse and is listed as skipped.
+- **The file browsers for tires.json, manifest.json and textures.json show those files.** The exact-name filters hid them.
+- **Sidebar:** the panel is titled **An's Garage 1.0.1**, and long text wraps to the sidebar's width instead of being cut off.
+- **Kit brands read like brands:**
+  - kit parts without an in-game name show "Spoiler · APR" instead of "Spoiler · apr logo";
+  - the exporter finds the brand name in the game's own text: Alchemist, APR, BMW, Carbon, Chidori, Lamborghini, NexTech, Pandem;
+  - Big Country Labs, missing from the game's text, is spelled by hand; any other brand the text lacks keeps its logo key, title-cased;
+  - re-run the export's assembly step to get the names.
+- **Frosty car picker:** a two-column table (car and folder), sortable by clicking a header; the full folder path shows on hover.
+
 ## 1.0.0
 
 - **Moving parts:** each car gets a 0–1 slider per moving part in the An's Garage sidebar: 0 closed, 1 fully open, 0.5 halfway, keyframable like any property. **Close all** sets them back to 0.

@@ -33,6 +33,19 @@ def ui_category(item):
     return ((item.get("UI") or {}).get("Category")) or None
 
 
+# Brands whose names the game's localized text doesn't contain, spelled by hand (only used when the exporter found none).
+BRAND_SPELLINGS = {"bigcountrylabs": "Big Country Labs"}
+
+
+def brand_title(ui):
+    """Kit brand for parts without a localized name: the exporter's brand title (the game's own text for the logo
+    key, 1.0.1+), else a hand-spelled name for brands the text lacks, else the logo key itself, title-cased."""
+    if ui.get("BrandTitle"):
+        return ui["BrandTitle"]
+    key = (ui.get("BrandKey") or "").removeprefix("t_custombrand_")
+    return BRAND_SPELLINGS.get(key) or (key.replace("_", " ").title() if key else None)
+
+
 def item_label(item):
     """(in-game option name, status). Exporter 0.5.0+ records ItemUI names from the game's localization table."""
     ui = item.get("UI") or {}
@@ -40,8 +53,10 @@ def item_label(item):
         return ui["DisplayName"], "localized"
     if ui:
         cat = ui.get("Category") or category(item)
-        brand = ui.get("BrandKey")
-        return cat + (" · " + brand + " logo" if brand else ""), "no localized name (category + brand logo key)"
+        brand = brand_title(ui)
+        status = "no localized name (category + brand from the game's text)" if ui.get("BrandTitle") else \
+            "no localized name (category + brand logo key)"
+        return cat + (" · " + brand if brand else ""), status
     return None, "exported before 0.5.0 (no in-game names)"
 
 
@@ -56,7 +71,7 @@ def preset_label(preset, items_by_asset):
     if len(brands) == 1 and None not in brands:
         return "Body kit: " + brands.pop() + " (" + code + ")"
     if ui.get("BrandKey"):
-        return "Body kit " + code + " · " + ui["BrandKey"] + " logo"
+        return "Body kit: " + brand_title(ui) + " (" + code + ")"
     return "Body kit " + code
 
 
@@ -391,11 +406,14 @@ def assemble_existing(manifest_path):
                 inst["dimension_status"] = status
                 inst["source_item_json"] = json.dumps(item["Raw"])
                 used.add(use["MeshId"])
-    # Item meshes authored relative to a customization component are placed at that component (component chain
-    # composed root to leaf). Evidence: every spoiler of the Chiron Sport and P1 is modelled around the origin and
-    # their SpoilerCustomizationComponentData carries the deck position (the P1's -0.44 m lateral offset centres its
-    # asymmetric wing). A mesh already in car space (its centre would leave the body) keeps its authored placement.
+    # Item meshes authored relative to their customization component are placed at that component (component chain
+    # composed root to leaf; the component comes from the mesh blueprint's BlueprintComponents entry). Evidence: every
+    # spoiler of the Chiron Sport and P1 is modelled around the origin and its SpoilerCustomizationComponentData
+    # carries the deck position (the P1's -0.44 m lateral offset centres its asymmetric wing); the Diablo's pop-up
+    # headlights sit on LightsCustomizationComponentData at the front corners. A mesh already in car space (its centre
+    # would leave the body) keeps its authored placement.
     comp_by_node = {c["Node"]: c for c in data.get("Components", [])}
+    comp_owners = data.get("BlueprintComponents") or {}
 
     def component_matrix(c):
         chain = []
@@ -406,35 +424,34 @@ def assemble_existing(manifest_path):
         for c in reversed(chain):
             m = m @ matrix_from_basis(c["Transform"])
         return m
-    placements = {}
-    for item_type, comp_type in (("SpoilerItemData", "SpoilerCustomizationComponentData"),):
-        found = [c for c in data.get("Components", []) if c["Type"] == comp_type]
-        if len(found) > 1:
-            diagnostics.append("Several %s components; %s meshes keep their authored placement" % (comp_type, item_type))
-        elif found:
-            m = component_matrix(found[0])
-            if any(abs(m[i][j] - (1.0 if i == j else 0.0)) > 1e-6 for i in range(4) for j in range(4)):
-                placements[item_type] = (conversion @ m @ inverse, comp_type)
-
     def world_box(objects, transform):
         from mathutils import Vector
         pts = [transform @ o.matrix_world @ Vector(c) for o in objects if o.type == "MESH" for c in o.bound_box]
         return ([min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)]) if pts else None
 
-    def placement_for(item, meshid):
+    def placement_for(blueprint, meshid):
         # Geometry centred on the component's own position is already in car space (e.g. the Countach's unnamed
         # setepic wing); geometry centred near the origin is modelled relative to the component.
         from mathutils import Vector
-        if item["Type"] not in placements:
+        comps = {o["Component"] for o in comp_owners.get(blueprint, []) if o["Component"] in comp_by_node}
+        matrices = {tuple(round(x, 6) for row in component_matrix(comp_by_node[c]) for x in row): c for c in comps}
+        if len(matrices) != 1:
+            if len(matrices) > 1:
+                diagnostics.append("%s: on %d components with different positions; authored placement kept"
+                                   % (records[meshid]["Asset"].rsplit("/", 1)[-1], len(matrices)))
             return None
-        local, comp_type = placements[item["Type"]]
+        comp = comp_by_node[next(iter(matrices.values()))]
+        m = component_matrix(comp)
+        if all(abs(m[i][j] - (1.0 if i == j else 0.0)) <= 1e-6 for i in range(4) for j in range(4)):
+            return None
+        local = conversion @ m @ inverse
         box = world_box(templates[meshid], Matrix.Identity(4))
         if not box:
             return None
         centre = Vector([(a + b) / 2 for a, b in zip(*box)])
         if (centre - local.translation).length < centre.length:
             diagnostics.append("%s: geometry already sits at the %s position (car space); authored placement kept"
-                               % (records[meshid]["Asset"].rsplit("/", 1)[-1], comp_type))
+                               % (records[meshid]["Asset"].rsplit("/", 1)[-1], comp["Type"]))
             return None
         return local
 
@@ -505,7 +522,7 @@ def assemble_existing(manifest_path):
                     local_seen.add(key)
                     label = records[key]["Asset"].rsplit("/", 1)[-1]
                     label = re.sub(r"^car_.*?_\d{4}_", "", label).removesuffix("_mesh").replace("_", " ").title()
-                    local = placement_for(item, key)
+                    local = placement_for(desc["BlueprintGuid"], key)
                     inst = instance(key, variant, label, local=local)
                     if local is not None:
                         inst["placement_status"] = "Placed at the item's customization component (source transform)"

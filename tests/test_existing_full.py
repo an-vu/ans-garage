@@ -63,7 +63,7 @@ baseline = {m.name: digest(m) for m in bpy.data.meshes}
 before_objects = objects_state()
 before_sources = slot_sources()
 before_materials = {m.name for m in bpy.data.materials}
-check("Development add-on 1.0.0 loaded", addon.bl_info["version"] == (1, 0, 0))
+check("Development add-on 1.0.1 loaded", addon.bl_info["version"] == (1, 0, 1))
 check("Baseline scene has 593 Unbound meshes", len(meshes) == 593, len(meshes))
 
 status = bpy.ops.import_scene.ans_garage_locate_export(filepath=materials)
@@ -136,7 +136,7 @@ bpy.ops.wm.open_mainfile(filepath=str(saved))
 check("Save/reopen keeps mesh data", {m.name: digest(m) for m in bpy.data.meshes} == baseline)
 check("Save/reopen keeps built materials",
       len([m for m in bpy.data.materials if m.get("unbound_surface_profile") == "unbound-compiled-gbuffer-v1"]) == len(built))
-result = {"Version": "1.0.0", "Checks": checks, "Summary": summary,
+result = {"Version": "1.0.1", "Checks": checks, "Summary": summary,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "existing-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])

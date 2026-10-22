@@ -1,3 +1,8 @@
+# 1.0.1
+
+- **Choose vehicle...** shows a two-column table, Car and Folder (the folder's own name; the full path on hover). Click a header to sort.
+- `assembly.json` item `UI` gains `BrandTitle` and `BrandTitleSource` for kit parts without a localized name. They hold the brand name found in the game's localized text for the logo key: an equal string, else the leading words of localized names (APR from "APR GT250"). Keys without a match get none.
+
 # 1.0.0 — moving parts
 
 - `assembly.json` gains `TrackData`: the keyframes of the vehicle's sequence tracks (active wings, airbrakes, vents) as plain numbers, 6 per key (time, value, in-tangent x/y, out-tangent x/y). An's Garage for Blender 1.0.0 turns them, together with the blueprint's door, window, hood and boot curves (already in `assembly.json`), into 0–1 sliders.

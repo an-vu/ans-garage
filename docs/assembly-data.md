@@ -29,6 +29,10 @@ The first source permutation is an explicit preview policy. Source template SubI
     - `TransformBlendEntityData.In2`, weighted by the spoiler component's `AnimationExtent`: stock item 1, aftermarket 0;
     - `TransformMultiplierEntityData` (wing in `In1`, airbrake in `In2`);
     - `RealmTransformCombinerEntityData.ClientTransform`.
+- **Pop-up headlights** (Diablo SV):
+  - two sequences are played by light events (no `ExternalTime`) and feed a `TransformHubEntityData`, which passes on whichever played last;
+  - the sequence that starts at rest opens the lights and becomes the slider; the other is its reverse;
+  - the tracks reach the `LightsCustomizationComponentData` `TransformOffset` through the same blend and combiner as the wings.
 - **Geometry:**
   - body parts follow bone `PART_<i>`, where `i` is the part's index in `RaceVehiclePhysicsComponentData.Parts`;
   - item meshes follow their component (via `BlueprintComponents`), including items on child components (door mirrors on a door).

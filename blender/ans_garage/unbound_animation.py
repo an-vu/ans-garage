@@ -9,8 +9,10 @@ hashes, resolved below); nothing is posed by hand.
   The sequence's transform tracks (keys in TrackData) reach a component's Transform or TransformOffset through
   TransformBlendEntityData (In2, weighted by the spoiler item's AnimationExtent: stock 1, aftermarket 0),
   TransformMultiplierEntityData (In1, then In2) and RealmTransformCombinerEntityData (ClientTransform).
+- Pop-up headlights: two sequences played by light events (no ExternalTime) feed a TransformHubEntityData, which passes
+  on whichever played last. The one starting at rest opens the lights and becomes the slider; the other is its reverse.
 A slider is one source input from 0 to 1: the property's T, or the sequence time across its keys. The game's speed
-logic (when a wing rises) is not reproduced.
+logic (when a wing rises) and light switching are not reproduced.
 
 In Blender each moving component is an empty; a slider drives its Action constraint (evaluation time), so no Python
 drivers are needed. Body parts follow their bone (PART_<physics part index>) through a Child Of constraint; item
@@ -27,7 +29,7 @@ EULER_ORDER = "ZXY"
 PROPERTY_LABELS = {"ldooropen": ("Doors", "Left door"), "rdooropen": ("Doors", "Right door"),
                    "ldoorwindowopen": ("Windows", "Left window"), "rdoorwindowopen": ("Windows", "Right window"),
                    "hoodopen": ("Hood and boot", "Hood"), "bootopen": ("Hood and boot", "Boot")}
-GROUPS = ("Active aero", "Doors", "Windows", "Hood and boot", "Other")
+GROUPS = ("Active aero", "Lights", "Doors", "Windows", "Hood and boot", "Other")
 CHANNELS = {"TranslationX": ("T", 0), "TranslationY": ("T", 1), "TranslationZ": ("T", 2),
             "RotationX": ("R", 0), "RotationY": ("R", 1), "RotationZ": ("R", 2)}
 
@@ -200,6 +202,9 @@ def _follow(g, node, infield, path, out):
         path = path + [("Extent", weights[0][0])]
     elif typ == "TransformMultiplierEntityData" and infield in (field("In1"), field("In2")):
         path = path + [("Multiply", 1 if infield == field("In1") else 0)]
+    elif typ == "TransformHubEntityData" and infield in (field("In1"), field("In2")):
+        # Passes on whichever input changed last: an opening and a closing sequence share it.
+        path = path + [("Hub", node)]
     elif not (typ == "RealmTransformCombinerEntityData" and infield == field("ClientTransform")):
         raise Unsupported("Sequence output reaches %s.%s" % (typ, infield))
     for target, tf in g.out(node, "Out"):
@@ -209,7 +214,7 @@ def _follow(g, node, infield, path, out):
 def _sequences(g, moving, controls, skipped, issues):
     tracks_data = g.data.get("TrackData") or {}
     for node, n in g.nodes.items():
-        if n["Type"] != "SequenceEntityData" or not any(t == node for _, _, t, *_ in g.props):
+        if n["Type"] != "SequenceEntityData" or not any(node in (s, t) for s, _, t, *_ in g.props):
             continue
         drivers = g.into(node, "ExternalTime")
         source = g.type(drivers[0][0]) if len(drivers) == 1 else None
@@ -217,6 +222,8 @@ def _sequences(g, moving, controls, skipped, issues):
             key, group = "aero", "Active aero"
         elif source == "MathEntityData" and any(g.type(s) == "AnimationComponentData" for s, _ in g.into(drivers[0][0], "Value")):
             key, group = "airbrake", "Active aero"
+        elif not drivers:
+            key, group = None, None  # played by events (e.g. pop-up headlights): decided below
         else:
             skipped.append({"Control": "sequence " + node.rsplit(":", 1)[-1], "Reason": "not driven by the vehicle's animation component"})
             continue
@@ -238,16 +245,11 @@ def _sequences(g, moving, controls, skipped, issues):
                 if any(len(k) != 6 for k in keys):
                     raise Unsupported("Track keys out of range")
                 by_id.setdefault(track["Id"], {})[part] = keys
-                names.append(res["Name"].rsplit("_", 1)[-1].lower())
+                names.append(res["Name"].rsplit("/", 1)[-1].split("_", 1)[-1].lower())  # "<guid>_headlight_l" -> "headlight_l"
                 times += [k[0] for k in keys]
             if not times:
                 raise Unsupported("Sequence without keys")
-            if key == "aero":
-                label = "Rear wing" if any("spoiler" in x or "wing" in x for x in names) else \
-                    "Air vents" if any("vent" in x for x in names) else "Active aero"
-            else:
-                label = "Airbrake"
-            reached = False
+            reached = []
             for track_id, channels in by_id.items():
                 factor = {"Kind": "Tracks", "Channels": channels, "Start": min(times), "End": max(times)}
                 factor_matrix(factor, 0.5)
@@ -256,17 +258,40 @@ def _sequences(g, moving, controls, skipped, issues):
                         continue
                     found = []
                     _follow(g, target, tf, [], found)
-                    for comp, fld, path in found:
-                        extent = next((c for kind, c in path if kind == "Extent"), None)
-                        order = next((o for kind, o in path if kind == "Multiply"), 0)
-                        _add(moving, comp, fld, key, factor, order, extent)
-                        reached = True
+                    reached += [(comp, fld, factor, path) for comp, fld, path in found]
             if not reached:
                 raise Unsupported("No component reached")
+            if key is None:
+                # Event-played sequences come in pairs through a transform hub: the one that starts at rest opens the
+                # part (the slider); the other plays it back closed.
+                if not all(any(kind == "Hub" for kind, _ in path) for *_, path in reached):
+                    skipped.append({"Control": "sequence " + node.rsplit(":", 1)[-1], "Reason": "played by events without a transform hub"})
+                    continue
+                if not all(_is_identity(factor_matrix(f, 0.0)) for _, _, f, _ in reached):
+                    skipped.append({"Control": "sequence " + node.rsplit(":", 1)[-1] + " (" + ", ".join(sorted(set(names))) + ")",
+                                    "Reason": "closing sequence: plays the opening one back"})
+                    continue
+                if any("headlight" in x for x in names):
+                    key, group, label = "popup_headlights", "Lights", "Pop-up headlights"
+                else:
+                    key, group, label = "sequence_" + node.rsplit(":", 1)[-1], "Other", ", ".join(sorted(set(names)))
+            elif key == "aero":
+                label = "Rear wing" if any("spoiler" in x or "wing" in x for x in names) else \
+                    "Air vents" if any("vent" in x for x in names) else "Active aero"
+            else:
+                label = "Airbrake"
+            for comp, fld, factor, path in reached:
+                extent = next((c for kind, c in path if kind == "Extent"), None)
+                order = next((o for kind, o in path if kind == "Multiply"), 0)
+                _add(moving, comp, fld, key, factor, order, extent)
             if not any(c["Key"] == key for c in controls):
                 controls.append({"Key": key, "Label": label, "Group": group, "Source": "SequenceEntity " + ", ".join(sorted(set(names)))})
         except (Unsupported, KeyError, TypeError) as exc:
             issues.append("%s sequence: %s" % (key, exc))
+
+
+def _is_identity(m, tolerance=1e-5):
+    return all(abs(m[i][j] - (1.0 if i == j else 0.0)) <= tolerance for i in range(4) for j in range(4))
 
 
 def _add(moving, comp, fld, key, factor, order, extent):

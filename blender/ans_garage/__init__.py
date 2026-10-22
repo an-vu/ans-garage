@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 0), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 1), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -265,6 +265,16 @@ def import_steps(filepath, assemble=True, materials=True):
     return count, failures
 
 
+def wrapped(layout, context, text, icon="NONE"):
+    """A label that wraps to the sidebar's width instead of being cut off with "..."."""
+    import textwrap
+    scale = context.preferences.system.ui_scale
+    chars = max(12, int((context.region.width - 50 * scale) / (6.5 * scale)))
+    col = layout.column(align=True)
+    for i, line in enumerate(textwrap.wrap(text, chars) or [""]):
+        col.label(text=line, icon=icon if i == 0 else ("BLANK1" if icon != "NONE" else "NONE"))
+
+
 def draw_status(self, context):
     """Progress bar in Blender's status bar while an import runs (always visible, whatever the sidebar shows)."""
     if not RUN:
@@ -379,7 +389,7 @@ def register():
         bl_idname = "import_scene.ans_garage_locate_tires"
         bl_label = "Locate tire library"
         filename_ext = ".json"
-        filter_glob: StringProperty(default="tires.json", options={"HIDDEN"})
+        filter_glob: StringProperty(default="*tires.json", options={"HIDDEN"})
 
         def execute(self, context):
             folder = str(Path(self.filepath).parent)
@@ -462,7 +472,7 @@ def register():
         bl_label = "Assemble imported vehicle meshes"
         bl_options = {"REGISTER", "UNDO"}
         filename_ext = ".json"
-        filter_glob: StringProperty(default="manifest.json", options={"HIDDEN"})
+        filter_glob: StringProperty(default="*manifest.json", options={"HIDDEN"})
         def execute(self, context):
             try:
                 root, _ = assembly_module().assemble_existing(self.filepath)
@@ -525,7 +535,7 @@ def register():
                           "material swatches), then build supported materials")
         bl_options = {"REGISTER", "UNDO"}
         filename_ext = ".json"
-        filter_glob: StringProperty(default="textures.json", options={"HIDDEN"})
+        filter_glob: StringProperty(default="*textures.json", options={"HIDDEN"})
         def execute(self, context):
             folder = Path(self.filepath).resolve().parent
             if not (folder / "textures.json").is_file():
@@ -596,7 +606,7 @@ def register():
                 return {"CANCELLED"}
 
     class VIEW3D_PT_ans_garage_vehicle(bpy.types.Panel):
-        bl_label = "Vehicle"
+        bl_label = "An's Garage %d.%d.%d" % bl_info["version"]
         bl_idname = "VIEW3D_PT_ans_garage_vehicle"
         bl_space_type = "VIEW_3D"
         bl_region_type = "UI"
@@ -607,7 +617,7 @@ def register():
                 return re.sub(r"\bSet([A-Za-z]+)\b", lambda m: "Set " + m.group(1).upper(), value)
             if RUN:
                 run = self.layout.box()
-                run.label(text="Importing " + RUN["name"], icon="IMPORT")
+                wrapped(run, context, "Importing " + RUN["name"], icon="IMPORT")
                 text = "%d%%" % RUN["pct"]
                 if hasattr(run, "progress"):
                     run.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
@@ -615,10 +625,10 @@ def register():
                     run.label(text=text)
                 run.label(text=RUN["stage"] + ("  %d / %d" % (RUN["done"], RUN["total"]) if RUN["total"] > 1 else ""))
                 run.label(text="Elapsed %d:%02d" % divmod(int(time.time() - RUN["start"]), 60))
-                run.label(text="Leave the scene alone until it finishes", icon="INFO")
+                wrapped(run, context, "Leave the scene alone until it finishes", icon="INFO")
                 run.operator("wm.ans_garage_cancel_import", text="Cancel", icon="CANCEL")
             surfaces = self.layout.box()
-            surfaces.label(text="Materials %d.%d.%d: compiled source shaders" % bl_info["version"])
+            wrapped(surfaces, context, "Materials from the game's compiled shaders")
             surfaces.operator("object.ans_garage_build_materials")
             surfaces.operator("import_scene.ans_garage_locate_export", text="Locate export manifest…")
             surfaces.operator("import_scene.ans_garage_locate_shader_defaults", text="Locate shader default textures…")
@@ -630,10 +640,11 @@ def register():
                 except ValueError:
                     summary = None
             if summary:
-                surfaces.label(text="Built %d slots; %d unsupported; %d issues" %
-                               (summary["BuiltSlots"], summary["UnsupportedSlots"], summary["IssueSlots"]))
+                wrapped(surfaces, context, "Built %d slots; %d unsupported; %d issues" %
+                        (summary["BuiltSlots"], summary["UnsupportedSlots"], summary["IssueSlots"]))
                 if summary["UnsupportedSlots"] or summary["IssueSlots"]:
-                    surfaces.label(text="Not a complete car: see An's Garage surface report", icon="ERROR")
+                    wrapped(surfaces, context, "Not a complete car: see the An's Garage surface report in the Text Editor",
+                            icon="ERROR")
             paint = bpy.data.node_groups.get("Unbound | Runtime Ext_Carpaint_Diffuse")
             rgb = next((n for n in paint.nodes if n.type == "RGB"), None) if paint else None
             if rgb:
@@ -642,14 +653,14 @@ def register():
                 if not root.get("unbound_assembly_path"):
                     continue
                 box = self.layout.box()
-                box.label(text=root.name)
+                wrapped(box, context, root.name, icon="AUTO")
                 current = assembly_module().current_preset(root)
-                box.label(text="Current: " + label(current))
+                wrapped(box, context, "Current preset: " + label(current))
                 for preset in json.loads(root["unbound_presets_json"]):
                     op = box.operator("object.ans_garage_preset", text="Apply preset: " + label(preset),
                                       depress=current == preset)
                     op.root, op.preset = root.name, preset
-                box.label(text="Then choose individual parts below.")
+                wrapped(box, context, "Then choose individual parts below.")
                 for group in root.children:
                     key = group.get("unbound_choice_group")
                     if not key:
@@ -671,8 +682,8 @@ def register():
                             op.preset = ""  # Explicit even when replacing an already-loaded older add-on.
                 current = json.loads(root.get("ans_garage_tire_json") or '{"Name": "Stock", "Lettering": "Plain"}')
                 tires = box.box()
-                tires.label(text="Tires: %s%s" % (current["Name"], ", brand lettering" if current["Name"] != "Stock"
-                                                  and current["Lettering"] == "Brand" else ""), icon="MESH_TORUS")
+                wrapped(tires, context, "Tires: %s%s" % (current["Name"], ", brand lettering" if current["Name"] != "Stock"
+                                                         and current["Lettering"] == "Brand" else ""), icon="MESH_TORUS")
                 folder = tire_library(context)
                 index = tire_index(folder) if folder else None
                 if index is None:
@@ -691,9 +702,8 @@ def register():
                 moving = box.box()
                 obj, controls = animation_module().controls(root)
                 if obj is not None and controls:
-                    row = moving.row()
-                    row.label(text="Moving parts (0 closed, 1 open)", icon="ARMATURE_DATA")
-                    row.operator("object.ans_garage_close_moving_parts", text="Close all").root = root.name
+                    wrapped(moving, context, "Moving parts: 0 closed, 1 open", icon="ARMATURE_DATA")
+                    moving.operator("object.ans_garage_close_moving_parts", text="Close all").root = root.name
                     for group in animation_module().GROUPS:
                         rows = [c for c in controls if c["Group"] == group]
                         if not rows:
@@ -704,17 +714,17 @@ def register():
                             if c["Key"] in obj:
                                 col.prop(obj, '["%s"]' % c["Key"], text=c["Label"], slider=True)
                 elif root.get("ans_garage_moving_parts_json"):
-                    moving.label(text="Moving parts: none in this car's data", icon="ARMATURE_DATA")
+                    wrapped(moving, context, "Moving parts: none in this car's data", icon="ARMATURE_DATA")
                 else:
                     moving.operator("object.ans_garage_moving_parts", icon="ARMATURE_DATA").root = root.name
-                box.label(text="See An's Garage assembly report for limits")
+                wrapped(box, context, "Limits: see the An's Garage assembly report in the Text Editor")
             obj = context.active_object
             if obj and obj.get("unbound_materials_path"):
                 box = self.layout.box()
-                box.label(text="Original material slots restored")
+                wrapped(box, context, "Original material slots restored")
                 material = obj.active_material
                 built = material and material.get("unbound_surface_profile")
-                box.label(text=str(material.get("unbound_status", ""))[:64] if built else "Surface shader is unresolved")
+                wrapped(box, context, str(material.get("unbound_status", "")) if built else "Surface shader is unresolved")
                 box.prop(obj, '["unbound_show_material_rows"]', text="Source material variants",
                          icon="TRIA_DOWN" if obj["unbound_show_material_rows"] else "TRIA_RIGHT", emboss=False)
                 if obj["unbound_show_material_rows"]:

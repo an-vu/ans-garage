@@ -35,7 +35,7 @@ def report():
 ADDON_FILES = ["__init__.py", "shader_profiles.json.gz", "tire_shader_evidence.json", "unbound_animation.py", "unbound_assembly.py",
                "unbound_materials.py", "unbound_profiles.py", "unbound_surfaces.py", "unbound_tires.py"]
 check("Install ZIP has exactly the add-on files", sorted(names) == ["ans_garage/" + n for n in ADDON_FILES], names)
-check("Version 1.0.0", unbound_batch.bl_info["version"] == (1, 0, 0))
+check("Version 1.0.1", unbound_batch.bl_info["version"] == (1, 0, 1))
 
 # Negative case first: export without shader-defaults must fail closed with an explicit reason.
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -92,7 +92,7 @@ tires = [o for o in meshes if o.get("unbound_assembled") and
 check("Four assembled tires keep the verified 0.5 tire profile", len(tires) == 4, len(tires))
 saved = out_dir / "fresh.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
-result = {"Version": "1.0.0", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
+result = {"Version": "1.0.1", "Checks": checks, "Summary": r["Summary"], "VisibleByShader": by_shader,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}
 (out_dir / "fresh-validation.json").write_text(json.dumps(result, indent=1))
 print("PASSED", result["Passed"], "FAILED", result["Failed"])
