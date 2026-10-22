@@ -1,3 +1,7 @@
+# 1.0.6
+
+- No changes; version kept in step with An's Garage for Blender 1.0.6.
+
 # 1.0.5
 
 - Vehicle exports write the shared shader default textures once into `shader-defaults` next to the car folders and skip them when it is complete. A car's own folder drops from about 450 MB to about 70 MB.

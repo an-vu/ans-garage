@@ -1,8 +1,8 @@
 """Run the Blender test suite with paths from settings.json.
 
 usage: python tests/run_all.py [full|quick] [--jobs N] [test ...]
-  test: existing, fresh, nodes, tires, plates, vehicle:<export folder name>
-  (no tests)  every test: existing, fresh, nodes, tires, plates and each vehicle in VEHICLES that is exported
+  test: existing, fresh, nodes, tires, plates, conditions, vehicle:<export folder name>
+  (no tests)  every test: existing, fresh, nodes, tires, plates, conditions and each vehicle in VEHICLES that is exported
   quick       nodes and vehicle:murcielago only
   full        run even tests whose inputs have not changed since they last passed
   --jobs N    Blender processes at once (default 4); the tests are independent
@@ -78,6 +78,10 @@ def plan(test):
         args = ["--python", str(HERE / script), "--", str(REPO / "blender"), str(EXPORTS / "murcielago"),
                 str(EXPORTS / "plate-library"), str(OUT / "plates")]
         data = [EXPORTS / "murcielago" / f for f in EXPORT_FILES] + [EXPORTS / "plate-library" / "plates.json"]
+    elif test == "conditions":
+        script = "test_conditions.py"
+        args = ["--python", str(HERE / script), "--", str(REPO / "blender"), str(EXPORTS / "murcielago"), str(OUT / "conditions")]
+        data = [EXPORTS / "murcielago" / f for f in EXPORT_FILES]
     elif test.startswith("vehicle:"):
         name = test.split(":", 1)[1]
         script = "test_vehicle.py"
@@ -127,7 +131,7 @@ def main(argv):
         else:
             tests.append(a)
     if not tests:
-        tests = ["existing", "fresh", "nodes", "tires"] + ["plates"] * (EXPORTS / "plate-library" / "plates.json").is_file() + ["vehicle:" + v for v in VEHICLES if (EXPORTS / v / "manifest.json").is_file()]
+        tests = ["existing", "fresh", "nodes", "tires"] + ["plates"] * (EXPORTS / "plate-library" / "plates.json").is_file() + ["conditions"] + ["vehicle:" + v for v in VEHICLES if (EXPORTS / v / "manifest.json").is_file()]
     if "fresh" in tests:
         # The install test always checks the current code: rebuild the ZIP first (a few seconds).
         subprocess.run([sys.executable, "-I", str(REPO / "tools" / "package_release.py")], check=True, stdout=subprocess.DEVNULL)

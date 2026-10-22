@@ -87,6 +87,53 @@ def position_kind(defs, v, usage):
     return None
 
 
+def object_normals(defs, frame):
+    """{value: "ObjectNormal.<axis>"}: the object-space vertex normal, i.e. the vector the vertex program turns into the
+    frame's world normal with the instance matrix (n0 * row.x + n1 * row.y + n2 * row.z, buffer rows), and that vector
+    normalized (n_k * rsqrt(dot3(n, n)))."""
+    def terms(x, out):
+        d = defs.get(x, "")
+        m = re.match(r"call float @dx\.op\.tertiary\.f32\(i32 46, float (%\d+), float (%\d+), float (%\d+)\)", d)
+        if m:
+            return product(m.group(1), m.group(2), out) and terms(m.group(3), out)
+        m = re.match(r"fmul fast float (%\d+), (%\d+)$", d)
+        return bool(m) and product(m.group(1), m.group(2), out)
+
+    def product(a, b, out):
+        for x, y in ((a, b), (b, a)):
+            m = re.match(r"extractvalue %dx\.types\.ResRet\.f32 %\d+, (\d)$", defs.get(y, ""))
+            if m and "extractvalue" not in defs.get(x, ""):
+                out[int(m.group(1))] = x
+                return True
+        return False
+
+    normal = None
+    for v, name in frame.items():
+        if not name.startswith("WorldNormal."):
+            continue
+        m = re.match(r"fmul fast float (%\d+), (%\d+)$", defs.get(v, ""))
+        found = {}
+        if not m or not any(terms(x, found) for x in m.groups()) or sorted(found) != [0, 1, 2]:
+            return {}
+        if normal not in (None, found):
+            return {}
+        normal = found
+    if normal is None:
+        return {}
+    out = {x: "ObjectNormal." + "xyz"[k] for k, x in normal.items()}
+    vec = set(normal.values())
+    for v, d in defs.items():
+        m = re.match(r"fmul fast float (%\d+), (%\d+)$", d)
+        if not m:
+            continue
+        for scale, x in (m.groups(), m.groups()[::-1]):
+            r = re.match(r"call float @dx\.op\.unary\.f32\(i32 25, float (%\d+)\)", defs.get(scale, ""))
+            dot = defs.get(r.group(1), "") if r else ""
+            if x in vec and dot.startswith("call float @dx.op.dot3.f32") and set(re.findall(r"%\d+", dot)) == vec:
+                out[v] = out[x]
+    return out
+
+
 def view_fade(defs, v):
     """1 - saturate(dot4(cubic(x), view-constant coefficients)): a per-vertex runtime fade from the camera environment."""
     m = re.match(r"fsub fast float 1\.000000e\+00, (%\d+)$", defs.get(v, ""))
@@ -209,6 +256,7 @@ def ps_input_semantics(shader, ps, programs, layouts, frame_rows, layout=None):
                     v = stores.get((r0 + k, c))
                     if v:
                         frame[v] = name + "." + "xyz"[k]
+        normals = object_normals(defs, frame)
         for (row, col), v in stores.items():
             if row in frame_rows and col < 3:
                 continue
@@ -230,6 +278,8 @@ def ps_input_semantics(shader, ps, programs, layouts, frame_rows, layout=None):
                     sem = u + "." + "xyzw"[k]
             elif v in frame:
                 sem = frame[v]
+            elif v in normals:
+                sem = normals[v]
             elif vs_constant(s, s["VS"], defs, v):
                 sem = vs_constant(s, s["VS"], defs, v)
             elif col == 3 and view_space(s["VS"], row, col):

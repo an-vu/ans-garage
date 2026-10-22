@@ -27,6 +27,11 @@ DEBUG = args[3] if len(args) > 3 else None
 BAKED = {}
 CAMERA = (3.0, 1.7, -4.0)
 rng = np.random.default_rng(7)
+# Dirt and dust amount and colour (the paint shader's own), and a rain phase on the wet ramp's rising edge.
+CONDITION_VALUES = {("Ext_DirtColor_Amt", 3): 0.7, ("Ext_DustColor_Amt", 3): 0.4, ("WaterCycle", 0): 0.65,
+                    **{(n, c): P.CONDITIONS[n][2] for n in ("Ext_DirtColor_Amt", "Ext_DustColor_Amt") for c in range(3)}}
+# A case passes when Cycles and Python agree within 1e-3 on all but 1% of samples (branch thresholds hit exactly).
+MAX_MISMATCH = 0.01
 
 
 def tex_fn(slot, k, u, v, layer=0.0):
@@ -250,9 +255,12 @@ def main():
     report = {}
     axes = [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
     inv = [[axes[j][i] for j in range(3)] for i in range(3)]
-    cases = sorted(((sh + "#%s#%d" % ("/".join(layout), i), st, e, layout)
+    cases = sorted(((sh + "#%s#%d" % ("/".join(layout), i), st, e, layout, False)
                     for i, (sh, st, e, layout) in enumerate(chosen.values())), key=lambda c: c[0])
-    for shader, st, prof, layout in cases:
+    # Again with dirt, dust and wet live, at values between clean and fully dirty/wet.
+    cases += [(sh + "#conditions", st, e, layout, True) for sh, st, e, layout, _ in cases
+              if any(x["Name"] in P.CONDITIONS for x in e["Externals"])]
+    for shader, st, prof, layout, conditions in cases:
         prof.setdefault("Kind", P.profile_for(st).get("Kind")); prof["ShaderAsset"] = shader.split("#")[0]
         live = {e["Name"] for e in prof["Externals"] if runtime.get(e["Key"].casefold(), {}).get("Field") == "PaintFacingColorParameter"}
         consts = {n["name"]: 1.0 for n in prof["Nodes"] if n["op"] == "input" and n["name"].startswith("VSConst:")}
@@ -261,11 +269,11 @@ def main():
         except P.Unsupported as exc:
             report[shader] = {"Skipped": str(exc)}
             continue
-        p = P.plan(prof, st, runtime, live, images, materials.parent, consts, rename)
+        p = P.plan(prof, st, runtime, live, images, materials.parent, consts, rename, conditions)
         if p["issues"] or p["unsupported"]:
             report[shader] = {"Skipped": p["issues"] or p["unsupported"]}
             continue
-        if any(not str(k).startswith(("TexCoord", "Color0", "WorldNormal", "WorldPos", "ObjectPos", "ObjectOrigin",
+        if any(not str(k).startswith(("TexCoord", "Color0", "WorldNormal", "WorldPos", "ObjectPos", "ObjectNormal", "ObjectOrigin",
                                       "Time", "ViewFade", "CameraPos", "ViewPos", "P:"))
                for k in p["inputs"]):
             report[shader] = {"Skipped": "inputs outside the test mesh: %s" % p["inputs"]}
@@ -284,7 +292,7 @@ def main():
         b = TestBuilder(mat.node_tree, p["spec"], ctx)
         live_vals = {}
         for key in p["live"]:
-            val = float(p["values"][key])
+            val = float(CONDITION_VALUES.get(key, p["values"][key]))
             b.ctx.setdefault("live", {})[key] = val
             live_vals[key] = val
         fb = lambda v: np.stack([v @ np.array(r, dtype=float) for r in inv], axis=1)
@@ -299,6 +307,7 @@ def main():
             inputs["WorldNormal." + ch] = nfb[:, c]
             inputs["WorldPos." + ch] = pfb[:, c]
             inputs["ObjectPos." + ch] = centers[:, c]
+            inputs["ObjectNormal." + ch] = normals[:, c]
             inputs["ObjectOrigin." + ch] = np.zeros(N * N)
         for c, ch in enumerate("xyz"):
             inputs["ViewPos." + ch] = pfb[:, c] - CAMERA[c]
@@ -323,7 +332,7 @@ def main():
         result = {}
         for start in range(0, len(flat), 3):
             group = flat[start:start + 3]
-            sockets = [b.value(x) for _, x in group]
+            sockets = [b.export(b.value(x)) for _, x in group]
             got = bake(obj, mat, sockets + [0.0] * (3 - len(sockets)), shader.rsplit("/", 1)[-1] + str(start))
             for j, (label, _) in enumerate(group):
                 e = expected[label]
@@ -358,6 +367,14 @@ def main():
               {k: v["Over1e-3"] for k, v in result.items() if v["Over1e-3"]})
         bpy.data.objects.remove(obj)
     out.write_text(json.dumps(report, indent=1))
+    bad = {k: v for k, v in report.items() if "Skipped" not in v
+           and any(o["Over1e-3"] > MAX_MISMATCH * o["Samples"] for o in v.values())}
+    for k in bad:
+        print("FAIL", k.rsplit("/", 1)[-1], {o: r["Over1e-3"] for o, r in bad[k].items() if r["Over1e-3"]})
+    tested = sum("Skipped" not in v for v in report.values())
+    print("PASSED", tested - len(bad), "FAILED", len(bad), "(%d with dirt, dust and wet)" % sum(k.endswith("#conditions") for k in report))
+    if bad:
+        raise SystemExit(1)
 
 
 main()

@@ -47,10 +47,9 @@ def plate_state():
         built = bool(m and m.get("unbound_surface_profile"))
         images = set()
         if m and m.node_tree:
-            for n in m.node_tree.nodes:
-                for g in [n] + (list(n.node_tree.nodes) if n.type == "GROUP" and n.node_tree else []):
-                    if g.type == "TEX_IMAGE" and g.image and "licenseplate_" in g.image.name.lower():
-                        images.add(g.image.name.lower())
+            for g in P._addon().surfaces_module().profiles_module().group_nodes(m.node_tree):
+                if g.type == "TEX_IMAGE" and g.image and "licenseplate_" in g.image.name.lower():
+                    images.add(g.image.name.lower())
         evidence = json.loads(m.get("unbound_surface_evidence_json", "{}")) if m else {}
         text = [a["Value"] for a in evidence.get("Parameters", evidence.get("AppliedParameters", []))
                 if isinstance(a, dict) and a.get("Parameter", "").startswith("Ext_LicensePlateText")]

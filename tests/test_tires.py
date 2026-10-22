@@ -16,6 +16,7 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 sys.path.insert(0, str(addon_parent))
 addon = importlib.import_module("ans_garage")
 addon.register()
+group_nodes = addon.surfaces_module().profiles_module().group_nodes
 checks = []
 
 
@@ -51,8 +52,8 @@ for name, lettering in (("Falken Azenis RT615K+", "Plain"), ("Falken Azenis RT61
     built = [m for m in mats if m.get("unbound_surface_profile")]
     check("%s (%s): tire materials built from the compiled shader" % (name, lettering), mats and len(built) == len(mats),
           sorted(m.name for m in mats)[:4])
-    images = {(n.image.get("unbound_asset") or n.image.name) for m in mats for g in [n for n in m.node_tree.nodes if n.type == "GROUP"]
-              for n in g.node_tree.nodes if n.type == "TEX_IMAGE" and n.image}
+    images = {(n.image.get("unbound_asset") or n.image.name) for m in mats for n in group_nodes(m.node_tree)
+              if n.type == "TEX_IMAGE" and n.image}
     has_lettering = any("tirebomb" in i.lower() for i in images)
     check("%s (%s): lettering texture %s" % (name, lettering, "used" if lettering == "Brand" else "absent"),
           has_lettering == (lettering == "Brand"), sorted(i.rsplit("/", 1)[-1] for i in images if i)[:8])

@@ -90,21 +90,7 @@ def clean_text(text):
 
 def _rebuild(slots):
     """Rebuild the given plate slots from their source materials with the current overrides."""
-    import bpy
-    objects = []
-    for o, i in slots:
-        o.material_slots[i].link = "DATA"  # the source material; rebuilt below with the overrides
-        if o not in objects:
-            objects.append(o)
-    # Rebuilding writes a report of only these slots: keep the car's full surface report as the current one.
-    scene = bpy.context.scene
-    previous = scene.get("unbound_surface_report")
-    report = _addon().surfaces_module().apply_supported_surfaces(objects)
-    if previous:
-        scene["unbound_surface_report"] = previous
-    wanted = {(o.name, i) for o, i in slots}
-    built = [b for b in report["Built"] if (b["Object"], b["Slot"]) in wanted]
-    failed = [u for u in report["Unsupported"] + report["Issues"] if (u.get("Object"), u.get("Slot")) in wanted]
+    built, failed = _addon().surfaces_module().rebuild(slots)
     if failed and not built:
         raise ValueError("Plate not built: " + (failed[0].get("Reason") or failed[0].get("Issue") or "unknown"))
     return len(built)

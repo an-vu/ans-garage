@@ -22,7 +22,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 - **Scope:** every shader in the v293 vehicle shader database (225), keyed by the DJB2-xor hash of the lower-case asset name.
 - **Parameters:** all symbolic except the static undamaged override `Ext_GlassDamage = 0`; the add-on specializes each material.
 - **Textures:** every material-bindable texture stays a sample. The add-on folds samples whose texels are uniform, plus runtime-only textures without a default or binding.
-- **Inputs:** interpolants are named by vertex-declaration element (`Elem<i>.<k>`); routing assumptions are recorded in `AssumedUsages` and checked by the add-on.
+- **Inputs:** interpolants are named by vertex-declaration element (`Elem<i>.<k>`); routing assumptions are recorded in `AssumedUsages` and checked by the add-on. `ObjectNormal` is the vector the vertex program turns into the world normal with the instance matrix (used by the dirt and dust layers).
 - **Constant-stub vertex programs** (skinned layouts): usage-named entries exist for layouts in `known-layouts.json` (shader data folder). Exporting more vehicles and re-running `compile_all.py` extends them.
 - **External cbuffer:** `cb1` wherever it is identifiable by size.
 - **Result:** 115 shaders profiled; the rest contain only forward effect/decal programs. 1.3 MB gzip.
@@ -31,6 +31,13 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 
 - **Import** (`__init__.py`, modal, in slices): FBX → slot restore (`unbound_materials.py`) → surfaces (`unbound_surfaces.py` + `unbound_profiles.py`) → assembly (`unbound_assembly.py`) → moving parts (`unbound_animation.py`) → per-wheel surfaces.
 - **Surfaces:** every slot is built from its compiled profile: specialization (`Spec`, `prove_constants`, `settle`), permutation choice (`choose_entry`), node emission (`NodeBuilder`). Unresolved inputs fail closed with a reason in the surface report.
+- **Node trees:** Blender updates a whole tree after every edit, so `NodeBuilder` puts formulas into nested groups of at most `PART_NODE_LIMIT` (120) nodes and passes values between them through group sockets.
+- **Dirt, dust and wet** (`CONDITIONS`, sidebar toggle): rebuilds the slots whose shader reads `Ext_DirtColor_Amt`, `Ext_DustColor_Amt` or `WaterCycle`, with those parameters live and driven by shared "Unbound | Runtime" groups.
+  - The amounts are the sliders.
+  - The colours are the paint shader's own constants (dirt 0.0331, dust 0.139).
+  - The rain phase is 0.6 + 0.1 × Wet.
+  - The numeric checks (engine constants, view constants, permutations) evaluate them only at slider values 0, 0.5 and 1.
+  - A slot that can't be built with them live is built clean, and the reason is recorded.
 - **Accepted runtime values, recorded on each material:**
   - engine constants with a measured effect ≤ 0.1 are set to 0;
   - glass permutations may differ by ≤ 0.12 in transmittance/reflectance;
@@ -42,7 +49,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 
 ## 4. Validation
 
-`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry), `tires`, `plates`, and `vehicle:<name>` for eight cars covering every moving-part pattern found by the scan of all 200 vehicles.
+`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, and `vehicle:<name>` for eight cars covering every moving-part pattern found by the scan of all 200 vehicles.
 
 ## 5. Open items
 
@@ -50,4 +57,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
    - P1 and Diablo SV lenses: `cb0[1].x` changes them by 0.11–0.21, over the 0.1 limit.
    - BMW M3 E46: one `cs_lglass` lens whose programs `04203732` (full) and `5ac42833` (reduced) differ by up to 0.47 in transmittance; the selection rule is unknown.
    - A frame capture of the running game would settle both.
-2. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.
+2. **Dirt on some surfaces** (they stay clean when the controls are on):
+   - light-glass permutations that agree clean (≤ 0.12) but disagree with dirt; the selection key is unknown;
+   - calipers whose dirt reads `g_brakeAndCaliperCustomizeParam.z`, a per-instance constant the export doesn't have.
+3. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.

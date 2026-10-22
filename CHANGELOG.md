@@ -2,6 +2,22 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.0.6
+
+- **Dirt, dust and wet:** a car still imports clean and dry. **Add dirt, dust and wet** in the sidebar rebuilds its surfaces with three 0–1 sliders (**Remove** goes back).
+  - The sliders drive the game's own formulas, which the game sets while driving.
+  - The paint and body shaders have their own dirt and dust colours built in (dirt 0.0331, dust 0.139). The light lenses read the colour at runtime and get the same values, so lens and body match.
+  - **Wet** follows the rising edge of the shaders' rain cycle: rain phase 0.6 + 0.1 × Wet, and 0 when dry.
+  - The sliders can be keyframed: each one drives its node group through a driver, so keyframed values play back and render.
+  - Surfaces that can't take the controls stay built clean, with the reason in their evidence. On the Murciélago that is 47 of 589:
+    - 36 light-glass slots: every light-glass shader has a full program (dirt and dust tint the lens) and a reduced one (amount only). They agree when clean but not when dirty, and the data doesn't say which one the game draws;
+    - 11 calipers: the dust mask is read at a per-wheel coordinate (`g_brakeAndCaliperCustomizeParam.y/.z`), and the engine sets `.z` at runtime.
+- **Object-space normal:** the shader compiler recognises the normal the vertex program passes before the instance transform. The dirt and dust layers use it; 36 profiles changed, and the Murciélago builds 589 slots (was 585).
+- **Faster material building:** Blender updates a whole node tree after every edit, so large formulas are now built in nested groups of at most 120 nodes. Renderers flatten groups, so the result is the same.
+  - The node test went from 200 s to 158 s, with twice as many cases.
+  - Enabling dirt on a whole car went from 113 s to about 40 s.
+- **Node test:** now fails when Blender and the Python evaluation disagree beyond 1e-3 on more than 1% of samples. It also covers every shader again with the dirt, dust and wet controls live.
+
 ## 1.0.5
 
 - **Exports are about 85% smaller:** the Murciélago went from 443 MB to 60 MB.

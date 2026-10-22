@@ -126,6 +126,7 @@ def surface_steps(objects=None, export_path=None):
               "CompiledProfiles": "Static-state source G-buffer formulas translated to Principled; "
                                   "see each built material's unbound_surface_evidence_json."}
     documents, basis_cache, material_cache, caches = {}, {}, {}, {}
+    caches["conditions"] = bool(bpy.context.scene.get("ans_garage_conditions"))
     for done, obj in enumerate(objects):
         yield done, len(objects)
         if obj.type != "MESH" or not obj.get("unbound_mesh_id"):
@@ -167,6 +168,46 @@ def surface_steps(objects=None, export_path=None):
 def profiles_module():
     from . import unbound_profiles
     return unbound_profiles
+
+
+def rebuild(slots):
+    """Rebuild (object, slot index) pairs from their source materials with the current overrides and settings; returns
+    (built, failed) report rows of those slots. The car's full surface report stays the current one."""
+    import bpy
+    objects = []
+    for o, i in slots:
+        o.material_slots[i].link = "DATA"  # the source material; rebuilt below
+        if o not in objects:
+            objects.append(o)
+    scene = bpy.context.scene
+    previous = scene.get("unbound_surface_report")
+    report = apply_supported_surfaces(objects)
+    if previous:
+        scene["unbound_surface_report"] = previous
+    wanted = {(o.name, i) for o, i in slots}
+    built = [b for b in report["Built"] if (b["Object"], b["Slot"]) in wanted]
+    failed = [u for u in report["Unsupported"] + report["Issues"] if (u.get("Object"), u.get("Slot")) in wanted]
+    return built, failed
+
+
+def set_conditions(enabled):
+    """Turn the scene's Dirt, Dust and Wet controls on or off: rebuild every built slot whose shader reads them."""
+    import bpy
+    P = profiles_module()
+    bpy.context.scene["ans_garage_conditions"] = bool(enabled)
+    slots = []
+    for o in bpy.context.scene.objects:
+        if o.type != "MESH" or not o.get("unbound_mesh_id"):
+            continue
+        for i, s in enumerate(o.material_slots):
+            source = o.data.materials[i] if i < len(o.data.materials) else None
+            if s.link != "OBJECT" or not (s.material and s.material.get("unbound_surface_profile")) or not source:
+                continue
+            profile = P.profile_for(json.loads(source.get("unbound_source_json", "{}")))
+            if profile and any(e["Name"] in P.CONDITIONS for x in profile["Entries"] for e in x["Externals"]):
+                slots.append((o, i))
+    built, failed = rebuild(slots)
+    return len(slots), built, failed
 
 
 def profile_slot(obj, index, slot, material, state, export_path, documents, basis_cache, material_cache, caches, report):
@@ -228,37 +269,45 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         caches[("runtime", str(root))] = P.runtime_values(root / "assembly.json")
     images = caches[("images", str(root))]
     runtime, runtime_notes, assembly_doc = caches[("runtime", str(root))]
-    plans = []
-    for entry, rename in zip(candidates, renames):
-        try:
+
+    def planned(conditions):
+        """(plans, permutation notes) for the candidates, or the reason they can't be built."""
+        plans = []
+        for entry, rename in zip(candidates, renames):
             consts = P.input_constants(entry, obj, assembly_doc)
-        except P.Unsupported as exc:
-            report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"), "Reason": str(exc)})
-            return
-        live_names = {e["Name"] for e in entry["Externals"]
-                      if runtime.get(e["Key"].casefold(), {}).get("Field") == "PaintFacingColorParameter"}
-        pkey = (shader, material.get("unbound_state_key"), str(root), id(entry), tuple(sorted(consts.items())),
-                tuple(sorted(rename.items())), json.dumps(state.get("TextureOverrides"), sort_keys=True),
-                json.dumps(state.get("ParameterOverrides"), sort_keys=True))
-        if pkey not in caches:
-            caches[pkey] = P.plan(entry, state, runtime, live_names, images, root, consts, rename)
-        if caches[pkey]["issues"]:
-            raise ValueError("; ".join(caches[pkey]["issues"]))
-        if caches[pkey]["unsupported"]:
-            report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"),
-                                          "Reason": caches[pkey]["unsupported"]})
-            return
-        plans.append(caches[pkey])
-    akey = ("choice", shader, material.get("unbound_state_key"), "/".join(layout), tuple(sorted(plans[0]["input_consts"].items())))
-    if akey not in caches:
-        try:
-            caches[akey] = P.choose_entry(candidates, plans) if len(plans) > 1 else []
-        except P.Unsupported as exc:
-            caches[akey] = exc
-    if isinstance(caches[akey], P.Unsupported):
-        report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"), "Reason": str(caches[akey])})
+            live_names = {e["Name"] for e in entry["Externals"]
+                          if runtime.get(e["Key"].casefold(), {}).get("Field") == "PaintFacingColorParameter"}
+            pkey = (shader, material.get("unbound_state_key"), str(root), id(entry), tuple(sorted(consts.items())),
+                    tuple(sorted(rename.items())), json.dumps(state.get("TextureOverrides"), sort_keys=True),
+                    json.dumps(state.get("ParameterOverrides"), sort_keys=True), conditions)
+            if pkey not in caches:
+                caches[pkey] = P.plan(entry, state, runtime, live_names, images, root, consts, rename, conditions)
+            if caches[pkey]["issues"]:
+                raise ValueError("; ".join(caches[pkey]["issues"]))
+            if caches[pkey]["unsupported"]:
+                return caches[pkey]["unsupported"]
+            plans.append(caches[pkey])
+        akey = ("choice", shader, material.get("unbound_state_key"), "/".join(layout),
+                tuple(sorted(plans[0]["input_consts"].items())), conditions)
+        if akey not in caches:
+            try:
+                caches[akey] = P.choose_entry(candidates, plans) if len(plans) > 1 else []
+            except P.Unsupported as exc:
+                caches[akey] = exc
+        return str(caches[akey]) if isinstance(caches[akey], P.Unsupported) else (plans, caches[akey])
+
+    try:
+        result, condition_issue = planned(caches["conditions"]), None
+        if isinstance(result, str) and caches["conditions"]:
+            # Built clean and dry rather than not at all; the reason goes in the surface evidence.
+            result, condition_issue = planned(False), result
+    except P.Unsupported as exc:
+        result = str(exc)
+    if isinstance(result, str):
+        report["Unsupported"].append({"Object": obj.name, "Slot": index, "Shader": state.get("Shader"), "Reason": result})
         return
-    permutation_notes = customization_notes + caches[akey]
+    plans, choice = result
+    permutation_notes = customization_notes + choice
     entry, p = candidates[0], plans[0]
     uv = {b["SourceUsage"]: b["BlenderLayer"] for b in json.loads(obj.get("unbound_uv_bindings_json", "[]"))
           if b.get("BlenderLayer") in obj.data.uv_layers}
@@ -325,6 +374,16 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         entry_report["EngineConstantAssumption"] = p["engine"]
     if p.get("view"):
         entry_report["ViewConstantIndependence"] = p["view"]
+    if condition_issue:
+        entry_report["VehicleCondition"] = {"Status": "not applied: built clean and dry", "Reason": condition_issue}
+    if p.get("conditions"):
+        entry_report["RendererChoices"] = [c for c in entry_report["RendererChoices"] if not c.startswith("Static state")]
+        entry_report["RendererChoices"].append("Static state: time 0, undamaged")
+        entry_report["VehicleCondition"] = {
+            "Parameters": p["conditions"],
+            "Reason": "set by the game while driving; driven by the sidebar's Dirt, Dust and Wet sliders (0 = clean and dry)",
+            "Colours": "dirt/dust colour where the shader reads one: the car paint shader's own (dirt 0.0331, dust 0.139)",
+            "Wet": "rain cycle phase 0.6 + 0.1 x Wet (the rising edge of the shaders' wet ramp); 0 when dry"}
     key = (material.name, identity)
     if key not in material_cache:
         material_cache[key] = P.make_profile_material(material, entry, group, connected, entry_report)

@@ -380,14 +380,81 @@ class Unsupported(Exception):
     pass
 
 
+# Shader node trees update in full after every node, link or value written, so one big tree costs the square of its
+# size to build. Formulas go into nested groups of at most this many nodes instead (renderers flatten groups).
+PART_NODE_LIMIT = 120
+SOCKET_TYPES = {"VALUE": "NodeSocketFloat", "VECTOR": "NodeSocketVector", "RGBA": "NodeSocketColor"}
+
+
+def group_nodes(tree):
+    """Every node of a tree and of the groups nested in it."""
+    for n in tree.nodes:
+        yield n
+        if n.type == "GROUP" and n.node_tree:
+            yield from group_nodes(n.node_tree)
+
+
 class NodeBuilder:
     """Emit one specialized profile into a node tree. Values are Python numbers or output sockets."""
 
     def __init__(self, tree, spec, ctx):
         self.t, self.spec, self.ctx = tree, spec, ctx
+        self.main = tree
         self.memo, self.shared, self.column = {}, {}, {}
+        self.count = {tree.name: len(tree.nodes)}
+        self.parts, self.imports = {}, {}  # part tree name -> (group node in main, input node, output node)
 
     # -- primitives
+    def node(self, kind):
+        if self.count[self.t.name] >= PART_NODE_LIMIT:
+            self._new_part()
+        self.count[self.t.name] += 1
+        return self.t.nodes.new(kind)
+
+    def _new_part(self):
+        import bpy
+        k = len(self.parts) + 1
+        part = bpy.data.node_groups.new("%s | part %d" % (self.main.name, k), "ShaderNodeTree")
+        gin, gout = part.nodes.new("NodeGroupInput"), part.nodes.new("NodeGroupOutput")
+        gin.location, gout.location = (-2800, 0), (3200, 0)
+        gnode = self.main.nodes.new("ShaderNodeGroup")
+        gnode.node_tree, gnode.label = part, "Formula part %d" % k
+        gnode.location = (-2400 + 300 * k, 2000)
+        self.parts[part.name] = (gnode, gin, gout)
+        self.count[part.name] = 2
+        self.t, self.column = part, {}
+
+    def link(self, a, b):
+        tree = b.id_data
+        tree.links.new(self.into(a, tree), b)
+
+    def into(self, s, tree):
+        """Output socket `s` as seen inside `tree`: passed out of its part and into `tree` through group sockets."""
+        src = s.id_data
+        if src == tree:
+            return s
+        key = (s.as_pointer(), tree.name)
+        if key not in self.imports:
+            if src != self.main and tree != self.main:
+                self.imports[key] = self.into(self.into(s, self.main), tree)
+                return self.imports[key]
+            name = "v%d" % len(self.imports)
+            if src != self.main:  # out of a part into the main tree
+                gnode, _, gout = self.parts[src.name]
+                src.interface.new_socket(name=name, in_out="OUTPUT", socket_type=SOCKET_TYPES[s.type])
+                src.links.new(s, gout.inputs[name])
+                self.imports[key] = gnode.outputs[name]
+            else:  # from the main tree into a part
+                gnode, gin, _ = self.parts[tree.name]
+                tree.interface.new_socket(name=name, in_out="INPUT", socket_type=SOCKET_TYPES[s.type])
+                self.main.links.new(s, gnode.inputs[name])
+                self.imports[key] = gin.outputs[name]
+        return self.imports[key]
+
+    def export(self, v):
+        """A value as a number or a socket of the main tree."""
+        return v if isinstance(v, (bool, int, float)) else self.into(v, self.main)
+
     def _place(self, node, depth):
         y = self.column.get(depth, 0)
         node.location = (-2400 + depth * 170, 1200 - y)
@@ -397,10 +464,10 @@ class NodeBuilder:
         if isinstance(v, (bool, int, float)):
             sock.default_value = _f(v)
         else:
-            self.t.links.new(v, sock)
+            self.link(v, sock)
 
     def math(self, operation, a, b=None, c=None, clamp=False, depth=10, label=""):
-        n = self.t.nodes.new("ShaderNodeMath")
+        n = self.node("ShaderNodeMath")
         n.operation, n.use_clamp = operation, clamp
         if label:
             n.label = label
@@ -412,14 +479,14 @@ class NodeBuilder:
 
     def separate(self, vec_socket, key, depth=2):
         if key not in self.shared:
-            n = self.t.nodes.new("ShaderNodeSeparateXYZ")
-            self.t.links.new(vec_socket, n.inputs[0])
+            n = self.node("ShaderNodeSeparateXYZ")
+            self.link(vec_socket, n.inputs[0])
             self._place(n, depth)
             self.shared[key] = n
         return self.shared[key]
 
     def combine(self, xyz, depth=12):
-        n = self.t.nodes.new("ShaderNodeCombineXYZ")
+        n = self.node("ShaderNodeCombineXYZ")
         for s, v in zip(n.inputs, xyz):
             self._set(s, v)
         self._place(n, depth)
@@ -427,7 +494,7 @@ class NodeBuilder:
 
     def shared_node(self, key, kind, setup=None, depth=0):
         if key not in self.shared:
-            n = self.t.nodes.new(kind)
+            n = self.node(kind)
             if setup:
                 setup(n)
             self._place(n, depth)
@@ -441,9 +508,9 @@ class NodeBuilder:
             return self.shared[("fb", key)]
         out = []
         for row in self.ctx["blender_to_fb"]:
-            n = self.t.nodes.new("ShaderNodeVectorMath")
+            n = self.node("ShaderNodeVectorMath")
             n.operation = "DOT_PRODUCT"
-            self.t.links.new(vec_socket, n.inputs[0])
+            self.link(vec_socket, n.inputs[0])
             n.inputs[1].default_value = row
             self._place(n, 1)
             out.append(n.outputs["Value"])
@@ -454,9 +521,9 @@ class NodeBuilder:
         v = self.combine(xyz, depth=29)
         out = []
         for row in self.ctx["fb_to_blender"]:
-            n = self.t.nodes.new("ShaderNodeVectorMath")
+            n = self.node("ShaderNodeVectorMath")
             n.operation = "DOT_PRODUCT"
-            self.t.links.new(v, n.inputs[0])
+            self.link(v, n.inputs[0])
             n.inputs[1].default_value = row
             self._place(n, 30)
             out.append(n.outputs["Value"])
@@ -481,7 +548,7 @@ class NodeBuilder:
 
     def mix(self, cond, a_true, b_false, depth=20):
         if not isinstance(a_true, (bool, int, float)) or not isinstance(b_false, (bool, int, float)):
-            n = self.t.nodes.new("ShaderNodeMix")
+            n = self.node("ShaderNodeMix")
             n.data_type, n.clamp_factor = "FLOAT", True
             self._set(n.inputs["Factor"], cond)
             self._set(n.inputs[2], b_false)   # A (factor 0)
@@ -524,7 +591,7 @@ class NodeBuilder:
                 return node.outputs["Alpha"]
             sep = self.shared_node(("colsep", attr["name"]), "ShaderNodeSeparateColor", depth=1)
             if not sep.inputs[0].is_linked:
-                self.t.links.new(node.outputs["Color"], sep.inputs[0])
+                self.link(node.outputs["Color"], sep.inputs[0])
             ch = sep.outputs["rgb".index(comp)]
             return self.srgb_encode(ch, (attr["name"], comp)) if attr["byte"] else ch
         if kind == "WorldPos":
@@ -536,14 +603,22 @@ class NodeBuilder:
         if kind == "ObjectPos":
             tc = self.shared_node("texco", "ShaderNodeTexCoord")
             return self.separate(tc.outputs["Object"], "objsep").outputs["xyz".index(comp)]
+        if kind == "ObjectNormal":
+            # The vertex program's decoded normal, normalized per vertex; Blender's object-space shading normal is
+            # normalized per sample (the same at vertices, a little longer between them).
+            note = "Object-space normal: normalized per sample (the vertex program normalizes per vertex)"
+            if note not in ctx.setdefault("notes", []):
+                ctx["notes"].append(note)
+            tc = self.shared_node("texco", "ShaderNodeTexCoord")
+            return self.separate(tc.outputs["Normal"], "objnsep").outputs["xyz".index(comp)]
         if kind == "ViewPos":
             # Vertex-program view-matrix rows applied to (world position - camera position): camera-space position.
             # Frostbite view space: x right, y up, z forward; Blender camera space: x right, y up, z backward.
             if "viewpos" not in self.shared:
                 g = self.shared_node("geo", "ShaderNodeNewGeometry")
-                vt = self.t.nodes.new("ShaderNodeVectorTransform")
+                vt = self.node("ShaderNodeVectorTransform")
                 vt.vector_type, vt.convert_from, vt.convert_to = "POINT", "WORLD", "CAMERA"
-                self.t.links.new(g.outputs["Position"], vt.inputs[0])
+                self.link(g.outputs["Position"], vt.inputs[0])
                 self._place(vt, 1)
                 self.shared["viewpos"] = self.separate(vt.outputs[0], "viewsep")
             sep = self.shared["viewpos"]
@@ -562,15 +637,15 @@ class NodeBuilder:
             if "campos" not in self.shared:
                 g = self.shared_node("geo", "ShaderNodeNewGeometry")
                 cam = self.shared_node("camdata", "ShaderNodeCameraData")
-                scale = self.t.nodes.new("ShaderNodeVectorMath")
+                scale = self.node("ShaderNodeVectorMath")
                 scale.operation = "SCALE"
-                self.t.links.new(g.outputs["Incoming"], scale.inputs[0])
-                self.t.links.new(cam.outputs["View Distance"], scale.inputs["Scale"])
-                add = self.t.nodes.new("ShaderNodeVectorMath")
+                self.link(g.outputs["Incoming"], scale.inputs[0])
+                self.link(cam.outputs["View Distance"], scale.inputs["Scale"])
+                add = self.node("ShaderNodeVectorMath")
                 add.operation = "ADD"
                 add.label = "Camera position = P + incoming * view distance"
-                self.t.links.new(g.outputs["Position"], add.inputs[0])
-                self.t.links.new(scale.outputs["Vector"], add.inputs[1])
+                self.link(g.outputs["Position"], add.inputs[0])
+                self.link(scale.outputs["Vector"], add.inputs[1])
                 self._place(scale, 1)
                 self._place(add, 1)
                 self.shared["campos"] = add.outputs["Vector"]
@@ -616,13 +691,13 @@ class NodeBuilder:
     def _sample(self, slot, image, coords):
         flipped = self.math("SUBTRACT", 1.0, coords[1], depth=14, label="Game V -> Blender V")
         vec = self.combine([coords[0], flipped, 0.0], depth=15)
-        n = self.t.nodes.new("ShaderNodeTexImage")
+        n = self.node("ShaderNodeTexImage")
         n.image, n.extension, n.interpolation = image, "REPEAT", "Linear"
         n.label = "t%d %s" % (slot, image.get("unbound_asset", image.name))
-        self.t.links.new(vec, n.inputs["Vector"])
+        self.link(vec, n.inputs["Vector"])
         self._place(n, 16)
-        sep = self.t.nodes.new("ShaderNodeSeparateColor")
-        self.t.links.new(n.outputs["Color"], sep.inputs[0])
+        sep = self.node("ShaderNodeSeparateColor")
+        self.link(n.outputs["Color"], sep.inputs[0])
         self._place(sep, 17)
         return [sep.outputs[0], sep.outputs[1], sep.outputs[2], n.outputs["Alpha"]]
 
@@ -639,28 +714,28 @@ class NodeBuilder:
                 self.shared[fkey] = [self.math("MULTIPLY", n[k], self.value(rec["args"][2])) for k in range(3)]
                 return self.shared[fkey][rec["k"]]
             v = self.combine([self.value(a) for a in rec["args"]], depth=20)
-            length = self.t.nodes.new("ShaderNodeVectorMath")
+            length = self.node("ShaderNodeVectorMath")
             length.operation = "LENGTH"
-            self.t.links.new(v, length.inputs[0])
-            norm = self.t.nodes.new("ShaderNodeVectorMath")
+            self.link(v, length.inputs[0])
+            norm = self.node("ShaderNodeVectorMath")
             norm.operation = "NORMALIZE"
-            self.t.links.new(v, norm.inputs[0])
-            scale = self.t.nodes.new("ShaderNodeVectorMath")
+            self.link(v, norm.inputs[0])
+            scale = self.node("ShaderNodeVectorMath")
             scale.operation = "MULTIPLY"
-            self.t.links.new(norm.outputs["Vector"], scale.inputs[0])
+            self.link(norm.outputs["Vector"], scale.inputs[0])
             scale.inputs[1].default_value = tuple(0.5 * s for s in signs)
-            bias = self.t.nodes.new("ShaderNodeVectorMath")
+            bias = self.node("ShaderNodeVectorMath")
             bias.operation = "ADD"
-            self.t.links.new(scale.outputs["Vector"], bias.inputs[0])
+            self.link(scale.outputs["Vector"], bias.inputs[0])
             bias.inputs[1].default_value = (0.5, 0.5, 0.5)
-            nm = self.t.nodes.new("ShaderNodeNormalMap")
+            nm = self.node("ShaderNodeNormalMap")
             nm.space, nm.uv_map = "TANGENT", self.ctx["tangent_uv"]
             nm.label = "Source tangent frame (basis checked against this mesh's FBX)"
-            self.t.links.new(bias.outputs["Vector"], nm.inputs["Color"])
-            world = self.t.nodes.new("ShaderNodeVectorMath")
+            self.link(bias.outputs["Vector"], nm.inputs["Color"])
+            world = self.node("ShaderNodeVectorMath")
             world.operation = "SCALE"
-            self.t.links.new(nm.outputs["Normal"], world.inputs[0])
-            self.t.links.new(length.outputs["Value"], world.inputs["Scale"])
+            self.link(nm.outputs["Normal"], world.inputs[0])
+            self.link(length.outputs["Value"], world.inputs["Scale"])
             for i, n in enumerate((length, norm, scale, bias, nm, world)):
                 self._place(n, 21 + i)
             self.shared[fkey] = self.to_fb(world.outputs["Vector"], fkey)
@@ -1013,6 +1088,100 @@ def live_group(name, value):
     return g
 
 
+# ------------------------------------------------------------------ vehicle condition: dirt, dust, wet
+# The game sets these per car while driving (console Client.SetDirt / Client.SetDust, the rain cycle); every material
+# leaves them at 0, clean and dry. With the sidebar's condition controls they stay live, driven by three sliders:
+#   Ext_DirtColor_Amt.w, Ext_DustColor_Amt.w: dirt and dust amount.
+#   Ext_DirtColor_Amt.xyz, Ext_DustColor_Amt.xyz: dirt and dust colour, read only by the light-glass lenses and one cabin
+#     shader. The game picks it at runtime; the car paint and body shaders bake their own instead (dirt 0.0331, dust
+#     0.139 grey, linear), and the lenses get the same so lens and body dirt match.
+#   WaterCycle.x: rain cycle phase, 0-2. Every shader turns it into the same wet ramp: 0 up to phase 0.6, 1 from 0.7 to
+#     1.2, then drying. The Wet slider follows the rising edge (phase 0.6 + 0.1 x wet; 0 when dry).
+CONDITIONS = {"Ext_DirtColor_Amt": ("Dirt", "ans_garage_dirt", 0.033104799687862396),
+              "Ext_DustColor_Amt": ("Dust", "ans_garage_dust", 0.1389549970626831),
+              "WaterCycle": ("Wet", "ans_garage_wet", None)}
+WET_PHASE = (0.6, 0.1)
+
+
+def condition_group(name):
+    """Shared control for one vehicle condition parameter; its Amount node is driven by the sidebar slider (a driver, so
+    keyframed sliders play back and render)."""
+    import bpy
+    label, prop, color = CONDITIONS[name]
+    gname = "Unbound | Runtime " + name
+    g = bpy.data.node_groups.get(gname)
+    if g and g.get("unbound_condition") == name:
+        return g
+    g = bpy.data.node_groups.new(gname, "ShaderNodeTree")
+    g["unbound_condition"] = name
+    g["unbound_note"] = "Vehicle condition set by the game at runtime; the %s slider in the An's Garage sidebar sets it." % label
+    for c in "xyzw":
+        g.interface.new_socket(name=c, in_out="OUTPUT", socket_type="NodeSocketFloat")
+    out = g.nodes.new("NodeGroupOutput")
+    out.location = (600, 0)
+    amount = g.nodes.new("ShaderNodeValue")
+    amount.name = "Amount"
+    amount.label = label + " (sidebar slider)"
+    amount.outputs[0].default_value = float(getattr(bpy.context.scene, prop, 0.0))
+    driver = amount.outputs[0].driver_add("default_value").driver
+    driver.type = "AVERAGE"
+    var = driver.variables.new()
+    var.targets[0].id_type, var.targets[0].id, var.targets[0].data_path = "SCENE", bpy.context.scene, prop
+    if color is None:
+        phase = g.nodes.new("ShaderNodeMath")
+        phase.operation, phase.label = "MULTIPLY_ADD", "rising edge of the wet ramp"
+        phase.inputs[1].default_value, phase.inputs[2].default_value = WET_PHASE[1], WET_PHASE[0]
+        wet = g.nodes.new("ShaderNodeMath")
+        wet.operation, wet.label = "GREATER_THAN", "dry: phase 0"
+        wet.inputs[1].default_value = 0.0
+        x = g.nodes.new("ShaderNodeMath")
+        x.operation = "MULTIPLY"
+        for i, n in enumerate((phase, wet, x)):
+            n.location = (200 + 150 * i, -100 * (i % 2))
+        g.links.new(amount.outputs[0], phase.inputs[0])
+        g.links.new(amount.outputs[0], wet.inputs[0])
+        g.links.new(phase.outputs[0], x.inputs[0])
+        g.links.new(wet.outputs[0], x.inputs[1])
+        g.links.new(x.outputs[0], out.inputs[0])
+    else:
+        rgb = g.nodes.new("ShaderNodeValue")
+        rgb.label = label + " colour (car paint shader's own, linear)"
+        rgb.outputs[0].default_value = color
+        rgb.location = (0, 200)
+        for i in range(3):
+            g.links.new(rgb.outputs[0], out.inputs[i])
+        g.links.new(amount.outputs[0], out.inputs[3])
+    return g
+
+
+def show_conditions(scene):
+    """Write the sliders into the condition groups now (dragging); their drivers keep them in step on frame changes and
+    renders."""
+    import bpy
+    for g in bpy.data.node_groups:
+        name = g.get("unbound_condition")
+        if name in CONDITIONS and "Amount" in g.nodes:
+            g.nodes["Amount"].outputs[0].default_value = float(getattr(scene, CONDITIONS[name][1], 0.0))
+
+
+def condition_leaves(live, n=4000):
+    """Formula leaf values of the live condition parameters for the numeric checks (evaluate_spec): each sample and
+    parameter takes the sliders' 0, 0.5 or 1, so the checks see only states the sliders can produce, in every mix."""
+    import zlib
+    import numpy as np
+    out = {}
+    for name in sorted({x for x, _ in live if x in CONDITIONS}):
+        amount = np.random.default_rng(zlib.crc32(name.encode())).choice([0.0, 0.5, 1.0], n)
+        color = CONDITIONS[name][2]
+        for c in range(4):
+            if color is None:
+                v = np.where(amount > 0, WET_PHASE[0] + WET_PHASE[1] * amount, 0.0) if c == 0 else 0.0
+            else:
+                v = amount if c == 3 else color
+            out["P:%s.%d" % (name, c)] = v
+    return out
+
+
 # ------------------------------------------------------------------ build one slot
 OUTPUT_SOCKETS = (("Base Color", "NodeSocketColor"), ("Metallic", "NodeSocketFloat"), ("Roughness", "NodeSocketFloat"),
                   ("Normal", "NodeSocketVector"), ("Coat Weight", "NodeSocketFloat"), ("Coat Roughness", "NodeSocketFloat"),
@@ -1111,10 +1280,10 @@ def view_independence(profile, values, live, input_consts, rename, tex_consts):
     names = [view_node_name(u) for u in testable_unresolved(profile)]
     raw = Spec(profile, values, live, input_consts, rename, tex_consts)
     outs = {k: raw.output(k) for k in profile["Outputs"] if k in CONNECTED_OUTPUTS}
-    ref = evaluate_spec(raw, outs, fixed={n: 1.0 for n in names})
-    worst = 0.0
+    worst, case = 0.0, condition_leaves(live)
+    ref = evaluate_spec(raw, outs, fixed={**case, **{n: 1.0 for n in names}})
     for value in VIEW_CONSTANT_RANGE:
-        other = evaluate_spec(raw, outs, fixed={n: value for n in names})
+        other = evaluate_spec(raw, outs, fixed={**case, **{n: value for n in names}})
         for k, a in ref.items():
             d = np.abs(a - other[k])
             d = d[np.isfinite(d)]
@@ -1123,11 +1292,13 @@ def view_independence(profile, values, live, input_consts, rename, tex_consts):
     return worst
 
 
-def plan(profile, state, runtime, live_names, images, root, input_consts=None, rename=None):
+def plan(profile, state, runtime, live_names, images, root, input_consts=None, rename=None, conditions=False):
     """Everything that does not depend on the object's geometry: parameters, specialization, textures."""
     values, applied, issues = parameter_values(profile, state, runtime)
     live = {(n, c) for n in live_names for c in range(4)
             if any(a["Parameter"] == n for a in applied)}
+    if conditions:
+        live |= {(e["Name"], c) for e in profile["Externals"] if e["Name"] in CONDITIONS for c in range(4)}
     input_consts = dict(input_consts or {})
     sources, bind_issues = check_bindings(profile, state, root, images)
     issues += bind_issues
@@ -1142,10 +1313,10 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
         import numpy as np
         consts = sorted(n for n in names if n.startswith("Engine:"))
         keys = [k for k in CONNECTED_OUTPUTS if k in outs]
-        base = evaluate_spec(spec, {k: outs[k] for k in keys}, fixed={c: 0.0 for c in consts})
-        effect = 0.0
+        effect, case = 0.0, condition_leaves(live)
+        base = evaluate_spec(spec, {k: outs[k] for k in keys}, fixed={**case, **{c: 0.0 for c in consts}})
         for value in (0.25, 1.0, 4.0):
-            other = evaluate_spec(spec, {k: outs[k] for k in keys}, fixed={c: value for c in consts})
+            other = evaluate_spec(spec, {k: outs[k] for k in keys}, fixed={**case, **{c: value for c in consts}})
             for k, a in base.items():
                 d = np.abs(a - other[k])
                 if np.isfinite(d).any():
@@ -1195,7 +1366,7 @@ def plan(profile, state, runtime, live_names, images, root, input_consts=None, r
     return {"values": values, "applied": applied, "issues": issues, "spec": spec, "outs": outs,
             "input_consts": input_consts, "unsupported": unsupported, "engine": engine, "view": view,
             "images": image_map, "image_issues": image_issues, "uses_frame": uses_frame, "inputs": inputs,
-            "live": live, "folded_textures": tex_notes}
+            "live": live, "conditions": sorted({n for n, _ in live if n in CONDITIONS}), "folded_textures": tex_notes}
 
 
 def build_group(profile, p, ctx, identity, label):
@@ -1204,6 +1375,7 @@ def build_group(profile, p, ctx, identity, label):
     if existing:
         return existing, json.loads(existing["unbound_connected_json"])
     g = bpy.data.node_groups.new(label, "ShaderNodeTree")
+    b = None
     try:
         g["unbound_profile_identity"] = identity
         spec, outs = p["spec"], p["outs"]
@@ -1212,9 +1384,13 @@ def build_group(profile, p, ctx, identity, label):
         for (name, c) in p["live"]:
             if name not in live_nodes:
                 n = g.nodes.new("ShaderNodeGroup")
-                n.node_tree = live_group(name, [p["values"][(name, k)] for k in range(4)])
-                n.label = "Runtime vehicle input: " + name
-                n.location = (-2600, 1400)
+                if name in CONDITIONS:
+                    n.node_tree = condition_group(name)
+                    n.label = "Vehicle condition: " + CONDITIONS[name][0]
+                else:
+                    n.node_tree = live_group(name, [p["values"][(name, k)] for k in range(4)])
+                    n.label = "Runtime vehicle input: " + name
+                n.location = (-2600, 1400 - 200 * len(live_nodes))
                 live_nodes[name] = n
             b.ctx.setdefault("live", {})[(name, c)] = live_nodes[name].outputs[c]
         connected, results = [], {}
@@ -1223,7 +1399,7 @@ def build_group(profile, p, ctx, identity, label):
             if "Reflectance" in outs:
                 results["Reflectance"] = b.math("ADD", b.value(outs["Reflectance"]), 0.0, clamp=True, depth=32,
                                                 label="1 - common transmittance factor (program's Fresnel term)")
-            return _finish_group(g, results, connected, (("Transmittance", "NodeSocketColor"), ("Reflectance", "NodeSocketFloat")))
+            return _finish_group(g, results, connected, (("Transmittance", "NodeSocketColor"), ("Reflectance", "NodeSocketFloat")), b)
         results["Base Color"] = b.combine([b.value(x) for x in outs["BaseColor"]], depth=32)
         results["Metallic"] = b.value(outs["Metallic"])
         results["Roughness"] = b.math("SUBTRACT", 1.0, b.math("ADD", b.value(outs["Smoothness"]), 0.0, clamp=True, depth=32),
@@ -1240,13 +1416,16 @@ def build_group(profile, p, ctx, identity, label):
             results["Emission Color"] = b.combine([b.value(x) for x in outs["Emissive"]], depth=32)
         if "Discard" in outs and not is_const(outs["Discard"], 0.0):
             results["Alpha"] = b.math("SUBTRACT", 1.0, b.value(outs["Discard"]), depth=33, label="Source discard -> alpha")
-        return _finish_group(g, results, connected, OUTPUT_SOCKETS)
+        return _finish_group(g, results, connected, OUTPUT_SOCKETS, b)
     except Exception:
+        for name in (b.parts if b else {}):
+            bpy.data.node_groups.remove(bpy.data.node_groups[name])
         bpy.data.node_groups.remove(g)
         raise
 
 
-def _finish_group(g, results, connected, sockets):
+def _finish_group(g, results, connected, sockets, b):
+    results = {k: b.export(v) for k, v in results.items()}
     gout = g.nodes.new("NodeGroupOutput")
     gout.location = (3600, 0)
     for name, kind in sockets:
@@ -1260,7 +1439,7 @@ def _finish_group(g, results, connected, sockets):
             g.links.new(v, gout.inputs[name])
             connected.append(name)
     g["unbound_connected_json"] = json.dumps(connected)
-    g["unbound_node_count"] = len(g.nodes)
+    g["unbound_node_count"] = sum(1 for _ in group_nodes(g))
     return g, connected
 
 
@@ -1419,7 +1598,7 @@ def evaluate_spec(spec, roots, n=4000, seed=11, fixed=None):
     def leaf(name):
         # Deterministic per leaf name, independent of traversal order (alternatives must see identical inputs).
         if fixed and name in fixed:
-            return np.full(n, float(fixed[name]))
+            return np.broadcast_to(np.asarray(fixed[name], dtype=float), (n,))
         if name not in leaves:
             rng = np.random.default_rng(zlib.crc32(name.encode()) + seed)
             leaves[name] = (np.floor(rng.random(n) * 256) / 255.0 if name.startswith("Color")
@@ -1596,11 +1775,12 @@ def choose_entry(candidates, plans):
     primary = plans[0]
     notes = []
     keys = [k for k in CONNECTED_OUTPUTS if k in primary["outs"]]
-    ref = evaluate_spec(primary["spec"], {k: primary["outs"][k] for k in keys})
+    case = condition_leaves(primary["live"])
+    ref = evaluate_spec(primary["spec"], {k: primary["outs"][k] for k in keys}, fixed=case)
     for entry, p in zip(candidates[1:], plans[1:]):
         if set(k for k in CONNECTED_OUTPUTS if k in p["outs"]) != set(keys):
             raise Unsupported("Alternative programs expose different outputs for this vertex layout")
-        alt = evaluate_spec(p["spec"], {k: p["outs"][k] for k in keys})
+        alt = evaluate_spec(p["spec"], {k: p["outs"][k] for k in keys}, fixed=case)
         diff = {}
         for k, a in ref.items():
             b = alt[k]

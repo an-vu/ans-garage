@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 5), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 6), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -312,7 +312,7 @@ def draw_status(self, context):
 def register():
     import bpy
     from bpy_extras.io_utils import ImportHelper
-    from bpy.props import StringProperty
+    from bpy.props import BoolProperty, FloatProperty, StringProperty
 
     class IMPORT_SCENE_OT_ans_garage_vehicle(bpy.types.Operator, ImportHelper):
         bl_idname = "import_scene.ans_garage_vehicle"
@@ -549,6 +549,20 @@ def register():
                 obj.update_tag()
             return {"FINISHED"}
 
+    class OBJECT_OT_ans_garage_conditions(bpy.types.Operator):
+        bl_idname = "object.ans_garage_conditions"
+        bl_label = "Dirt, dust and wet"
+        bl_description = ("Rebuild the surfaces that read the game's dirt, dust and wet values so the sliders can set them "
+                          "(heavier shaders); remove them to go back to clean and dry")
+        bl_options = {"REGISTER", "UNDO"}
+        enable: BoolProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            count, built, failed = surfaces_module().set_conditions(self.enable)
+            self.report({"WARNING" if failed else "INFO"}, "%d of %d surfaces rebuilt%s" % (
+                len(built), count, "; see the An's Garage surface report" if failed else ""))
+            return {"FINISHED"}
+
     class WM_OT_ans_garage_cancel_import(bpy.types.Operator):
         bl_idname = "wm.ans_garage_cancel_import"
         bl_label = "Cancel vehicle import"
@@ -676,6 +690,16 @@ def register():
             rgb = next((n for n in paint.nodes if n.type == "RGB"), None) if paint else None
             if rgb:
                 surfaces.prop(rgb.outputs[0], "default_value", text="Vehicle paint")
+            if summary:
+                if context.scene.get("ans_garage_conditions"):
+                    wrapped(surfaces, context, "Dirt, dust and wet: 0 clean and dry", icon="MATFLUID")
+                    col = surfaces.column(align=True)
+                    for label, prop, _ in surfaces_module().profiles_module().CONDITIONS.values():
+                        col.prop(context.scene, prop, text=label, slider=True)
+                    surfaces.operator("object.ans_garage_conditions", text="Remove dirt, dust and wet").enable = False
+                else:
+                    surfaces.operator("object.ans_garage_conditions", text="Add dirt, dust and wet",
+                                      icon="MATFLUID").enable = True
             for root in context.scene.collection.children:
                 if not root.get("unbound_assembly_path"):
                     continue
@@ -775,6 +799,7 @@ def register():
     _registered_classes = [AnsGaragePreferences, IMPORT_SCENE_OT_ans_garage_locate_tires, OBJECT_OT_ans_garage_tire,
                            IMPORT_SCENE_OT_ans_garage_locate_plates, OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
+                           OBJECT_OT_ans_garage_conditions,
                            IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
                            IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,
@@ -783,6 +808,12 @@ def register():
     _menu = menu
     for cls in _registered_classes:
         bpy.utils.register_class(cls)
+
+    def condition_update(scene, context):
+        surfaces_module().profiles_module().show_conditions(scene)
+    for label, prop, _ in surfaces_module().profiles_module().CONDITIONS.values():
+        setattr(bpy.types.Scene, prop, FloatProperty(name=label, min=0.0, max=1.0, subtype="FACTOR", update=condition_update,
+                                                     description="0 clean and dry (can be keyframed)"))
     bpy.types.TOPBAR_MT_file_import.append(_menu)
     bpy.types.STATUSBAR_HT_header.prepend(draw_status)
 
@@ -793,6 +824,8 @@ def unregister():
     bpy.types.STATUSBAR_HT_header.remove(draw_status)
     for cls in reversed(_registered_classes):
         bpy.utils.unregister_class(cls)
+    for _, prop, _ in surfaces_module().profiles_module().CONDITIONS.values():
+        delattr(bpy.types.Scene, prop)
 
 
 if __name__ == "__main__":
