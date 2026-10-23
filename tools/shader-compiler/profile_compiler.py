@@ -35,6 +35,12 @@ VIEW_BIND = 2  # per-view constants (3744 bytes) in these programs
 # routing heuristics rely on (Pos at element 0, a Half4 position delta) are recorded per entry as AssumedUsages.
 AGNOSTIC = False
 ASSUMED = {}
+# Vertex outputs the pattern rules can't name, identified numerically: (vertex program, output row, column) -> semantic.
+# e797477f and c3873ad2 (caliper badge): row 1 = normalize(spin rotation about X of the object normal), so .x is the
+# object normal's x for any spin angle; both match 6fa9a803's recognised ObjectNormal.x (normalized) to 2e-16 over
+# 2000 random tangent-space inputs and angles. (The skinned badge program de1cb89d reads bone buffers: not verified.)
+VERIFIED_OUTPUTS = {("e797477f-bf3f-f595-6cf2-3d35a459885f", 1, 0): "ObjectNormal.x",
+                    ("c3873ad2-6a06-4d31-0c81-7c121d10aa61", 1, 0): "ObjectNormal.x"}
 VIEW_SEMANTICS = {(41, 0): "CameraPos.x", (41, 1): "CameraPos.y", (41, 2): "CameraPos.z", (0, 2): "Time"}
 
 
@@ -280,6 +286,8 @@ def ps_input_semantics(shader, ps, programs, layouts, frame_rows, layout=None):
                 sem = frame[v]
             elif v in normals:
                 sem = normals[v]
+            elif (s["VS"], row, col) in VERIFIED_OUTPUTS:
+                sem = VERIFIED_OUTPUTS[(s["VS"], row, col)]
             elif vs_constant(s, s["VS"], defs, v):
                 sem = vs_constant(s, s["VS"], defs, v)
             elif col == 3 and view_space(s["VS"], row, col):

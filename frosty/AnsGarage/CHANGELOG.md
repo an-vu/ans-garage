@@ -1,3 +1,7 @@
+# 1.1.1
+
+- No changes; version kept in step with An's Garage for Blender 1.1.1.
+
 # 1.1.0
 
 - The rim library index records each rim's `BrakeDiscRatio` (brake disc and caliper size).
