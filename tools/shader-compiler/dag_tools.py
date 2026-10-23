@@ -213,12 +213,15 @@ def rebuild(x, subst, memo):
 def random_leaf_factory(n, rng, fixed=None, continuous=False):
     """Random leaves with branch-covering mixtures. fixed: {predicate(node)->value or array}."""
     cache = {}
+    # Texture contents differ per factory (seed): a sample at fixed coordinates (the plate's text colour at uv 0,0) is
+    # one texel of an unknown texture, never a constant.
+    texture_offset = float(rng.random()) * 1000.0
 
     def leaf(x, coords=None):
         if x.op == "ch":
             # Texture = deterministic function of (slot, channel, coordinates): rewritten samples stay comparable.
             s = x.args[0]
-            h = np.full(n, 12.9898 * (s.args[1] + 1) + 78.233 * (x.args[1] + 1) + (hash(s.args[0]) % 97))
+            h = np.full(n, 12.9898 * (s.args[1] + 1) + 78.233 * (x.args[1] + 1) + (hash(s.args[0]) % 97) + texture_offset)
             for i, c in enumerate(coords):
                 c = np.asarray(c, dtype=float)
                 h = h + np.where(np.isfinite(c), c, 0.0) * (37.719 + 11.13 * i)

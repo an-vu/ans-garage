@@ -8,6 +8,9 @@ from pathlib import Path
 
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wheel_fit  # noqa: E402
+
 args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, first, second, out_dir = Path(args[0]), Path(args[1]), Path(args[2]), Path(args[3])
 out_dir.mkdir(parents=True, exist_ok=True)
@@ -34,6 +37,8 @@ addon.import_manifest(str(second / "manifest.json"))
 roots = [c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path")]
 scopes = [addon.car_scope(r) for r in roots]
 check("Two cars imported", len(roots) == 2 and len(set(scopes)) == 2, scopes)
+ok, error = wheel_fit.panel_draws(addon, bpy.context)
+check("The sidebar draws in full with two cars", ok, error)
 a, b = scopes
 check("Each car has its own paint colour and finish controls",
       all(P.runtime_group(s, n) for s in scopes for n in ("Ext_Carpaint_Diffuse", "Ext_Carpaint_Material")),

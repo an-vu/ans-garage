@@ -12,12 +12,12 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 | Geometry, materials | `Batch` (Plugin.cs) writes LOD0 FBX per mesh and `MaterialRun` (Materials.cs) the material graph and DDS textures. A texture's raw payload is kept only for texture arrays, cube maps and formats the DDS writer doesn't support; every DDS is checked against the payload's SHA-256. |
 | Shader defaults | `Batch.ExportShaderDefaults()` writes the assets in `UnboundShaderDefaults.json` once into a `shader-defaults` folder next to the car folders and skips them when it is complete. Two tiny black textures always fail the exact-payload check. |
 | Assembly | `AssemblyRun` (Assembly.cs): blueprint graph, wheels, items, presets, components and `TrackData` (sequence keyframes for moving parts). |
-| Libraries | `TireLibrary` (Tires.cs) and `PlateLibrary` (Plates.cs), exported once through `LibraryMenu`. |
-| Rim library | `RimLibrary` (Rims.cs): shared `RimsItemData` whose meshes are in a real brand's folder under `vehicles/sharedcustomizedparts/wheels/`; exported once through `LibraryMenu`. |
+| Shared parts | `TireLibrary` (Tires.cs), `RimLibrary` (Rims.cs) and `PlateLibrary` (Plates.cs, plates and frames), exported once through `SharedParts` (Tools > An's Garage > Export shared parts (tires, rims, plates)...): a checkbox per library, one folder, a subfolder each. Exporting only plates or only frames keeps the other half of `plates.json` and merges the texture list. |
+| Rim library | `RimLibrary` (Rims.cs): shared `RimsItemData` whose meshes are in a real brand's folder under `vehicles/sharedcustomizedparts/wheels/`. |
 | Liveries | `Liveries` (Liveries.cs): the car's `StaticLiveryTexturesAsset` (diffuse + material texture per livery), ticked in the export dialog or added later (`AddLiveriesMenu`); written to `<export>/liveries/liveries.json`. Labels come from the texture names without the car's own words; `Car` holds the paint, finish and plate text of the livery's `TemplateItemData`. |
 | Version | `Core.Version` (Core.cs) is the only place the version is written. |
 
-`tools/headless/ExportHarness.cs` (`tools/headless/export.ps1`) runs the same code without the Frosty window: export, assembly, defaults, tires, plates, catalog, scan (moving parts of every vehicle), and lookup modes. It loads a copy of the editor config, never the real one, and never prints keys.
+`tools/headless/ExportHarness.cs` (`tools/headless/export.ps1`) runs the same code without the Frosty window: export, assembly, defaults, tires, rims, plates (optionally only `plates` or `frames`), catalog, scan (moving parts of every vehicle), and lookup modes. It loads a copy of the editor config, never the real one, and never prints keys.
 
 ## 2. Shader profiles (`tools/shader-compiler/compile_all.py`, schema 3)
 
@@ -46,8 +46,12 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
   - `cb2[44].w` (camera exposure) is accepted when the specialized outputs don't change across 1e-5–100;
   - the LED license-plate permutation is a player customization: the printed plate is built.
 - **Assembly:** item meshes are placed at their own customization component; geometry already in car space keeps its place.
+- **Positions of hidden parts:** Blender only refreshes `matrix_world` for objects it evaluates, so a part in a hidden option still reads its old position. Every step that needs a world position uses `world_matrix` (`unbound_assembly.py`: parent chain × `matrix_parent_inverse` × `matrix_basis`) instead.
 - **Moving parts:** 0–1 sliders from the blueprint's animation graph; see `assembly-data.md`.
+- **Shared parts:** one folder (preference `shared_parts`, else the scene's); `shared_parts()` finds each library in it, or in a direct subfolder, by its index file (`tires.json`, `rims.json`, `plates.json`).
 - **Libraries:** tires (`unbound_tires.py`) and license plates (`unbound_plates.py`, with typed plate text) swap textures and meshes through per-object overrides (`unbound_texture_overrides_json`, merged by `set_texture_overrides`, and `unbound_parameter_overrides_json`).
+- **License plate stock:** the game's, from the car's `RaceVehicleItemData` sub-items (`game_stock`: background item `licenseplatebackground_<key>`, a `licenseplateframe_*` item if any, `DefaultLicensePlateText`); without a frame item, the library's `none` frame (the component's default no-frame textures). Applied at import when the plate library is set. The model's own plate textures are a placeholder the game replaces.
+- **Sidebar:** `layout.panel` sub-panels (Blender 4.1+) keyed per car; "Name | value" rows (`field`); dropdowns through `operator_menu_enum` operators that pick by list position (`choose_part`, `choose_preset`, `choose_tire`). Messages go to the car's notes (`car_notes`), hidden per car in `ans_garage_hidden_notes`.
 - **Paint, per car** (`LIVE_FIELDS`): the paint colour and finish (`Ext_Carpaint_Material`) stay live in "Unbound | Runtime <parameter> | <car>" groups, keyed by the export folder; a profile group with live paint belongs to its car. Finish = `floor(16x)` (14 types, `FINISHES`), gloss = `floor(16z)` (`GLOSS_LEVELS`).
 - **Wheels:** the car's own rim items are one choice group ("Rims", one option per set code); tires, brake discs and calipers stay the default. The rim library (`unbound_rims.py`) hides that group and places library rims on the rotation empties, fitted to the factory rim; placed parts carry `unbound_car_assembly`, so the surface builder uses the car's runtime values, wheel facing, controls and shader defaults. Rim colours (`RIM_COLOR_FIELDS`) are live per car.
 - **Wheel fit** (`unbound_wheels.py`): the tire and rim vertex shaders move each vertex by `normalize(P.yz) * lerp(W.y, W.x + W.z, Color0.b)` and along the axle by `(0.5 - Color0.a) * 2 * W.w` when `g_facingParam.w` = 1 (rims) or `-Color0.a * W.w` when it is 0 (tires: one sidewall moves). W = `g_wheelCustomizeParam` (vertex constant buffer b1, row 0; b1 row 1 = `g_facingParam`, row 2.x = `g_rotation`, the spin angle), offsets from the modelled mesh; Color0 as raw bytes, so a byte colour attribute is encoded back from sRGB. A shared geometry-nodes group does the same per object; the offsets are stored in `unbound_wheel_fit` (`unbound_wheel_fit_tire` for the branch). Tires: W.y = (tire diameter − `OuterDiameter`)/2, W.x = (rim diameter − `InnerDiameter`)/2, W.z = 0, W.w = rim width − `Width`, the rim being the factory rim item; checked against a frame capture (Lotus Evija rear: 0.040105, 0.047770, 0, 0.091). Library rims: W.y = 0, W.x + W.z = the radius change, W.w = the width change (only the back lip has alpha 1). The sidewall size (`TireMeshInfos`, largest inner diameter = small sidewall) follows `SmallToMedRatio` / `MedToLargeRatio` against rim ÷ tire diameter. Factory rims are not resized: their blue channel is not a radius weight.
@@ -60,17 +64,13 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 
 ## 4. Validation
 
-`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, `paint`, `liveries`, `rims`, `static`, and `vehicle:<name>` for eight cars covering every moving-part pattern found by the scan of all 200 vehicles.
+`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, `paint`, `liveries`, `rims`, `static`, and `vehicle:<name>` for nine cars covering every moving-part pattern found by the scan of all 200 vehicles. Each vehicle test shows every part option and checks that its parts sit where the assembly placed them.
 
 ## 5. Open items
 
-1. **Light glass needing live values:** 7 surfaces.
-   - P1 and Diablo SV lenses: `cb0[1].x` changes them by 0.11–0.21, over the 0.1 limit.
-   - BMW M3 E46: one `cs_lglass` lens whose programs `04203732` (full) and `5ac42833` (reduced) differ by up to 0.47 in transmittance; the selection rule is unknown.
-   - A frame capture of the running game would settle both.
-2. **Window glass with a livery:** with a livery on, `cs_pbr_glass_max` reads `cb0[1].x` (up to 0.85), the same unknown constant as the P1/Diablo lenses; windows keep their stock look.
-3. **Finish names:** the game's finish table is in code; descriptive names until the capture confirms them.
-4. **Dirt on some surfaces** (they stay clean when the controls are on):
-   - light-glass permutations that agree clean (≤ 0.12) but disagree with dirt; the selection key is unknown;
-   - calipers whose dirt reads `g_brakeAndCaliperCustomizeParam.z`, a per-instance constant the export doesn't have.
-5. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.
+1. **One readable report per car:** the import, material slot, surface and assembly reports are still separate texts.
+2. **Aventador S front caliper:** the "brembo" text shows twice. Unchecked whether the caliper texture prints it and the badge adds it again (possibly as in the game) or the badge is misplaced.
+3. **Unchecked from one wheel of the capture:** the +1 values of the front/side brake flags (only rear-right = −1, −1 was seen); the rim's `BrakeDiscXOffset` (axial disc offset) isn't applied; which rim diameter the tire bead uses when the rim item and TireConfig `RimDiameter` differ.
+4. **Dirt on caliper badges:** the skinned badge program `de1cb89d` reads bone buffers and isn't verified; a spare caliper that isn't on a wheel keeps its badge clean.
+5. **macOS:** not yet tried on a Mac (no Windows-only APIs or paths found by a static scan).
+6. **Other games:** NFS Heat needs its own shader database, programs and profiles (same Frosty route). Hot Pursuit Remastered is not Frostbite and would need a separate exporter.

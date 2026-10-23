@@ -23,11 +23,11 @@ using Newtonsoft.Json;
 [assembly: PluginDisplayName("An's Garage for Frosty")]
 [assembly: PluginAuthor("An Vu")]
 [assembly: PluginVersion(AnsGarage.Core.Version + ".0")]
+// Menu order: the two exports first, then the two that update an existing export (Frosty lists them as registered).
 [assembly: RegisterMenuExtension(typeof(AnsGarage.ExportMenu))]
-[assembly: RegisterMenuExtension(typeof(AnsGarage.TireLibraryMenu))]
-[assembly: RegisterMenuExtension(typeof(AnsGarage.PlateLibraryMenu))]
+[assembly: RegisterMenuExtension(typeof(AnsGarage.SharedPartsMenu))]
+[assembly: RegisterMenuExtension(typeof(AnsGarage.AssemblyMenu))]
 [assembly: RegisterMenuExtension(typeof(AnsGarage.AddLiveriesMenu))]
-[assembly: RegisterMenuExtension(typeof(AnsGarage.RimLibraryMenu))]
 
 namespace AnsGarage
 {
@@ -161,6 +161,10 @@ namespace AnsGarage
             var buttons = Ui.Buttons(cancel, go);
             g.Controls.Add(buttons, 0, 8); g.SetColumnSpan(buttons, 2);
             Controls.Add(g); AcceptButton=go; CancelButton=cancel;
+            Load += (s,e) => {
+                int width = g.GetColumnWidths().Sum() - info.Margin.Horizontal;
+                info.MaximumSize = liveryNote.MaximumSize = MovingParts.MaximumSize = new Size(width, 0);
+            };
         }
     }
 

@@ -49,3 +49,38 @@ def measure(obj, depsgraph):
     return {"FormulaError": error, "Radius": (float(fitted_radius.min()), float(fitted_radius.max())),
             "ModelledRadius": (float(radius.min()), float(radius.max())),
             "Width": float(np.ptp(fitted[:, 0])), "ModelledWidth": float(np.ptp(co[:, 0]))}
+
+
+def panel_draws(addon, context):
+    """Run the sidebar's draw code against a stand-in layout: (True, None) or (False, error). A draw error hides
+    everything below it in Blender, so this catches sections that would vanish."""
+    import traceback
+
+    class Layout:
+        def __getattr__(self, name):
+            return lambda *a, **k: Layout()
+
+        def __setattr__(self, name, value):
+            pass
+
+        def panel(self, *a, **k):  # a sub-panel, drawn open so all of it is drawn
+            return Layout(), Layout()
+
+    import bpy
+    panel = next(c for c in bpy.types.Panel.__subclasses__() if getattr(c, "bl_idname", "").lower().endswith("ans_garage_vehicle")
+                 or c.__name__.endswith("ans_garage_vehicle"))
+
+    class Panel:  # the real panel's draw methods on a stand-in layout
+        layout = Layout()
+
+    for name in ("draw_cars", "draw_car", "draw_paint", "draw_wheels", "draw_plate", "draw_moving"):
+        setattr(Panel, name, getattr(panel, name))
+    real = addon.wrapped
+    addon.wrapped = lambda *a, **k: None  # needs a screen region; background Blender has none
+    try:
+        panel.draw(Panel(), context)
+        return True, None
+    except Exception:
+        return False, traceback.format_exc().strip().splitlines()[-1]
+    finally:
+        addon.wrapped = real

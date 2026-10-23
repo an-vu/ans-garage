@@ -92,6 +92,36 @@ def matrix_from_basis(values):
                    (values[2], values[5], values[8], values[11]), (0, 0, 0, 1)))
 
 
+# Notes at the end of every assembly report: limits of the method, not findings about this car.
+STANDING_NOTES = (
+    "Right-side Rotate flag interpreted as a half turn about source Y; outward rim facing checked, runtime implementation unavailable.",
+    "Tires are fitted per vertex with the game's wheel shader formula (Wheel fit modifier); its inputs are derived from the "
+    "tire configuration and declared part sizes, not yet read from the running game.",
+    "Brake disc/caliper shader sizing, caliper runtime offsets, loaded suspension and camber are not reconstructed.",
+    "Variant collections preserve item permutations; runtime restrictions/offsets are recorded, not guessed.",
+    "Material IDs are custom metadata; no placeholder materials or shaders were generated.")
+
+
+def findings(root):
+    """(issues, unused) of a car's assembly report: issues found while assembling it (standing notes left out) and the
+    number of source parts no part option uses."""
+    lines = [l for l in json.loads(root.get("diagnostics_json") or "[]") if l not in STANDING_NOTES]
+    unused = sum(1 for l in lines if l.startswith("No selected blueprint/item placement"))
+    moving = json.loads(root.get("ans_garage_moving_parts_json") or "{}").get("Issues", [])
+    return len(lines) - unused + len(moving), unused
+
+
+def world_matrix(o):
+    """An object's world matrix from its own transforms and parents. Blender only refreshes matrix_world for objects it
+    evaluates, so an object in a hidden part option still reads its old matrix_world (e.g. (0, 0, 0) for a spoiler that
+    was just placed at its mount)."""
+    if o.parent is None:
+        return o.matrix_basis.copy()
+    if o.parent_type != "OBJECT":
+        return o.matrix_world.copy()
+    return world_matrix(o.parent) @ o.matrix_parent_inverse @ o.matrix_basis
+
+
 def _all_collections(root):
     yield root
     for child in root.children:
@@ -296,7 +326,7 @@ def assemble_existing(manifest_path):
             mapping[source] = clone
             clone["unbound_assembled"] = True
             clone["unbound_original_name"] = source.name
-            clone["unbound_baseline_matrix_world"] = json.dumps([list(r) for r in source.matrix_world])
+            clone["unbound_baseline_matrix_world"] = json.dumps([list(r) for r in world_matrix(source)])
         for source, clone in mapping.items():
             clone.parent = mapping.get(source.parent, parent)
             if source.parent in mapping:
@@ -304,7 +334,7 @@ def assemble_existing(manifest_path):
                 clone.matrix_basis = source.matrix_basis.copy()
             else:
                 clone.matrix_parent_inverse = Matrix.Identity(4)
-                clone.matrix_basis = transform @ source.matrix_world
+                clone.matrix_basis = transform @ world_matrix(source)
             for modifier in clone.modifiers:
                 if modifier.type == "ARMATURE" and modifier.object in mapping:
                     modifier.object = mapping[modifier.object]
@@ -460,7 +490,7 @@ def assemble_existing(manifest_path):
         return m
     def world_box(objects, transform):
         from mathutils import Vector
-        pts = [transform @ o.matrix_world @ Vector(c) for o in objects if o.type == "MESH" for c in o.bound_box]
+        pts = [transform @ world_matrix(o) @ Vector(c) for o in objects if o.type == "MESH" for c in o.bound_box]
         return ([min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)]) if pts else None
 
     def placement_for(blueprint, meshid):
@@ -592,14 +622,7 @@ def assemble_existing(manifest_path):
         instance(meshid, leftovers, records[meshid]["Asset"].rsplit("/", 1)[-1])
         diagnostics.append("No selected blueprint/item placement: " + records[meshid]["Asset"])
     _suppress_duplicates(root)
-    diagnostics += [
-        "Right-side Rotate flag interpreted as a half turn about source Y; outward rim facing checked, runtime implementation unavailable.",
-        "Tires are fitted per vertex with the game's wheel shader formula (Wheel fit modifier); its inputs are derived from the "
-        "tire configuration and declared part sizes, not yet read from the running game.",
-        "Brake disc/caliper shader sizing, caliper runtime offsets, loaded suspension and camber are not reconstructed.",
-        "Variant collections preserve item permutations; runtime restrictions/offsets are recorded, not guessed.",
-        "Material IDs are custom metadata; no placeholder materials or shaders were generated."
-    ]
+    diagnostics += list(STANDING_NOTES)
     root["diagnostics_json"] = json.dumps(diagnostics)
     text = bpy.data.texts.new("An's Garage assembly report")
     text.write("Authored vehicle assembly\n" + "\n".join(diagnostics))

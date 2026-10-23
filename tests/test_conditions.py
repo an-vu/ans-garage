@@ -9,6 +9,9 @@ from pathlib import Path
 
 import bpy
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import wheel_fit  # noqa: E402
+
 args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, out_dir = Path(args[0]), Path(args[1]), Path(args[2])
 out_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +77,24 @@ key = next(iter(with_conditions))
 record = evidence(dirty, key).get("VehicleCondition")
 check("Surface evidence records the condition values", record and record["Parameters"], record)
 check("Plate text kept through the rebuild", root.get("ans_garage_plate_text") == "DIRT 1")
+# Only visible parts are rebuilt; a hidden part option catches up when it is shown.
+S = addon.surfaces_module()
+hidden_stale = S.stale_condition_slots(root.all_objects, visible_only=False)
+group = next((g for g in root.children if g.get("unbound_choice_group") and g["unbound_choice_group"] != "Rims"
+              and any(o in {x for x, _ in hidden_stale} for v in g.children if v.hide_viewport for o in v.all_objects)), None)
+shown = next((v for v in group.children if v.hide_viewport and "unbound_option" in v
+              and any(o in {x for x, _ in hidden_stale} for o in v.all_objects)), None) if group else None
+before = len([1 for o, _ in hidden_stale if shown and o in set(shown.all_objects)])
+original = next((v for v in group.children if "unbound_option" in v and not v.hide_viewport), None) if group else None
+ok = shown is not None and bpy.ops.object.ans_garage_variant(root=root.name, group=group["unbound_choice_group"],
+                                                             option=shown["unbound_option"]) == {"FINISHED"}
+check("Hidden part options catch up when shown (only visible parts are rebuilt when the controls change)",
+      hidden_stale and ok and before and not S.stale_condition_slots(root.all_objects),
+      {"HiddenStale": len(hidden_stale), "Shown": shown.name if shown else None, "CaughtUp": before})
+if original is not None:
+    bpy.ops.object.ans_garage_variant(root=root.name, group=group["unbound_choice_group"], option=original["unbound_option"])
+ok, error = wheel_fit.panel_draws(addon, bpy.context)
+check("The sidebar draws in full with the controls on (parts, paint, wheels stay reachable)", ok, error)
 check("The car's surface report stays current", bpy.context.scene["unbound_surface_report"] == report_name)
 
 groups = {g["unbound_condition"]: g for g in bpy.data.node_groups if g.get("unbound_condition")}
@@ -106,10 +127,12 @@ check("Wet follows the rising edge of the wet ramp (phase 0.6 + 0.1 x wet, 0 whe
 
 ok = bpy.ops.object.ans_garage_conditions(enable=False) == {"FINISHED"}
 back = built_slots()
-check("Removing the controls rebuilds clean and dry surfaces", ok and set(back) == set(clean)
-      and not any(g for _, g in back.values()) and not scene.get("ans_garage_conditions"))
-check("Clean surfaces match the import again", all(back[k][0] == clean[k][0] or back[k][0].split(".")[0] == clean[k][0].split(".")[0]
-                                                   for k in clean))
+visible = {(o.name, i) for o in bpy.context.scene.objects if o.type == "MESH" and o.visible_get() for i in range(len(o.material_slots))}
+check("Removing the controls rebuilds the visible surfaces clean and dry (hidden options catch up when shown)",
+      ok and set(back) == set(clean) and not any(g for k, (_, g) in back.items() if k in visible)
+      and not scene.get("ans_garage_conditions"))
+check("Clean visible surfaces match the import again", all(back[k][0] == clean[k][0] or back[k][0].split(".")[0] == clean[k][0].split(".")[0]
+                                                           for k in clean if k in visible))
 
 result = {"Version": ".".join(map(str, addon.bl_info["version"])), "Checks": checks, "EnableSeconds": seconds,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}

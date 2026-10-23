@@ -1,6 +1,6 @@
 """Tire library: swap a car's tires for real-brand tires (Falken, Toyo) at the car's own stock tire size.
 
-The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export tire library...) and imported
+The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts (tires, rims, plates)...) and imported
 once per .blend into a hidden collection: each tire mesh in a plain and a brand-lettered version. Choosing a tire
 hides the car's stock tire instances and places the library tire the same way the stock tire is placed: the sidewall
 size the game picks for the car's rim, fitted per vertex to the car's tire configuration (Wheel fit), on the wheel's
@@ -19,7 +19,7 @@ STOCK = "Stock"
 def load_index(folder):
     path = Path(folder) / "tires.json"
     if not path.is_file():
-        raise FileNotFoundError("No tires.json in %s (export it in Frosty: Tools > An's Garage > Export tire library...)" % folder)
+        raise FileNotFoundError("No tires.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts (tires, rims, plates)...)" % folder)
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
@@ -157,4 +157,6 @@ def apply_tire(root, name, lettering, folder):
         inst["dimension_status"] = ("Library tire, %.3f m sidewall mesh fitted per vertex (Wheel fit): tread %+.4f m, bead %+.4f m, "
                                     "one sidewall %+.4f m" % ((size["InnerDiameter"],) + offsets))
         wheels.fit(_addon().place_copies(sources, inst, spin, local), offsets, tire=True)
+    # Library templates are built once; placed copies follow the scene's dirt, dust and wet setting.
+    _addon().surfaces_module().catch_up(root.all_objects)
     return notes

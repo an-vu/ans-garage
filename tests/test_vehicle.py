@@ -50,13 +50,47 @@ names = {g.get("unbound_label", g.name): [v.get("unbound_label", v.name) for v i
 check("Parts listed under in-game category names", groups and all(g.get("unbound_label") for g in groups), names)
 presets = list(json.loads(root["unbound_presets_json"])) if root else []
 check("Presets named", True, presets)
-ok, switched = True, 0
+def misplaced(variant):
+    """Parts of a shown option that are not where the assembly placed them (moving parts closed): Blender only
+    refreshes positions of shown parts, so a step that read a hidden option's stale position put it at the car's
+    origin (the Aventador S's spoilers)."""
+    from mathutils import Matrix
+    out = []
+    for inst in [variant] + list(variant.children_recursive):
+        if "unbound_instance_key" not in inst:
+            continue
+        meshid, transform, wheel = json.loads(inst["unbound_instance_key"])
+        if wheel:
+            continue
+        transform = Matrix([transform[i:i + 4] for i in range(0, 16, 4)])
+        for o in inst.objects:
+            if o.parent is not None and o.parent.name in inst.objects:
+                continue
+            baseline = Matrix(json.loads(o["unbound_baseline_matrix_world"]))
+            gap = ((transform @ baseline).translation - o.matrix_world.translation).length
+            if gap > 1e-3:
+                out.append([inst.name, o.name, round(gap, 3)])
+    return out
+
+
+ok, switched, wrong = True, 0, []
 for preset in presets:
     ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset=preset) == {"FINISHED"}
 for g in groups:
     for v in [v for v in g.children if "unbound_option" in v]:
         ok &= bpy.ops.object.ans_garage_variant(root=root.name, group=g["unbound_choice_group"], option=v["unbound_option"]) == {"FINISHED"}
+        bpy.context.view_layer.update()
+        wrong += [[v.get("unbound_label", v.name)] + m for m in misplaced(v)]
         switched += 1
+check("Every part option sits where the assembly placed it when shown", not wrong, wrong[:12])
+# The sidebar's dropdowns pick by position in the list they show.
+group = next(g for g in groups if len([v for v in g.children if "unbound_option" in v]) > 2)
+options = [v for v in group.children if "unbound_option" in v]
+picked = bpy.ops.object.ans_garage_choose_part(root=root.name, group=group["unbound_choice_group"], choice="2") == {"FINISHED"}
+check("Part dropdown shows the option it lists", picked and not options[2].hide_viewport
+      and all(v.hide_viewport for i, v in enumerate(options) if i != 2), [v.get("unbound_label") for v in options[:3]])
+picked = bpy.ops.object.ans_garage_choose_preset(root=root.name, preset="0") == {"FINISHED"}
+check("Preset dropdown applies its first entry (Stock)", picked and addon.assembly_module().current_preset(root) == "Stock")
 ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Every preset and part option switches; Stock restored", ok and addon.assembly_module().current_preset(root) == "Stock",
       {"Presets": len(presets), "Options": switched})

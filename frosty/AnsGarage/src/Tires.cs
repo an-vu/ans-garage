@@ -14,38 +14,88 @@ using Newtonsoft.Json.Linq;
 
 namespace AnsGarage
 {
-    public sealed class TireLibraryMenu : MenuExtension
+    public sealed class SharedPartsMenu : MenuExtension
     {
         public override string TopLevelMenuName { get { return "Tools"; } }
         public override string SubLevelMenuName { get { return "An's Garage"; } }
-        public override string MenuItemName { get { return "Export tire library..."; } }
-        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => LibraryMenu.Run("tire library",
-            "AnsGarage_TireLibrary", TireLibrary.Export, index => ((JArray)index["Tires"]).Count + " tires")); } }
+        public override string MenuItemName { get { return "Export shared parts (tires, rims, plates)..."; } }
+        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => SharedParts.Run()); } }
     }
 
-    // Shared by the library menus: pick a folder, export once with progress, report the result.
-    internal static class LibraryMenu
+    // The parts every car can use (tires, rims, plates, plate frames): tick what to export, pick one folder, and each
+    // library goes into its own subfolder there, where the Blender add-on finds it.
+    internal static class SharedParts
     {
+        private static readonly string[] Labels = { "Tires", "Rims", "License plates", "Plate frames" };
+        private static readonly bool[] Ticked = { true, true, true, true };
+        private static string lastFolder;
         private static int busy;
-        public static void Run(string name, string folderName, Func<string, FrostyTaskWindow, JObject> export, Func<JObject, string> summary)
+
+        public static void Run()
         {
             if (Interlocked.Exchange(ref busy, 1) != 0) return;
             try
             {
-                using (var folder = new FolderBrowserDialog { Description = "Choose a folder for the " + name + " (exported once, shared by all cars)" })
-                {
-                    if (folder.ShowDialog() != DialogResult.OK) return;
-                    string target = Path.Combine(folder.SelectedPath, folderName);
-                    Exception fatal = null; JObject index = null;
-                    FrostyTaskWindow.Show("An's Garage: export " + name, "Reading game data", task => {
-                        try { index = export(target, task); } catch (Exception ex) { fatal = ex; }
-                    }, true, task => { });
-                    MessageBox.Show(fatal != null ? "Export of the " + name + " failed: " + fatal.Message
-                        : char.ToUpper(name[0]) + name.Substring(1) + " exported: " + summary(index) + ".\n" + target, "An's Garage");
-                }
+                if (!Choose()) return;
+                string root = lastFolder;
+                bool tires = Ticked[0], rims = Ticked[1], plates = Ticked[2], frames = Ticked[3];
+                var lines = new List<string>();
+                FrostyTaskWindow.Show("An's Garage: export shared parts", "Reading game data", task => {
+                    Action<string, Func<string>> step = (label, export) => {
+                        try { lines.Add(label + ": " + export()); }
+                        catch (Exception ex) { lines.Add(label + ": failed: " + ex.Message); }
+                    };
+                    if (tires)
+                        step("Tires", () => ((JArray)TireLibrary.Export(Path.Combine(root, "AnsGarage_TireLibrary"), task)["Tires"]).Count + " tires");
+                    if (rims)
+                        step("Rims", () => ((JArray)RimLibrary.Export(Path.Combine(root, "AnsGarage_RimLibrary"), task)["Rims"]).Count + " rims");
+                    // Plates and frames share one library; the part not ticked is kept from the existing one.
+                    if (plates || frames)
+                        step(plates && frames ? "License plates and frames" : plates ? "License plates" : "Plate frames", () => {
+                            var index = PlateLibrary.Export(Path.Combine(root, "AnsGarage_PlateLibrary"), task, plates, frames);
+                            return ((JArray)index["Plates"]).Count + " plates, " + ((JArray)index["Frames"]).Count + " frames";
+                        });
+                }, true, task => { });
+                MessageBox.Show("Exported to " + root + "\n\n" + string.Join("\n", lines), "An's Garage");
             }
             catch (Exception ex) { MessageBox.Show(ex.Message, "An's Garage"); }
             finally { Interlocked.Exchange(ref busy, 0); }
+        }
+
+        // Tick what to export, then pick the folder. False when cancelled or nothing is ticked.
+        private static bool Choose()
+        {
+            using (var form = new Form { Text = "An's Garage: export shared parts", FormBorderStyle = FormBorderStyle.FixedDialog,
+                                         MaximizeBox = false, MinimizeBox = false, StartPosition = FormStartPosition.CenterScreen,
+                                         AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(12) })
+            {
+                var layout = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill };
+                layout.Controls.Add(new Label { AutoSize = true, Margin = new Padding(0, 0, 0, 8),
+                    Text = "Parts every car can use. Export them once into one folder; the Blender add-on\n" +
+                           "finds them there (its preferences: Shared parts folder)." });
+                var boxes = Labels.Select((label, i) => new CheckBox { Text = label, Checked = Ticked[i], AutoSize = true }).ToList();
+                foreach (var b in boxes) layout.Controls.Add(b);
+                var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+                var all = new Button { Text = "All / none", AutoSize = true };
+                all.Click += (s, e) => { bool on = !boxes.All(b => b.Checked); foreach (var b in boxes) b.Checked = on; };
+                var ok = new Button { Text = "Export...", AutoSize = true, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+                buttons.Controls.AddRange(new Control[] { all, ok, cancel });
+                layout.Controls.Add(buttons);
+                form.Controls.Add(layout);
+                form.AcceptButton = ok;
+                form.CancelButton = cancel;
+                if (form.ShowDialog() != DialogResult.OK) return false;
+                for (int i = 0; i < boxes.Count; i++) Ticked[i] = boxes[i].Checked;
+            }
+            if (!Ticked.Any(t => t)) { MessageBox.Show("Nothing ticked, so nothing was exported.", "An's Garage"); return false; }
+            using (var folder = new FolderBrowserDialog { Description = "Choose the shared parts folder (each library gets its own subfolder)",
+                                                          SelectedPath = lastFolder ?? "" })
+            {
+                if (folder.ShowDialog() != DialogResult.OK) return false;
+                lastFolder = folder.SelectedPath;
+            }
+            return true;
         }
     }
 

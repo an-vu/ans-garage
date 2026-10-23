@@ -55,7 +55,7 @@ check("Paint built before (stock, no livery texture)", all(b for b, _ in clean.v
 report_name = bpy.context.scene["unbound_surface_report"]
 
 # A plate on the rear bumper first: the livery must not remove it (same object can hold both).
-bpy.context.scene["ans_garage_plate_library"] = str(plates)
+bpy.context.scene["ans_garage_shared_parts"] = str(plates.parent)
 bpy.ops.object.ans_garage_plate(root=root.name, plate="california")
 livery = index["Liveries"][0]
 ok = bpy.ops.object.ans_garage_livery(root=root.name, livery=livery["Key"], pick=False) == {"FINISHED"}

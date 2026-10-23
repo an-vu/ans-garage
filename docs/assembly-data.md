@@ -42,7 +42,7 @@ The first source permutation is an explicit preview policy. Source template SubI
 ## Experimental interpretation
 
 - `Rotate` is interpreted as 180 degrees around source Y. This produced outward-facing rim badges in the Murciélago, but the engine implementation was not recovered.
-- Tire fitting reproduces the tire vertex shader's formula per vertex (Wheel fit modifier, see `development-notes.md`). The formula is from the shader; its inputs are derived from TireConfig (diameter, section width), the factory rim item (diameter) and the TireMeshInfo reference dimensions, and are still to be read from the running game. The sidewall size follows the tire item's `SmallToMedRatio` / `MedToLargeRatio`.
-- Factory rims keep their source dimensions; library rims are resized with the same formula. Brake disc/caliper sizing (`g_brakeAndCaliperCustomizeParam`), caliper offsets, loaded suspension and animation simulation are not reconstructed.
+- Tire fitting reproduces the tire vertex shader's formula per vertex (Wheel fit modifier, see `development-notes.md`). Its inputs come from TireConfig (diameter, section width), the factory rim item (diameter, width) and the TireMeshInfo reference dimensions, and match a frame capture of the game (Lotus Evija rear). The sidewall size follows the tire item's `SmallToMedRatio` / `MedToLargeRatio`.
+- Factory rims keep their source dimensions; library rims are resized with the same formula. Brake discs and calipers are sized like the game's brake shader (rim diameter × `BrakeDiscRatio` / 0.4). Caliper offsets (`BrakeDiscXOffset`), loaded suspension and animation simulation are not reconstructed.
 
-Production algorithms contain no vehicle-specific offsets or asset IDs. The test suite (`tests/run_all.py`) assembles eight cars and checks placement, part switching, presets and moving parts on each.
+Production algorithms contain no vehicle-specific offsets or asset IDs. The test suite (`tests/run_all.py`) assembles nine cars and checks placement (every part option, shown one by one), part switching, presets and moving parts on each.

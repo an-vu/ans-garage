@@ -11,15 +11,6 @@ using Newtonsoft.Json.Linq;
 
 namespace AnsGarage
 {
-    public sealed class RimLibraryMenu : MenuExtension
-    {
-        public override string TopLevelMenuName { get { return "Tools"; } }
-        public override string SubLevelMenuName { get { return "An's Garage"; } }
-        public override string MenuItemName { get { return "Export rim library..."; } }
-        public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => LibraryMenu.Run("rim library",
-            "AnsGarage_RimLibrary", RimLibrary.Export, index => ((JArray)index["Rims"]).Count + " rims")); } }
-    }
-
     // Real-brand aftermarket rim library. The game keeps each brand's wheel meshes in its own folder; the NFS-made ones
     // (turbofans, LED and "ghost" wheels, drag and off-road wheels, the generic folder) live elsewhere and are left out,
     // with every rim item that uses them. A car's own factory wheels come with the car's export, never from here.

@@ -37,7 +37,7 @@ check("Library: real brands only", len(brands) == 16 and not any(
 
 addon.import_manifest(str(export / "manifest.json"))
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
-bpy.context.scene["ans_garage_rim_library"] = str(library)
+bpy.context.scene["ans_garage_shared_parts"] = str(library.parent)
 factory = next(c for c in root.children if c.get("unbound_choice_group") == "Rims")
 factory_rims = addon.assembly_module().wheels.factory_rims(json.loads(Path(root["unbound_assembly_path"]).read_text(encoding="utf-8-sig")))
 
@@ -58,6 +58,17 @@ def visible(c):
     return not c.hide_viewport
 
 
+def factory_rims_shown():
+    """{wheel: factory rim instances shown} (the car's own wheel set, stock option)."""
+    stock = next(v for v in factory.children if "unbound_option" in v and not v.hide_viewport)
+    out = {}
+    for c in stock.children_recursive:
+        if c.get("source_item") and not c.hide_viewport:
+            w = R.wheel_of(c)
+            out[w] = out.get(w, 0) + 1
+    return out
+
+
 for name in ("BBS LM", "Work Meister S1"):
     started = time.time()
     ok = bpy.ops.object.ans_garage_rim(root=root.name, rim=name, pick=False) == {"FINISHED"}
@@ -65,7 +76,7 @@ for name in ("BBS LM", "Work Meister S1"):
     objs = [o for c in rims for o in c.all_objects if o.type == "MESH"]
     built = [o.material_slots[i].material for o in objs for i in {f.material_index for f in o.data.polygons}
              if i < len(o.material_slots) and o.material_slots[i].material]
-    check("%s on all four wheels" % name, ok and len(rims) == 4 and not visible(factory)
+    check("%s on all four wheels" % name, ok and len(rims) == 4 and not factory_rims_shown()
           and all(o.parent and "Rotation" in o.parent.name for c in rims for o in c.objects if o.parent is None or "Rotation" in o.parent.name),
           {"Instances": len(rims), "Seconds": round(time.time() - started, 1)})
     check("%s: surfaces built from the compiled shaders" % name, built and all(m.get("unbound_surface_profile") for m in built),
@@ -102,8 +113,21 @@ if paint:
     bpy.ops.object.ans_garage_rim_paint_stock(root=root.name)
     check("Stock rim colors restored", [tuple(round(v, 4) for v in s.default_value[:3]) for _, s in paint] == stock)
 ok = bpy.ops.object.ans_garage_rim(root=root.name, rim="Stock", pick=False) == {"FINISHED"}
-check("Stock brings the car's own wheel set back", ok and not library_rims() and visible(factory) and root.get("ans_garage_rim") == "Stock")
+check("Stock brings the car's own wheel set back", ok and not library_rims() and len(factory_rims_shown()) == 4
+      and root.get("ans_garage_rim") == "Stock")
 check("Stock brings the brakes back to their size", brake_scales() == stock_brakes, brake_scales())
+# Front and rear chosen separately, like the game's Front Rims / Rear Rims.
+ok = bpy.ops.object.ans_garage_rim(root=root.name, rim="BBS LM", axle="Front", pick=False) == {"FINISHED"}
+front = sorted(R.wheel_of(c) for c in library_rims())
+shown = factory_rims_shown()
+check("Front rims only: library rims on the front, the car's own on the rear",
+      ok and front == ["Front Left", "Front Right"] and sorted(shown) == ["Rear Left", "Rear Right"]
+      and R.current_rims(root) == {"Front": "BBS LM", "Rear": "Stock"}, {"Library": front, "Factory": shown})
+ok = bpy.ops.object.ans_garage_rim(root=root.name, rim="Work Meister S1", axle="Rear", pick=False) == {"FINISHED"}
+check("Rear rims set separately; the front keeps its own", ok and len(library_rims()) == 4 and not factory_rims_shown()
+      and R.current_rims(root) == {"Front": "BBS LM", "Rear": "Work Meister S1"},
+      sorted((R.wheel_of(c), c.get("source_item", "").rsplit("/", 1)[-1]) for c in library_rims()))
+bpy.ops.object.ans_garage_rim(root=root.name, rim="Stock", pick=False)
 
 result = {"Version": ".".join(map(str, addon.bl_info["version"])), "Checks": checks,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}

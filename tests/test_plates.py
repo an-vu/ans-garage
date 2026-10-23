@@ -32,9 +32,20 @@ for p in index["Plates"]:
 check("Plate library: 50 US states and the chosen extras", groups.get("US states") == 51 and "newjersey" in keys
       and not any(k.startswith(("animated", "nfs", "infinity")) for k in keys), groups)
 
+frames = {f["Key"]: f for f in index.get("Frames", [])}
+check("Library: Simple and Palifornia plates, An's eight frames",
+      {"simple", "deluxe"} <= set(keys) and sorted(frames) == sorted(["none", "simple", "illest", "meanstreets", "shirtstuckedin",
+                                                                       "germanautomotive", "mostwanted", "underground"]),
+      {"Common": [p["Label"] for p in index["Plates"] if p["Group"] == "Common"], "Frames": [f["Label"] for f in frames.values()]})
+
+bpy.context.scene["ans_garage_shared_parts"] = str(library.parent)
 addon.import_manifest(str(export / "manifest.json"))
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
-bpy.context.scene["ans_garage_plate_library"] = str(library)
+# The libraries sit side by side, as Frosty's Export shared parts (tires, rims, plates)... writes them: one shared folder finds them all.
+status = addon.library_status(str(library.parent))
+bpy.context.scene["ans_garage_shared_parts"] = str(library.parent)
+check("Shared parts folder: tires, rims, plates and frames found by themselves",
+      all(found for _, found in status) and addon.library_folder(bpy.context, "plate") == str(library), status)
 slots = P.plate_slots(root)
 check("Car has license plate slots", len(slots) > 0, len(slots))
 
@@ -57,9 +68,40 @@ def plate_state():
     return state
 
 
+def frame_images():
+    """{(object, slot): frame textures} of every plate slot (image nodes in use; the source material's own texture nodes
+    stay in the material, unconnected, for reference)."""
+    out = {}
+    for o, i in slots:
+        m = o.material_slots[i].material
+        names = set()
+        if m and m.node_tree:
+            for g in P._addon().surfaces_module().profiles_module().group_nodes(m.node_tree):
+                if g.type == "TEX_IMAGE" and g.image and "frame" in g.image.name.lower() and any(x.is_linked for x in g.outputs):
+                    names.add(g.image.name.lower())
+        out[(o.name, i)] = sorted(names)
+    return out
+
+
+def plate_samples(o, i, texture):
+    """How many image nodes of a plate slot read the given texture (the text colour is a second read of it)."""
+    m = o.material_slots[i].material
+    return sum(1 for g in P._addon().surfaces_module().profiles_module().group_nodes(m.node_tree)
+               if g.type == "TEX_IMAGE" and g.image and texture in g.image.name.lower() and any(x.is_linked for x in g.outputs))
+
+
 report_name = bpy.context.scene["unbound_surface_report"]
 stock = plate_state()
 check("Every plate slot built", all(s[0] for s in stock.values()), sum(s[0] for s in stock.values()))
+game = P.game_stock(root)
+check("The car as the game sells it: Lakeshore plate, no frame item, text NFS", game == {"Plate": "lakeshore", "Frame": None, "Text": "NFS"}, game)
+check("Imported with the game's plate (not the mesh's California placeholder), no frame, text NFS",
+      all("licenseplate_lakeshore_d.dds" in s[1] for s in stock.values())
+      and all(json.loads(o["unbound_texture_overrides_json"]).get("Ext_T_Frame_Diffuse", "").endswith("no_frame_11_d") for o, _ in slots)
+      and not any("blackframe01" in n for v in frame_images().values() for n in v)
+      and root.get("ans_garage_plate_text") == "NFS",
+      {"Plates": sorted({tuple(s[1]) for s in stock.values()}), "Frames": sorted({tuple(v) for v in frame_images().values()}),
+       "Text": root.get("ans_garage_plate_text")})
 blank = P._addon().surfaces_module().profiles_module().plate_text_values("")
 check("Default plate text is blank (cell 36 everywhere)", blank == {"Ext_LicensePlateText1": [36.0] * 4,
                                                                    "Ext_LicensePlateText2": [36.0] * 3})
@@ -85,9 +127,25 @@ jp = plate_state()
 check("Japanese plate on every plate", ok and all("licenseplate_japanese01_d.dds" in s[1] and
                                                   "licenseplate_california_d.dds" not in s[1] for s in jp.values()))
 
+check("Plate text colour read from the plate's own texture, as in the game (a second read of it)",
+      all(plate_samples(o, i, "licenseplate_japanese01_d") >= 2 for o, i in slots),
+      [plate_samples(o, i, "licenseplate_japanese01_d") for o, i in slots])
+
+stock_frames = frame_images()
+ok = bpy.ops.object.ans_garage_plate_frame(root=root.name, frame="simple", pick=False) == {"FINISHED"}
+simple = frame_images()
+check("Simple frame on every plate", ok and all(any("simple_01_d" in n for n in v) and not any("blackframe01" in n for n in v)
+                                                 for v in simple.values()), sorted({tuple(v) for v in simple.values()}))
+ok = bpy.ops.object.ans_garage_plate_frame(root=root.name, frame="germanautomotive", pick=False) == {"FINISHED"}
+check("German Automotive frame on every plate", ok and all(any("vol6_01" in n for n in v) for v in frame_images().values())
+      and all(s[0] for s in plate_state().values()))
+ok = bpy.ops.object.ans_garage_plate_frame(root=root.name, frame="Stock", pick=False) == {"FINISHED"}
+check("Stock brings the game's frame back (none)", ok and frame_images() == stock_frames and root.get("ans_garage_plate_frame") == "Stock",
+      sorted({tuple(v) for v in frame_images().values()}))
+
 ok = bpy.ops.object.ans_garage_plate(root=root.name, plate="Stock") == {"FINISHED"}
 back = plate_state()
-check("Stock brings the car's own plate back", ok and root.get("ans_garage_plate") == "Stock"
+check("Stock brings the game's plate back (Lakeshore)", ok and root.get("ans_garage_plate") == "Stock"
       and all(s[1] == stock[k][1] for k, s in back.items()))
 check("The car's surface report stays current (plate rebuilds don't replace it)",
       bpy.context.scene["unbound_surface_report"] == report_name, bpy.context.scene["unbound_surface_report"])

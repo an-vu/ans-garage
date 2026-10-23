@@ -157,10 +157,11 @@ static void Run(string[] a) {
   return;
  }
  if(mode=="plates") {
-  // License plate library: a[5] = output folder.
+  // License plate library: a[5] = output folder, a[6] = "plates" or "frames" for only that part (default both).
   var t=NoWindow();
-  var index=PlateLibrary.Export(Path.GetFullPath(a[5]),t);
-  Console.WriteLine("PLATES "+((JArray)index["Plates"]).Count);
+  string part=a.Length>6?a[6]:"";
+  var index=PlateLibrary.Export(Path.GetFullPath(a[5]),t,part!="frames",part!="plates");
+  Console.WriteLine("PLATES "+((JArray)index["Plates"]).Count+" FRAMES "+((JArray)index["Frames"]).Count);
   return;
  }
  if(mode=="tires") {

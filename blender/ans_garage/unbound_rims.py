@@ -1,6 +1,6 @@
 """Rim library: put a real-brand aftermarket rim (BBS, HRE, Rotiform, Work...) on a car.
 
-The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export rim library...); each brand is
+The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts (tires, rims, plates)...); each brand is
 imported into a hidden collection the first time one of its rims is chosen. Choosing a rim hides the car's own wheel
 sets and places the library rim on every wheel's rotation empty, resized from its declared size (Diameter, Width) to the
 car's factory rim on that axle the way the game's wheel shader does it (Wheel fit: the barrel and back lip move, the hub
@@ -20,7 +20,7 @@ STOCK = "Stock"
 def load_index(folder):
     path = Path(folder) / "rims.json"
     if not path.is_file():
-        raise FileNotFoundError("No rims.json in %s (export it in Frosty: Tools > An's Garage > Export rim library...)" % folder)
+        raise FileNotFoundError("No rims.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts (tires, rims, plates)...)" % folder)
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
@@ -82,26 +82,58 @@ def stock_rim_paint(root):
             P.runtime_rgb(g).default_value = list(g["unbound_stock_value"][:3]) + [1.0]
 
 
-def apply_rim(root, name, folder):
-    """Show the named library rim on all four wheels, or the car's own wheel set (Stock). Returns notes."""
+def wheel_of(collection):
+    """Name of the wheel a placed part's collection is mounted on (its objects hang from that wheel's empties)."""
+    for o in collection.all_objects:
+        p = o
+        while p is not None and not p.get("wheel_side"):
+            p = p.parent
+        if p is not None:
+            return p["wheel_side"]
+    return None
+
+
+def current_rims(root):
+    """{"Front": name, "Rear": name} of the rims shown (Stock = the car's own wheel set)."""
+    both = root.get("ans_garage_rim", STOCK)
+    return {a: root.get("ans_garage_rim_" + a.lower(), both) for a in AXLES}
+
+
+AXLES = ("Front", "Rear")
+
+
+def apply_rim(root, name, folder, axle=None):
+    """Show the named library rim, or the car's own wheel set (Stock), on both axles or one ("Front"/"Rear"), as the
+    game's Front Rims / Rear Rims. Returns notes."""
     import bpy
     from mathutils import Matrix
+    axles = AXLES if axle in (None, "Both") else (axle,)
+    assembly = Path(root["unbound_assembly_path"])
+    if name != STOCK and not assembly.is_file():
+        raise FileNotFoundError("This car's export folder has moved: %s is missing. Put the export back where it was "
+                                "imported from to change its rims." % assembly)
+    data = json.loads(assembly.read_text(encoding="utf-8-sig")) if assembly.is_file() else {"Wheels": [], "Items": []}
+    targets = {w["Name"] for w in data["Wheels"] if ("Front" if w["Facing"]["Front"] else "Rear") in axles}
     for c in list(root.children_recursive):
-        if c.get("ans_garage_library_rim"):
+        if c.get("ans_garage_library_rim") and wheel_of(c) in targets:
             for o in list(c.all_objects):
                 bpy.data.objects.remove(o, do_unlink=True)
             bpy.data.collections.remove(c)
+    for a in axles:
+        root["ans_garage_rim_" + a.lower()] = name
+    now = current_rims(root)
+    root["ans_garage_rim"] = now["Front"] if now["Front"] == now["Rear"] else "Mixed"
+    # The car's own wheel set stays the choice group; its rims are hidden on the axles that carry a library rim.
     factory = next((c for c in root.children if c.get("unbound_choice_group") == "Rims"), None)
-    root["ans_garage_rim"] = name
     if factory is not None:
-        factory.hide_viewport = factory.hide_render = name != STOCK
-    assembly = Path(root["unbound_assembly_path"])
+        factory.hide_viewport = factory.hide_render = False
+        for c in factory.children_recursive:
+            if c.get("source_item") and wheel_of(c) in targets:
+                c.hide_viewport = c.hide_render = name != STOCK
     if name == STOCK:
-        if assembly.is_file():
-            data = json.loads(assembly.read_text(encoding="utf-8-sig"))
-            stock = wheels.factory_rims(data)
-            for axle in ("Front", "Rear"):
-                size_axle_brakes(root, data, axle, wheels.brake_scale(stock.get(axle)))
+        stock = wheels.factory_rims(data)
+        for a in axles:
+            size_axle_brakes(root, data, a, wheels.brake_scale(stock.get(a)))
         return []
     if not assembly.is_file():
         raise FileNotFoundError("This car's export folder has moved: %s is missing. Put the export back where it was "
@@ -111,7 +143,6 @@ def apply_rim(root, name, folder):
     if not choices:
         raise ValueError("Rim %s is not in the library" % name)
     index, templates = ensure_library(folder, {r["Folder"] for r in choices})
-    data = json.loads(assembly.read_text(encoding="utf-8-sig"))
     conversion = Matrix([tuple(r) for r in json.loads(root["fbx_to_blender_matrix"])])
     inverse = conversion.inverted()
     stock = {i.get("Location"): i["Raw"] for i in data["Items"] if i["Type"] == "RimsItemData" and i["Default"]}
@@ -119,6 +150,8 @@ def apply_rim(root, name, folder):
     for wheel in data["Wheels"]:
         facing = wheel["Facing"]
         axle = "Front" if facing["Front"] else "Rear"
+        if wheel["Name"] not in targets:
+            continue
         side = "left" if facing["Left"] else "right"
         spin = next((o for o in root.all_objects if o.name.startswith(wheel["Name"] + " | Rotation")), None)
         wheel_col = next((c for c in root.children_recursive if c.name.split(".")[0] == wheel["Name"]), None)

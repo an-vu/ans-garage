@@ -201,6 +201,16 @@ def set_texture_overrides(obj, overrides):
 def rebuild(slots):
     """Rebuild (object, slot index) pairs from their source materials with the current overrides and settings; returns
     (built, failed) report rows of those slots. The car's full surface report stays the current one."""
+    steps = rebuild_steps(slots)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as stop:
+            return stop.value
+
+
+def rebuild_steps(slots):
+    """Generator form of rebuild: yields (done, total) objects, returns (built, failed)."""
     import bpy
     objects = []
     for o, i in slots:
@@ -209,7 +219,7 @@ def rebuild(slots):
             objects.append(o)
     scene = bpy.context.scene
     previous = scene.get("unbound_surface_report")
-    report = apply_supported_surfaces(objects)
+    report = yield from surface_steps(objects)
     if previous:
         scene["unbound_surface_report"] = previous
     wanted = {(o.name, i) for o, i in slots}
@@ -218,24 +228,64 @@ def rebuild(slots):
     return built, failed
 
 
-def set_conditions(enabled):
-    """Turn the scene's Dirt, Dust and Wet controls on or off: rebuild every built slot whose shader reads them."""
+_READS_CONDITIONS = {}
+
+
+def reads_conditions(source):
+    """True when the source material's shader reads dirt, dust or wet (cached per source material)."""
+    key = source.get("unbound_source_json", "")
+    if key not in _READS_CONDITIONS:
+        P = profiles_module()
+        profile = P.profile_for(json.loads(key or "{}"))
+        _READS_CONDITIONS[key] = bool(profile and any(e["Name"] in P.CONDITIONS for x in profile["Entries"] for e in x["Externals"]))
+    return _READS_CONDITIONS[key]
+
+
+def stale_condition_slots(objects=None, visible_only=True):
+    """(object, slot) of built slots whose shader reads dirt/dust/wet but were built with the other setting. Hidden
+    parts (other part options) are left until they are shown (catch_up)."""
     import bpy
-    P = profiles_module()
-    bpy.context.scene["ans_garage_conditions"] = bool(enabled)
+    want = bool(bpy.context.scene.get("ans_garage_conditions"))
     slots = []
-    for o in bpy.context.scene.objects:
-        if o.type != "MESH" or not o.get("unbound_mesh_id"):
+    for o in (objects if objects is not None else bpy.context.scene.objects):
+        if o.type != "MESH" or not o.get("unbound_mesh_id") or (visible_only and not o.visible_get()):
             continue
         for i, s in enumerate(o.material_slots):
             source = o.data.materials[i] if i < len(o.data.materials) else None
             if s.link != "OBJECT" or not (s.material and s.material.get("unbound_surface_profile")) or not source:
                 continue
-            profile = P.profile_for(json.loads(source.get("unbound_source_json", "{}")))
-            if profile and any(e["Name"] in P.CONDITIONS for x in profile["Entries"] for e in x["Externals"]):
+            if bool(s.material.get("unbound_conditions_state")) != want and reads_conditions(source):
                 slots.append((o, i))
-    built, failed = rebuild(slots)
+    return slots
+
+
+def set_conditions_steps(enabled):
+    """Turn the scene's Dirt, Dust and Wet controls on or off: rebuild the visible slots whose shader reads them
+    (yields progress, returns (slots, built, failed)). Hidden part options catch up when they are shown."""
+    import bpy
+    bpy.context.scene["ans_garage_conditions"] = bool(enabled)
+    slots = stale_condition_slots()
+    built, failed = yield from rebuild_steps(slots)
     return len(slots), built, failed
+
+
+def set_conditions(enabled):
+    """set_conditions_steps in one go (scripts, background runs)."""
+    steps = set_conditions_steps(enabled)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as stop:
+            return stop.value
+
+
+def catch_up(objects=None):
+    """Rebuild the visible parts among `objects` that were hidden when dirt/dust/wet were last switched: returns the
+    number of slots rebuilt."""
+    slots = stale_condition_slots(objects)
+    if slots:
+        rebuild(slots)
+    return len(slots)
 
 
 def profile_slot(obj, index, slot, material, state, export_path, documents, basis_cache, material_cache, caches, report):
@@ -448,6 +498,7 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
     key = (material.name, identity)
     if key not in material_cache:
         material_cache[key] = P.make_profile_material(material, entry, group, connected, entry_report)
+        material_cache[key]["unbound_conditions_state"] = bool(caches["conditions"])
     slot.link = "OBJECT"
     slot.material = material_cache[key]
     obj["unbound_materials_path"] = str(root / "materials.json")

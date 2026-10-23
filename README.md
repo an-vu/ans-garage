@@ -11,7 +11,7 @@ Two parts, always the same version:
 
 | Folder | What it is |
 |---|---|
-| `blender/ans_garage/` | An's Garage for Blender (Blender 4.0+, tested on 5.2.2): import, assembly, part switching, materials |
+| `blender/ans_garage/` | An's Garage for Blender (Blender 4.1+, tested on 5.2.3): import, assembly, part switching, materials |
 | `frosty/AnsGarage/` | An's Garage for Frosty: exports a vehicle (geometry, materials, assembly, names) |
 | `tools/shader-compiler/` | Builds `shader_profiles.json.gz` from the game's vehicle shader database |
 | `tools/headless/` | Runs the exporter without opening Frosty |
@@ -26,8 +26,9 @@ No game data is stored here: no textures, meshes, shader bytecode or disassembly
 1. Install An's Garage for Frosty (`frosty/AnsGarage/README.md`).
 2. Install An's Garage for Blender: run `tools/package_release.py` (or zip `blender/ans_garage`), then in Blender use **Preferences → Add-ons → Install from Disk**.
 3. In Frosty, choose **Tools → An's Garage → Export vehicle...**, then **Choose vehicle...**, then **Export...**.
-4. In Blender, choose **File → Import → An's Garage vehicle (.json)**, then pick the export's `manifest.json`.
-5. Press **N → An's Garage** for presets, parts by in-game name, vehicle paint, tires, license plates and moving parts (0–1 sliders for doors, windows, hood, boot and active aero).
+4. Once, for every car: **Tools → An's Garage → Export shared parts (tires, rims, plates)...** into one folder, then set that folder in Blender (add-on preferences, **Shared parts folder**).
+5. In Blender, press **N → An's Garage → Import car…** (or **File → Import → An's Garage vehicle (.json)**) and pick the export's `manifest.json`.
+6. The car's section has its preset, body parts by in-game name, paint and livery, wheels, license plate, moving parts (0–1 sliders for doors, windows, hood, boot and active aero), materials, and dirt, dust and wet.
 
 ## Development
 
@@ -37,9 +38,9 @@ powershell -File frosty\AnsGarage\build.ps1                       # Frosty plugi
 powershell -File tools\headless\export.ps1 export <vehicle folder> <out dir> [blueprint]
 python tools\shader-compiler\compile_all.py <shader_data_dir>\profiles-agnostic.json --jobs 12
 python tools\package_release.py --profiles <shader_data_dir>\profiles-agnostic.json
-python tests\run_all.py                                           # every test, 4 at a time; unchanged ones skipped
+python tests\run_all.py                                           # every test, 12 at a time; unchanged ones skipped
 python tests\run_all.py quick                                     # nodes + Murciélago only
-python tests\run_all.py full --jobs 6                             # re-run everything, 6 at a time
+python tests\run_all.py full                                      # re-run everything (before a release)
 ```
 
 - **Shader compiler input:** `<shader_data_dir>`, made locally from the installed game: `parsed.json`, the program tables, `asm/` (DXC disassembly) and `shader-defaults/`.

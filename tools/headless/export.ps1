@@ -8,7 +8,7 @@ param([Parameter(Mandatory=$true)][string]$Mode,[string]$A='',[string]$B='',[str
 #   hashes    <h1|h2|...> <out.json>             EBX assets whose name hash matches
 #   find-text <term1|term2|...> <out.json>       localized strings containing a term
 #   tires     <out dir>                          Falken and Toyo tire library (once, shared by all cars)
-#   plates    <out dir>                          license plate library (once, shared by all cars)
+#   plates    <out dir> [plates|frames]          license plate library (once, shared by all cars); one part only
 #   rims      <out dir>                          real-brand aftermarket rim library (once, shared by all cars)
 #   scan      <out.json>                         moving parts of every vehicle (animation objects only, read-only)
 #   items     <EBX type> <out.json>              every asset of a type, with names and a field dump

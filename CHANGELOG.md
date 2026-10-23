@@ -2,6 +2,54 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.2
+
+Re-export the shared parts in Frosty (**Tools > An's Garage > Export shared parts (tires, rims, plates)...**) for the
+plate frames and the new plates, and set that folder once in Blender.
+
+### Fixes
+- **Parts stay where they belong when you switch options.** On the Aventador S, spoiler set A sat under the middle of the car and its air vents were 1.8 m off.
+  - Cause: Blender only updates the position of parts it shows. When the import built the moving parts, it read hidden options at their old position (the car's origin) and pinned them there.
+  - Positions are now worked out from each part's own transforms. The vehicle test shows every part option of every test car one by one and checks that each part sits where the assembly placed it.
+- **License plate text in each plate's own colour,** as in the game: the plate shader reads the text colour from the plate texture's top-left texel (frame capture: Lakeshore = dark red #7B0429). It was lime green on every plate.
+  - Cause, in the shader compiler: its constant prover gave unknown textures the same stand-in value on every check, so a texture read at fixed coordinates looked constant and was folded away. Stand-in textures now differ per check; the plate shader and two others keep their fixed-coordinate reads.
+- **The plate the game shows, not the model's placeholder.** A new import gets what the game puts on the car as sold: the plate, frame and text of its vehicle item (`RaceVehicleItemData` sub-items).
+  - On all 10 cars checked: **Lakeshore**, **no frame** (no frame item, so the default no-frame textures) and the text **NFS**.
+  - Before, the plate showed the model's own textures: a California-style plate, light grey in its top-left corner (so near-white text by the game's rule), with a Speedhunters frame. The game replaces both.
+  - **Stock** in the plate and frame pickers means the game's plate and frame. Without the shared parts folder the placeholder stays, and the car's notes say so.
+- The sidebar stopped drawing below the dirt controls with dirt/dust/wet on or with two cars in the scene, so parts, paint, wheels and plates couldn't be changed (three places).
+
+### License plates and wheels
+- **Plate frames** (picker under License plate): None, Simple; Illest (Fatlace), Mean Streets, Shirts Tucked In, German Automotive; Most Wanted, Underground. They override the plate shader's frame textures (`Ext_T_Frame_Diffuse`, `Ext_T_Frame_Normalmap`), as the game's frame items do.
+- **Two more plates:** Simple (the plain plate) and Palifornia (the Palace Edition plate). The vehicle-exclusive plates (BMW i8, Corvette Grand Sport, Polestar 1) are Palm City, already in the library.
+- **Plate frame for new imports:** an add-on preference (Stock, Simple or None).
+- **Front and rear rims separately,** as the game's Front Rims / Rear Rims; the brakes follow each axle.
+
+### Shared parts
+- **One folder for everything every car can use.** Frosty's **Export shared parts (tires, rims, plates)...** exports tires, rims, plates and frames, all or one at a time, into one folder (a subfolder per library).
+- In Blender, set it once: the add-on preferences' **Shared parts folder**, or **Set shared parts folder…** in a car's Wheels or License plate section. The add-on finds each library by its index file; the preferences show what was found (Tires, Rims, License plates, Plate frames, with counts).
+- This replaces the three **Locate … library** buttons and the per-library folder settings.
+
+### Sidebar
+- **Blender's own sub-panels:** each car is a sub-panel named after it (the in-game name that fits: long, medium or short). Inside, like the game's garage: **Preset**, **Body parts** (front to back), **Paint and livery**, **Wheels**, **License plate**, **Moving parts**, **Materials**, **Dirt, dust and wet**. Open or closed is kept per car and saved with the file.
+- Every choice is a "Name | value" row like Blender's own properties: dropdowns for the preset, each body part, factory rims, tires, finish, material, colour shift and gloss; search fields for livery, rims, plate and frame.
+- **Import car…** at the top, under a short welcome line.
+- **Moving parts:** **Open all** next to **Close all**.
+- **Materials** (per car): the header says how many visible surfaces are built; opened, it shows the selected part's material and whether it's built. It reads the car itself, not a report text (one fresh Diablo import showed no materials box; not reproduced).
+- **Dirt, dust and wet:** on and off with the checkbox in its header; it applies to every car in the scene.
+- **Notes:** everything the add-on has to tell about a car sits together at the end of its section, each with an **✕** to hide it (it comes back if what it says changes): surfaces not built, assembly issues and source parts no option uses, no shared parts folder, no liveries exported. This replaces the "Limits" line and the selected-object box.
+- **Tools** (folded, at the bottom): Build missing materials, Find moved car folder…, Find moved shared textures…, Refresh dirt on unhidden parts; each explained in its hover text.
+- Wrapped text is measured with Blender's font at its real interface scale, so it uses the full width without running past the edge.
+- Needs Blender 4.1 or later (sub-panels).
+
+### Dirt, dust and wet
+- **Faster, without freezing Blender:** turning them on or off rebuilds only the visible parts (Diablo: 116 slots instead of 923, 28 s -> 17 s), in slices with a progress bar like the import. A hidden part option catches up when it is shown (part, preset and tire switches); **Refresh dirt on unhidden parts** for parts shown by hand.
+
+### Tests
+- Every part option of every test car is checked for placement; the part and preset dropdowns are checked on every car.
+- The plate test checks the game's plate, frame and text at import and finds the shared libraries in one folder.
+- The sidebar is drawn with every section open, with the dirt controls on and with two cars; the rim test covers front-only and rear-only rims.
+
 ## 1.1.1
 
 - **Caliper badges take dirt and dust,** as in the game. The badge's pixel program reads one value its vertex program computes; it is the surface normal's component along the axle (the spin doesn't change it), verified numerically against a vertex program the compiler already reads (identical to 2e-16), and now recorded in the compiler (`VERIFIED_OUTPUTS`). On the Murciélago 1 of 589 surfaces stays clean under dirt: the badge of a spare caliper that isn't on a wheel (hidden).

@@ -35,7 +35,7 @@ def size(objs):
 
 addon.import_manifest(str(export / "manifest.json"))
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
-bpy.context.scene["ans_garage_tire_library"] = str(library)
+bpy.context.scene["ans_garage_shared_parts"] = str(library.parent)
 stock = [c for c in root.children_recursive if json.loads(c.get("source_item_json", "{}")).get("Type") == "TiresItemData"]
 bpy.context.view_layer.update()
 stock_size = size(stock[0].all_objects) if stock else None

@@ -21,7 +21,7 @@ meshes (mirrors, hood, boot, spoiler) are parented to the empty.
 import json
 import math
 
-from .unbound_assembly import matrix_from_basis
+from .unbound_assembly import matrix_from_basis, world_matrix
 
 SAMPLES = 100
 # Euler order of TransformPart / Rotate* channels: yaw (Y), then pitch (X), then roll (Z). Not stated by the data; of
@@ -492,7 +492,7 @@ def build(root):
             # The bone moves relative to its imported pose (which already places parts modelled around their own
             # origin, e.g. the Murciélago's vents). A bone's Child Of gives empty(s) @ inverse @ pose basis, so with
             # inverse = empty(0)^-1 @ bone rest the bone follows the empty's motion since slider 0.
-            rest = arm.matrix_world @ bone.bone.matrix_local
+            rest = world_matrix(arm) @ bone.bone.matrix_local
             con = bone.constraints.new("CHILD_OF")
             con.name = "An's Garage moving part"
             con.target = ends[comp]
@@ -529,7 +529,7 @@ def build(root):
         rest = conv @ frames_of[comp] @ inv
         for o in inst.all_objects:
             if o.parent is None or o.parent.name not in inst.all_objects:
-                matrix = o.matrix_world.copy()
+                matrix = world_matrix(o)
                 o["ans_garage_rest_matrix_json"] = json.dumps([list(r) for r in matrix])
                 o.parent = ends[comp]
                 o.matrix_parent_inverse = rest.inverted()

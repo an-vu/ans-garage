@@ -23,11 +23,14 @@ Import `manifest.json` in Blender with **File → Import → An's Garage vehicle
 
 The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\AnsGarage\vehicle-catalog.json`. **Refresh list** re-reads it.
 
-**Tools → An's Garage → Add assembly to existing export...** adds or refreshes assembly data in an older export folder.
+**Tools → An's Garage → Add assembly to an existing export...** adds or refreshes assembly data in an older export folder.
 
-**Tools → An's Garage → Export tire library...** exports the Falken and Toyo tires once, for the Blender add-on's Tires section.
+**Tools → An's Garage → Export shared parts (tires, rims, plates)...** exports the parts every car can use, once, into one folder:
+- tick what to export: Tires (Falken, Toyo), Rims (real brands), License plates, Plate frames, or all of them;
+- each library gets its own subfolder (`AnsGarage_TireLibrary`, `AnsGarage_RimLibrary`, `AnsGarage_PlateLibrary`);
+- plates and frames share one library: exporting only one of them keeps the other.
 
-**Tools → An's Garage → Export license plate library...** exports the real license plate backgrounds once, for the Blender add-on's License plate section.
+In Blender, set that folder once (the add-on's preferences, **Shared parts folder**); it finds each library by itself.
 
 ## Build
 
@@ -40,7 +43,7 @@ The Windows .NET Framework compiler (C# 5), x64, no NuGet. The output goes to `b
 
 ## Limits
 
-- Runtime suspension, rim sizing and tire deformation are not reproduced; wheel placement uses the authored rest transforms.
+- Runtime suspension is not reproduced; wheel placement uses the authored rest transforms. Tire, rim and brake sizes are applied in Blender with the game's shader formulas.
 - Item restrictions and permutation offsets are recorded, not evaluated.
 - Kit parts without a localized name keep only their category and brand logo key.
 

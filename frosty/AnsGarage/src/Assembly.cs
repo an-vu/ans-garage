@@ -13,14 +13,13 @@ using FrostySdk.Managers.Entries;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-[assembly: RegisterMenuExtension(typeof(AnsGarage.AssemblyMenu))]
 namespace AnsGarage
 {
     public sealed class AssemblyMenu : MenuExtension
     {
         public override string TopLevelMenuName { get { return "Tools"; } }
         public override string SubLevelMenuName { get { return "An's Garage"; } }
-        public override string MenuItemName { get { return "Add assembly to existing export..."; } }
+        public override string MenuItemName { get { return "Add assembly to an existing export..."; } }
         public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => {
             try {
                 if(!FrostySdk.ProfilesLibrary.IsLoaded(FrostySdk.ProfileVersion.NeedForSpeedUnbound)) throw new InvalidOperationException("Load NFS Unbound first.");

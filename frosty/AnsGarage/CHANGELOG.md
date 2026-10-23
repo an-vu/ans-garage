@@ -1,3 +1,12 @@
+# 1.1.2
+
+- **Tools > An's Garage > Export shared parts (tires, rims, plates)...** replaces the three library menus (tire, rim, license plate):
+  - tick what to export (Tires, Rims, License plates, Plate frames; **All / none**), pick one folder; each library gets its own subfolder there;
+  - plates and frames share one library: exporting only one of them keeps the other (index and texture list merged).
+- The license plate library adds the Simple and Palifornia plates and eight frames (None, Simple, Illest, Mean Streets, Shirts Tucked In, German Automotive, Most Wanted, Underground): each frame item's diffuse and normal map from the shared plate texture collection, and the frame item itself (`Item`), in `plates.json` "Frames".
+- Menu order: Export vehicle, Export shared parts, then the two that update an existing export (Add assembly, Add liveries).
+- Export vehicle window: the notes wrap at the window's width (a fixed width left a gap on the right on scaled screens).
+
 # 1.1.1
 
 - No changes; version kept in step with An's Garage for Blender 1.1.1.
