@@ -28,7 +28,7 @@ out.mkdir(parents=True, exist_ok=True)
 
 with zipfile.ZipFile(out / ("AnsGarage-Blender-%s.zip" % version), "w", zipfile.ZIP_DEFLATED) as z:
     for f in sorted(addon.iterdir()):
-        if f.is_file() and f.suffix in (".py", ".json", ".gz"):
+        if f.is_file() and f.suffix in (".py", ".json", ".gz", ".txt"):
             z.write(f, "ans_garage/" + f.name)
 dll = frosty / "bin" / "AnsGarage.dll"
 if not dll.is_file():

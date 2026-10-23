@@ -50,7 +50,7 @@ def evidence(state, key):
 
 addon.import_manifest(str(export / "manifest.json"))
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
-report_name = bpy.context.scene["unbound_surface_report"]
+report_name = addon.surfaces_module().last_report()
 clean = built_slots()
 check("Imported clean and dry: no condition controls", clean and not any(g for _, g in clean.values())
       and not bpy.context.scene.get("ans_garage_conditions"), len(clean))
@@ -95,7 +95,7 @@ if original is not None:
     bpy.ops.object.ans_garage_variant(root=root.name, group=group["unbound_choice_group"], option=original["unbound_option"])
 ok, error = wheel_fit.panel_draws(addon, bpy.context)
 check("The sidebar draws in full with the controls on (parts, paint, wheels stay reachable)", ok, error)
-check("The car's surface report stays current", bpy.context.scene["unbound_surface_report"] == report_name)
+check("The car's surface report stays current", addon.surfaces_module().last_report() is report_name)
 
 groups = {g["unbound_condition"]: g for g in bpy.data.node_groups if g.get("unbound_condition")}
 scene = bpy.context.scene

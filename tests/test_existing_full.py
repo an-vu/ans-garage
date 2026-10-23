@@ -68,7 +68,7 @@ check("Baseline scene has 593 Unbound meshes", len(meshes) == 593, len(meshes))
 
 status = bpy.ops.import_scene.ans_garage_locate_export(filepath=materials)
 check("Locate export manifest operator finished", status == {"FINISHED"}, status)
-report = json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
+report = addon.surfaces_module().last_report()
 summary = report["Summary"]
 check("No build issues", summary["IssueSlots"] == 0, summary["IssueReasons"])
 check("Car paint slots built", summary["BuiltByShader"].get("cs_pbr_carpaint_max", 0) >= 100, summary["BuiltByShader"])
@@ -106,7 +106,7 @@ check("Visible unbuilt slots listed", True, dict(unbuilt))
 groups_before = {g.name for g in bpy.data.node_groups}
 mats_before = {m.name for m in bpy.data.materials}
 status = bpy.ops.object.ans_garage_build_materials()
-report2 = json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
+report2 = addon.surfaces_module().last_report()
 check("Repeat build is idempotent (no new materials or groups)",
       status == {"FINISHED"} and {m.name for m in bpy.data.materials} == mats_before
       and {g.name for g in bpy.data.node_groups} == groups_before, len(report2["AlreadyBuilt"]))

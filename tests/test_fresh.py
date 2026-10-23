@@ -29,10 +29,10 @@ def check(label, ok, detail=None):
 
 
 def report():
-    return json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
+    return unbound_batch.surfaces_module().last_report()
 
 
-ADDON_FILES = ["__init__.py", "shader_profiles.json.gz", "unbound_animation.py", "unbound_assembly.py",
+ADDON_FILES = ["__init__.py", "greetings.txt", "shader_profiles.json.gz", "unbound_animation.py", "unbound_assembly.py",
                "unbound_liveries.py", "unbound_materials.py", "unbound_plates.py", "unbound_profiles.py", "unbound_rims.py",
                "unbound_surfaces.py", "unbound_tires.py", "unbound_wheels.py"]
 check("Install ZIP has exactly the add-on files", sorted(names) == ["ans_garage/" + n for n in ADDON_FILES], names)

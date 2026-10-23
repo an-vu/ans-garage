@@ -1,3 +1,7 @@
+# 1.1.3
+
+- No changes; version kept in step with An's Garage for Blender 1.1.3.
+
 # 1.1.2
 
 - **Tools > An's Garage > Export shared parts (tires, rims, plates)...** replaces the three library menus (tire, rim, license plate):

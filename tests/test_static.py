@@ -34,7 +34,7 @@ finally:
     static.unlink()
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
 obj, controls = addon.animation_module().controls(root)
-report = bpy.data.texts["An's Garage import report"].as_string()
+report = bpy.data.texts[root["ans_garage_report"]].as_string()
 check("Static export imports without a moving-parts rig", not failures and not controls and root.get("ans_garage_static_export")
       and "exported as a static model" in report, {"Parts": count, "Failures": failures[:2], "Controls": len(controls)})
 ok = bpy.ops.object.ans_garage_moving_parts(root=root.name) == {"FINISHED"}

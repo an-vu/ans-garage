@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 2), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 3), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -223,16 +223,77 @@ def animation_module():
     return unbound_animation
 
 
+class CarReport:
+    """The one readable report of a car ("An's Garage report: <car>" in the Text Editor): sections of plain lines."""
+    ORDER = ("Import", "Materials", "Assembly", "Moving parts", "License plate", "How the car was built")
+
+    def __init__(self, title):
+        self.title, self.sections, self.slots = title, {}, {}
+
+    def add(self, section, *lines):
+        self.sections.setdefault(section, []).extend(lines)
+
+    def materials(self, report):
+        """Record a build pass: a later pass (the wheels, after assembly) replaces what an earlier one said about a slot."""
+        for b in report["Built"]:
+            self.slots[(b["Object"], b["Slot"])] = None
+        for u in report["Unsupported"] + report["Issues"]:
+            self.slots[(u.get("Object", "?"), u.get("Slot", "?"))] = (u.get("Reason") or u.get("Issue") or "unknown reason")[:240]
+
+    def _material_lines(self):
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for (obj, slot), reason in self.slots.items():
+            if reason:
+                groups[reason].append("%s (slot %s)" % (obj, slot))
+        bad = sum(len(v) for v in groups.values())
+        lines = ["%d of %d material slots built (every part option, hidden ones too)" % (len(self.slots) - bad, len(self.slots))]
+        for reason, where in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+            lines += ["  %d not built: %s" % (len(where), reason),
+                      "    " + ", ".join(where[:6]) + (", ..." if len(where) > 6 else "")]
+        return lines
+
+    def assembly(self, root):
+        """Issues and unused source parts from the assembly, then the standing notes on the method."""
+        notes = assembly_module().STANDING_NOTES
+        lines = [l for l in json.loads(root.get("diagnostics_json") or "[]") if l not in notes]
+        unused = [l.split(": ", 1)[-1].rsplit("/", 1)[-1].removesuffix("_mesh")
+                  for l in lines if l.startswith("No selected blueprint/item placement")]
+        issues = [l for l in lines if not l.startswith("No selected blueprint/item placement")]
+        self.add("Assembly", "%d issue%s" % (len(issues), "" if len(issues) == 1 else "s"), *["  " + l for l in issues])
+        if unused:
+            self.add("Assembly", "%d source parts not used by any option (kept hidden in 'Unassigned source parts'):" % len(unused),
+                     *["  " + u for u in unused])
+        self.add("How the car was built", *notes)
+
+    def write(self, root=None):
+        import bpy
+        import datetime
+        text = bpy.data.texts.new("An's Garage report: " + self.title)
+        out = ["An's Garage report: " + self.title,
+               "Imported %s with An's Garage %s" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                                   ".".join(map(str, bl_info["version"])))]
+        if self.slots:
+            self.sections["Materials"] = self.sections.get("Materials", []) + self._material_lines()
+        for name in self.ORDER:
+            if self.sections.get(name):
+                out += ["", name.upper()] + self.sections[name]
+        text.write("\n".join(out) + "\n")
+        if root is not None:
+            root["ans_garage_report"] = text.name
+        return text
+
+
 def add_moving_parts(root, report=None):
-    """Sliders for the car's moving parts (doors, windows, hood, boot, active aero); problems go to the report."""
+    """Sliders for the car's moving parts (doors, windows, hood, boot, active aero): lines for the car's report."""
     try:
         result = animation_module().build(root)
-        lines = ["Moving parts: %d sliders (%s)" % (len(result["Controls"]), ", ".join(c["Label"] for c in result["Controls"]))]
-        lines += ["Moving parts: " + x for x in result["Issues"]]
+        lines = ["%d sliders: %s" % (len(result["Controls"]), ", ".join(c["Label"] for c in result["Controls"]))]
+        lines += ["  " + x for x in result["Issues"]]
     except Exception as exc:
-        lines = ["Moving parts: " + str(exc)]
+        lines = ["Not built: " + str(exc)]
     if report is not None:
-        report.write("\n" + "\n".join(lines))
+        report.add("Moving parts", *lines)
     return lines
 
 
@@ -465,8 +526,9 @@ def import_steps(filepath, assemble=True, materials=True):
         for obj in list(staging.objects):
             bpy.data.objects.remove(obj, do_unlink=True)
         bpy.data.scenes.remove(staging)
-    report = bpy.data.texts.new("An's Garage import report")
-    report.write("Imported %d/%d meshes\n" % (count, len(records)) + "\n".join(failures))
+    report = CarReport(vehicle_label(str(path)))
+    report.add("Import", "%d of %d meshes imported from %s" % (count, len(records), path.parent.name),
+               *["  " + f for f in failures])
     if materials and path.with_name("materials.json").is_file():
         try:
             material_report = yield from _scaled(materials_module().reconstruct_steps(path, imported_objects),
@@ -475,45 +537,44 @@ def import_steps(filepath, assemble=True, materials=True):
                           if x.get("Severity") == "assignment_failed"]
             failures.extend(assignment)
             if assignment:
-                report.write("\n" + "\n".join(assignment))
+                report.add("Materials", "Material slots not restored:", *["  " + a for a in assignment])
             surface_report = yield from _scaled(surfaces_module().surface_steps(imported_objects, path),
                                                 "Building materials", 25.0, 75.0)
-            report.write("\nSupported surfaces: %d built; %d issues; %d unsupported slots. See An's Garage surface report." %
-                         (len(surface_report["Built"]), len(surface_report["Issues"]), len(surface_report["Unsupported"])))
-            report.write("\nBy shader: " + json.dumps(surface_report["Summary"]["BuiltByShader"]) +
-                         "\nUnsupported by shader: " + json.dumps(surface_report["Summary"]["UnsupportedByShader"]))
+            report.materials(surface_report)
         except Exception as exc:
             failures.append("Materials: " + str(exc))
-            report.write("\nMaterials: " + str(exc))
+            report.add("Materials", "Not built: " + str(exc))
     if assemble and path.with_name("assembly.json").is_file() and not failures:
         try:
             yield "Assembling the vehicle", 75.0, 0, 1
             root, _ = assembly_module().assemble_existing(path)
         except Exception as exc:
             failures.append("Assembly: " + str(exc))
-            report.write("\nAssembly: " + str(exc))
+            report.add("Assembly", "Not assembled: " + str(exc))
         else:
             if manifest.get("MovingParts", True):
                 yield "Adding moving parts", 78.0, 0, 1
                 add_moving_parts(root, report)
             else:
                 root["ans_garage_static_export"] = True
-                report.write("\nMoving parts: not built (exported as a static model; Add moving parts builds them)")
+                report.add("Moving parts", "Not built: exported as a static model (Add moving parts builds them)")
             if materials and path.with_name("materials.json").is_file():
                 # Per-wheel inputs (front/rear selectors) exist only on assembled wheel parts.
                 surface_report = yield from _scaled(surfaces_module().surface_steps(None, path),
                                                     "Building per-wheel materials", 80.0, 100.0)
-                report.write("\nAfter assembly: %d more slots built (per-wheel inputs); %d issues." %
-                             (len(surface_report["Built"]), len(surface_report["Issues"])))
+                report.materials(surface_report)
                 # The plate the game shows (Lakeshore, no frame, "NFS" on every car checked), not the mesh's placeholder.
                 folder = plate_library(bpy.context)
                 if folder and plate_index(folder):
                     try:
                         yield "License plate", 99.0, 0, 1
-                        line = plates_module().apply_game_stock(root, folder, default_plate_frame())
-                        report.write("\nLicense plate: " + line)
+                        report.add("License plate", plates_module().apply_game_stock(root, folder, default_plate_frame()))
                     except Exception as exc:
-                        report.write("\nLicense plate: kept the car's placeholder (%s)" % exc)
+                        report.add("License plate", "Kept the car's placeholder: %s" % exc)
+                else:
+                    report.add("License plate", "The car's placeholder: no shared parts folder set at import")
+            report.assembly(root)
+    report.write(root if "root" in locals() else None)
     materials_module().FBX_TREES.clear()
     yield "Finishing", 100.0, 1, 1
     return count, failures
@@ -567,14 +628,14 @@ def car_notes(context, root):
     notes = []
     shown, built = visible_surfaces(context, root)
     if built < shown:
-        notes.append(("surfaces:%d" % (shown - built), "ERROR", "%d of %d visible surfaces not built: the An's Garage "
-                      "surface report (Text Editor) lists them" % (shown - built, shown)))
+        notes.append(("surfaces:%d" % (shown - built), "ERROR", "%d of %d visible surfaces not built (the An's Garage "
+                      "report in the Text Editor says why)" % (shown - built, shown)))
     issues, unused = assembly_module().findings(root)
     if issues or unused:
         found = ["%d issue%s" % (issues, "" if issues == 1 else "s")] if issues else []
         found += ["%d source part%s not used by any option" % (unused, "" if unused == 1 else "s")] if unused else []
         notes.append(("assembly:%d:%d" % (issues, unused), "INFO",
-                      "%s: the An's Garage assembly report (Text Editor) lists them" % " and ".join(found)))
+                      "%s (listed in the An's Garage report in the Text Editor)" % " and ".join(found)))
     if not any(library_folder(context, kind) for kind in LIBRARY_FILES):
         notes.append(("shared-parts", "INFO", "No shared parts folder yet: tires, rims, plates and frames come from it, and "
                       "the plate shows the car's placeholder until then (Set shared parts folder…)"))
@@ -590,17 +651,19 @@ def preset_text(value):
     return re.sub(r"\bSet([A-Za-z]+)\b", lambda m: "Set " + m.group(1).upper(), value)
 
 
-GREETINGS = ("Welcome to An's Garage", "The garage is open", "Bring a car in", "Garage doors are up")
-GREETINGS_WITH_CAR = ("Looking good", "Fresh off the lot", "Ready for its close-up", "Now we're talking")
 _GREETING = []
 
 
-def greeting(has_car):
-    """This session's line above Import car…: one of GREETINGS, or of GREETINGS_WITH_CAR once a car is in."""
-    import random
+def greeting():
+    """The line under the panel's title: one from greetings.txt, picked when the add-on is turned on."""
     if not _GREETING:
-        _GREETING[:] = [random.choice(GREETINGS), random.choice(GREETINGS_WITH_CAR)]
-    return _GREETING[1 if has_car else 0]
+        import random
+        try:
+            lines = [l.strip() for l in Path(__file__).with_name("greetings.txt").read_text(encoding="utf-8").splitlines()]
+        except OSError:
+            lines = []
+        _GREETING.append(random.choice([l for l in lines if l] or ["Welcome to An's Garage"]))
+    return _GREETING[0]
 
 
 def front_to_back(groups):
@@ -624,6 +687,15 @@ def section(layout, root, key, default_closed=True):
     import hashlib
     car = hashlib.md5(root.name.encode("utf-8")).hexdigest()[:10]
     return layout.panel("ans_garage_%s_%s" % (car, key), default_closed=default_closed)
+
+
+def menu_field(layout, name, menu, text, root, group=None):
+    """A "Name | value ▾" row whose dropdown is `menu`, told which car (and part group) it is for."""
+    row = field(layout, name)
+    row.context_pointer_set("ans_garage_root", root)
+    if group is not None:
+        row.context_pointer_set("ans_garage_group", group)
+    row.menu(menu, text=text)
 
 
 def field(layout, name):
@@ -668,6 +740,7 @@ def draw_status(self, context):
 
 def register():
     import bpy
+    _GREETING.clear()
     from bpy_extras.io_utils import ImportHelper
     from bpy.props import BoolProperty, EnumProperty, FloatProperty, StringProperty
 
@@ -985,86 +1058,59 @@ def register():
             root = bpy.data.collections.get(self.root)
             if root is None:
                 return {"CANCELLED"}
-            lines = add_moving_parts(root, bpy.data.texts.get("An's Garage assembly report"))
+            lines = add_moving_parts(root)
+            text = bpy.data.texts.get(root.get("ans_garage_report", ""))
+            if text is not None:
+                text.write("\nMOVING PARTS (added later)\n" + "\n".join(lines) + "\n")
             self.report({"INFO"}, lines[0] if lines else "Done")
             return {"FINISHED"}
 
-    _CHOICES = []  # Blender keeps only references to enum item strings: hold them here
+    class ANS_GARAGE_MT_part(bpy.types.Menu):
+        """A part group's options (the row sets ans_garage_root and ans_garage_group)."""
+        bl_idname = "ANS_GARAGE_MT_part"
+        bl_label = "Part"
 
-    def part_choices(root, group):
-        """[(option, label)] of a part group of the car, in the sidebar's order."""
-        col = next((g for g in root.children if g.get("unbound_choice_group") == group), None) if root else None
-        out = []
-        for v in (col.children if col else []):
-            if "unbound_option" in v:
-                out.append((v["unbound_option"], "None" if v["unbound_option"] == "none" else v.get("unbound_label") or v.name))
-        return out
+        def draw(self, context):
+            root, group = getattr(context, "ans_garage_root", None), getattr(context, "ans_garage_group", None)
+            if root is None or group is None:
+                return
+            self.layout.operator_context = "EXEC_DEFAULT"
+            for v in group.children:
+                if "unbound_option" in v:
+                    text = "None" if v["unbound_option"] == "none" else v.get("unbound_label") or v.name
+                    op = self.layout.operator("object.ans_garage_variant", text=text)
+                    op.root, op.group, op.option = root.name, group["unbound_choice_group"], v["unbound_option"]
 
-    def part_items(self, context):
-        root = bpy.data.collections.get(self.root)
-        _CHOICES[:] = [(str(i), text, "") for i, (_, text) in enumerate(part_choices(root, self.group))] or [("0", "-", "")]
-        return _CHOICES
+    class ANS_GARAGE_MT_preset(bpy.types.Menu):
+        """The car's presets (the row sets ans_garage_root)."""
+        bl_idname = "ANS_GARAGE_MT_preset"
+        bl_label = "Preset"
 
-    class OBJECT_OT_ans_garage_choose_part(bpy.types.Operator):
-        bl_idname = "object.ans_garage_choose_part"
-        bl_label = "Choose part"
-        bl_description = "Choose this part from the car's options (None hides it)"
-        bl_options = {"REGISTER", "UNDO"}
-        root: StringProperty(options={"SKIP_SAVE"})
-        group: StringProperty(options={"SKIP_SAVE"})
-        choice: EnumProperty(items=part_items, name="Part")
+        def draw(self, context):
+            root = getattr(context, "ans_garage_root", None)
+            if root is None or not root.get("unbound_presets_json"):
+                return
+            self.layout.operator_context = "EXEC_DEFAULT"
+            for name in json.loads(root["unbound_presets_json"]):
+                op = self.layout.operator("object.ans_garage_preset", text=preset_text(name))
+                op.root, op.preset = root.name, name
 
-        def execute(self, context):
-            choices = part_choices(bpy.data.collections.get(self.root), self.group)
-            if not choices:
-                return {"CANCELLED"}
-            option = choices[min(int(self.choice), len(choices) - 1)][0]
-            return bpy.ops.object.ans_garage_variant(root=self.root, group=self.group, option=option)
+    class ANS_GARAGE_MT_tire(bpy.types.Menu):
+        """Stock and the tire library's tires (the row sets ans_garage_root)."""
+        bl_idname = "ANS_GARAGE_MT_tire"
+        bl_label = "Tires"
 
-    def preset_items(self, context):
-        root = bpy.data.collections.get(self.root)
-        names = list(json.loads(root["unbound_presets_json"])) if root and root.get("unbound_presets_json") else []
-        _CHOICES[:] = [(str(i), preset_text(n), "") for i, n in enumerate(names)] or [("0", "-", "")]
-        return _CHOICES
-
-    class OBJECT_OT_ans_garage_choose_preset(bpy.types.Operator):
-        bl_idname = "object.ans_garage_choose_preset"
-        bl_label = "Choose preset"
-        bl_description = "Apply one of the game's presets for this car (its stock parts, or a body kit)"
-        bl_options = {"REGISTER", "UNDO"}
-        root: StringProperty(options={"SKIP_SAVE"})
-        preset: EnumProperty(items=preset_items, name="Preset")
-
-        def execute(self, context):
-            root = bpy.data.collections.get(self.root)
-            names = list(json.loads(root["unbound_presets_json"])) if root else []
-            if not names:
-                return {"CANCELLED"}
-            return bpy.ops.object.ans_garage_preset(root=self.root, preset=names[min(int(self.preset), len(names) - 1)])
-
-    def tire_items(self, context):
-        folder = tire_library(context)
-        index = tire_index(folder) if folder else None
-        names = ["Stock"] + (tires_module().tire_names(index) if index else [])
-        _CHOICES[:] = [(str(i), "Stock (car's own)" if n == "Stock" else n, "") for i, n in enumerate(names)]
-        return _CHOICES
-
-    class OBJECT_OT_ans_garage_choose_tire(bpy.types.Operator):
-        bl_idname = "object.ans_garage_choose_tire"
-        bl_label = "Choose tires"
-        bl_description = "Put the car's own tires or a real-brand tire from the tire library on all four wheels"
-        bl_options = {"REGISTER", "UNDO"}
-        root: StringProperty(options={"SKIP_SAVE"})
-        tire: EnumProperty(items=tire_items, name="Tires")
-
-        def execute(self, context):
+        def draw(self, context):
+            root = getattr(context, "ans_garage_root", None)
             folder = tire_library(context)
             index = tire_index(folder) if folder else None
-            names = ["Stock"] + (tires_module().tire_names(index) if index else [])
-            root = bpy.data.collections.get(self.root)
-            current = json.loads((root.get("ans_garage_tire_json") if root else None) or '{"Lettering": "Plain"}')
-            return bpy.ops.object.ans_garage_tire(root=self.root, tire=names[min(int(self.tire), len(names) - 1)],
-                                                  lettering=current.get("Lettering", "Plain"))
+            if root is None:
+                return
+            current = json.loads(root.get("ans_garage_tire_json") or '{"Lettering": "Plain"}')
+            self.layout.operator_context = "EXEC_DEFAULT"
+            for name in ["Stock"] + (tires_module().tire_names(index) if index else []):
+                op = self.layout.operator("object.ans_garage_tire", text="Stock (car's own)" if name == "Stock" else name)
+                op.root, op.tire, op.lettering = root.name, name, current.get("Lettering", "Plain")
 
     class OBJECT_OT_ans_garage_hide_note(bpy.types.Operator):
         bl_idname = "object.ans_garage_hide_note"
@@ -1108,6 +1154,26 @@ def register():
         (str(t), label, "The game's paint material") for t, label in profiles.FINISHES]
     shift_items = [("Stock", "Stock", "This car's own colour shift")] + [
         (str(t), label, "The game's colour shift") for t, label in profiles.COLOR_SHIFTS]
+
+    def value_menu(idname, label, operator, prop, items):
+        """A menu that runs `operator` with `prop` set to each of `items` ((value, text, ...)) for the row's car."""
+        def draw(self, context):
+            root = getattr(context, "ans_garage_root", None)
+            if root is None:
+                return
+            self.layout.operator_context = "EXEC_DEFAULT"  # run directly, not through the search popup
+            for item in items:
+                op = self.layout.operator(operator, text=item[1])
+                op.root = root.name
+                setattr(op, prop, item[0])
+        return type(idname, (bpy.types.Menu,), {"bl_idname": idname, "bl_label": label, "draw": draw})
+
+    ANS_GARAGE_MT_finish = value_menu("ANS_GARAGE_MT_finish", "Finish", "object.ans_garage_finish", "finish", finish_items)
+    ANS_GARAGE_MT_material = value_menu("ANS_GARAGE_MT_material", "Material", "object.ans_garage_material", "material",
+                                        material_items)
+    ANS_GARAGE_MT_shift = value_menu("ANS_GARAGE_MT_shift", "Color shift", "object.ans_garage_color_shift", "shift", shift_items)
+    ANS_GARAGE_MT_gloss = value_menu("ANS_GARAGE_MT_gloss", "Gloss", "object.ans_garage_gloss", "gloss",
+                                     [("Stock", "Stock")] + [(str(k), l) for k, l in profiles.GLOSS_LEVELS])
 
     livery_choices = []
 
@@ -1232,7 +1298,7 @@ def register():
             if bpy.app.background or not context.window:
                 count, built, failed = surfaces_module().set_conditions(self.enable)
                 self.report({"WARNING" if failed else "INFO"}, "%d of %d surfaces rebuilt%s" % (
-                    len(built), count, "; see the An's Garage surface report" if failed else ""))
+                    len(built), count, "" if not failed else "; %d not built" % len(failed)))
                 return {"FINISHED"}
             if RUN:
                 self.report({"ERROR"}, "Wait for the running import or rebuild to finish")
@@ -1270,7 +1336,7 @@ def register():
             RUN.clear()
             count, built, failed = result
             self.report({"WARNING" if failed else "INFO"}, "%d of %d visible surfaces rebuilt in %d:%02d%s" % (
-                len(built), count, *divmod(int(elapsed), 60), "; see the An's Garage surface report" if failed else ""))
+                len(built), count, *divmod(int(elapsed), 60), "" if not failed else "; %d not built" % len(failed)))
             return {"FINISHED"}
 
     class OBJECT_OT_ans_garage_catch_up(bpy.types.Operator):
@@ -1303,7 +1369,7 @@ def register():
         def execute(self, context):
             result = surfaces_module().apply_supported_surfaces()
             self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built, %d already built, %d unsupported, %d issues. See An's Garage surface report." %
+                "%d slots built, %d already built, %d unsupported, %d issues" %
                 tuple(len(result[k]) for k in ("Built", "AlreadyBuilt", "Unsupported", "Issues")))
             return {"FINISHED"}
 
@@ -1318,7 +1384,7 @@ def register():
         def execute(self, context):
             result = surfaces_module().apply_supported_surfaces(export_path=self.filepath)
             self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built; %d issues. See An's Garage surface report." %
+                "%d slots built; %d not built" %
                 (len(result["Built"]), len(result["Issues"])))
             return {"FINISHED"}
 
@@ -1338,7 +1404,7 @@ def register():
             context.scene["unbound_shader_defaults_path"] = str(folder)
             result = surfaces_module().apply_supported_surfaces()
             self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built; %d issues. See An's Garage surface report." % (len(result["Built"]), len(result["Issues"])))
+                "%d slots built; %d not built" % (len(result["Built"]), len(result["Issues"])))
             return {"FINISHED"}
 
     class OBJECT_OT_ans_garage_variant(bpy.types.Operator):
@@ -1396,7 +1462,7 @@ def register():
         def draw_cars(self, context):
             cars =[r for r in context.scene.collection.children if r.get("unbound_assembly_path")]
             if not RUN:
-                self.layout.label(text=greeting(bool(cars)))
+                wrapped(self.layout, context, greeting())
                 self.layout.operator("import_scene.ans_garage_vehicle", text="Import car…", icon="IMPORT")
             if RUN:
                 run = self.layout.box()
@@ -1417,8 +1483,7 @@ def register():
             if car is None:
                 return
             current = assembly_module().current_preset(root)
-            op = field(car, "Preset").operator_menu_enum("object.ans_garage_choose_preset", "preset", text=preset_text(current))
-            op.root = root.name
+            menu_field(car, "Preset", "ANS_GARAGE_MT_preset", preset_text(current), root)
             groups = [g for g in root.children if g.get("unbound_choice_group")]
             wheel_sets = [g for g in groups if g["unbound_choice_group"] == "Rims"]
 
@@ -1427,9 +1492,7 @@ def register():
                 shown = [v for v in group.children if "unbound_option" in v and not v.hide_viewport]
                 text = ("None" if shown[0]["unbound_option"] == "none" else shown[0].get("unbound_label") or shown[0].name) \
                     if len(shown) == 1 else "Custom"
-                op = field(layout, name or group.get("unbound_label", key)).operator_menu_enum(
-                    "object.ans_garage_choose_part", "choice", text=text)
-                op.root, op.group = root.name, key
+                menu_field(layout, name or group.get("unbound_label", key), "ANS_GARAGE_MT_part", text, root, group)
 
             header, body = section(car, root, "body")
             header.label(text="Body parts")
@@ -1470,7 +1533,7 @@ def register():
                     field(materials, "Selected").label(text=where)
                     field(materials, "Material").label(text=re.sub(r"\.\d+$", "", material.name) if material else "None")
                     ok = bool(material and material.get("unbound_surface_profile"))
-                    field(materials, "Built").label(text="From the game's shader" if ok else "No (surface report)",
+                    field(materials, "Built").label(text="From the game's shader" if ok else "No (see the report)",
                                                     icon="CHECKMARK" if ok else "ERROR")
                 else:
                     wrapped(materials, context, "Select a part of the car to see its material.")
@@ -1510,14 +1573,14 @@ def register():
                 now, stock = profiles.finish_value(scope)
                 if now:
                     preset = "Stock" if now == stock else profiles.finish_preset(scope) or "Custom"
-                    field(layout, "Finish").operator_menu_enum("object.ans_garage_finish", "finish", text=preset).root = root.name
-                    for idname, prop, title, table, i in (("object.ans_garage_material", "material", "Material", profiles.FINISHES, 0),
-                                                           ("object.ans_garage_color_shift", "shift", "Color shift", profiles.COLOR_SHIFTS, 1)):
+                    menu_field(layout, "Finish", "ANS_GARAGE_MT_finish", preset, root)
+                    for menu, title, table, i in (("ANS_GARAGE_MT_material", "Material", profiles.FINISHES, 0),
+                                                  ("ANS_GARAGE_MT_shift", "Color shift", profiles.COLOR_SHIFTS, 1)):
                         text = dict(table).get(now[i], "Type %d" % now[i]) + (" (stock)" if now[i] == stock[i] else "")
-                        field(layout, title).operator_menu_enum(idname, prop, text=text).root = root.name
+                        menu_field(layout, title, menu, text, root)
                     # Levels 2 and up render the same (no clear coat): shown as Matte.
                     gloss = dict(profiles.GLOSS_LEVELS).get(min(now[2], 2), "Matte") + (" (stock)" if now[2] == stock[2] else "")
-                    field(layout, "Gloss").operator_menu_enum("object.ans_garage_gloss", "gloss", text=gloss).root = root.name
+                    menu_field(layout, "Gloss", "ANS_GARAGE_MT_gloss", gloss, root)
             livery_index = liveries_module().load_index(root)
             if livery_index:
                 current = root.get("ans_garage_livery", "None")
@@ -1535,16 +1598,15 @@ def register():
         def draw_wheels(self, context, root, layout):
             current = json.loads(root.get("ans_garage_tire_json") or '{"Name": "Stock", "Lettering": "Plain"}')
             if tire_index(tire_library(context)) if tire_library(context) else None:
-                op = field(layout, "Tires").operator_menu_enum("object.ans_garage_choose_tire", "tire",
-                                                               text="Stock (car's own)" if current["Name"] == "Stock" else current["Name"])
-                op.root = root.name
+                menu_field(layout, "Tires", "ANS_GARAGE_MT_tire",
+                           "Stock (car's own)" if current["Name"] == "Stock" else current["Name"], root)
                 if current["Name"] != "Stock":
                     row = field(layout, "Sidewall")
                     for lettering, text in (("Plain", "Plain"), ("Brand", "Brand lettering")):
                         op = row.operator("object.ans_garage_tire", text=text, depress=current["Lettering"] == lettering)
                         op.root, op.tire, op.lettering = root.name, current["Name"], lettering
             else:
-                field(layout, "Tires").operator("wm.ans_garage_shared_parts", text="Set shared parts folder…", icon="FILE_FOLDER")
+                field(layout, "Tires").operator("wm.ans_garage_shared_parts", text="Set folder…", icon="FILE_FOLDER")
             now = rims_module().current_rims(root)
             if library_index("rim", library_folder(context, "rim")) is not None:
                 for axle in ("Front", "Rear"):
@@ -1556,7 +1618,7 @@ def register():
                 op = row.operator("object.ans_garage_rim", text="", icon="LOOP_BACK")
                 op.root, op.rim, op.pick = root.name, "Stock", False
             else:
-                field(layout, "Rims").operator("wm.ans_garage_shared_parts", text="Set shared parts folder…", icon="FILE_FOLDER")
+                field(layout, "Rims").operator("wm.ans_garage_shared_parts", text="Set folder…", icon="FILE_FOLDER")
             paint_rows = rims_module().rim_paint(root)
             if paint_rows:
                 header, colors = section(layout, root, "rim_colors")
@@ -1589,7 +1651,7 @@ def register():
                         op = row.operator("object.ans_garage_plate_frame", text="", icon="LOOP_BACK")
                         op.root, op.frame, op.pick = root.name, "Stock", False
             else:
-                field(layout, "Plate").operator("wm.ans_garage_shared_parts", text="Set shared parts folder…", icon="FILE_FOLDER")
+                field(layout, "Plate").operator("wm.ans_garage_shared_parts", text="Set folder…", icon="FILE_FOLDER")
             text = root.get("ans_garage_plate_text", "")
             field(layout, "Text").operator("object.ans_garage_plate_text", text=text or "(blank)").root = root.name
 
@@ -1622,8 +1684,9 @@ def register():
                            OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_frame,
                            OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_rim, OBJECT_OT_ans_garage_rim_paint_stock,
-                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts, OBJECT_OT_ans_garage_hide_note, OBJECT_OT_ans_garage_choose_part,
-                           OBJECT_OT_ans_garage_choose_preset, OBJECT_OT_ans_garage_choose_tire,
+                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts, OBJECT_OT_ans_garage_hide_note, ANS_GARAGE_MT_part,
+                           ANS_GARAGE_MT_preset, ANS_GARAGE_MT_tire, ANS_GARAGE_MT_finish, ANS_GARAGE_MT_material,
+                           ANS_GARAGE_MT_shift, ANS_GARAGE_MT_gloss,
                            OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_catch_up, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_material,
                            OBJECT_OT_ans_garage_color_shift, OBJECT_OT_ans_garage_gloss,
                            OBJECT_OT_ans_garage_livery, OBJECT_OT_ans_garage_livery_car,

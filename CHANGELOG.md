@@ -2,6 +2,14 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.3
+
+- **Sidebar dropdowns fixed:** body parts and presets showed only "-", and Finish, Material, Color shift and Gloss opened a second search window after picking. Every dropdown is now a Blender menu that knows which car (and part) its row is for and runs the choice directly.
+- **One report per car:** "An's Garage report: <car>" in the Text Editor replaces the import, material slot, surface and assembly reports. It is written to be read: Import, Materials (slots built, the rest grouped by reason, after every build pass), Assembly (issues, source parts no option uses), Moving parts, License plate, and how the car was built. The car's notes point to it.
+- The notes on how the car was built are up to date (tire, rim and brake sizes follow the game's shaders, checked against the frame capture).
+- "Set folder…" fits the Tires, Rims and Plate rows.
+- **Tests:** the part, preset and paint menus are drawn and run on every test car; the import leaves exactly one report text.
+
 ## 1.1.2
 
 Re-export the shared parts in Frosty (**Tools > An's Garage > Export shared parts (tires, rims, plates)...**) for the

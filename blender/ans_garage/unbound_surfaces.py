@@ -113,6 +113,15 @@ def tangent_basis(obj, mesh_record, root, layer, cache):
 
 
 
+LAST_REPORT = {"report": None}
+
+
+def last_report():
+    """The surface report of the last import or full build (rebuilds of a few slots don't replace it); the readable
+    version is in the car's An's Garage report."""
+    return LAST_REPORT["report"]
+
+
 def apply_supported_surfaces(objects=None, export_path=None):
     """Build every supported slot now."""
     steps = surface_steps(objects, export_path)
@@ -172,9 +181,7 @@ def surface_steps(objects=None, export_path=None):
     report["Summary"] = summarize(report)
     from .unbound_materials import FBX_TREES
     FBX_TREES.clear()
-    text = bpy.data.texts.new("An's Garage surface report")
-    text.write(json.dumps(report, indent=2))
-    bpy.context.scene["unbound_surface_report"] = text.name
+    LAST_REPORT["report"] = report
     return report
 
 
@@ -217,11 +224,10 @@ def rebuild_steps(slots):
         o.material_slots[i].link = "DATA"  # the source material; rebuilt below
         if o not in objects:
             objects.append(o)
-    scene = bpy.context.scene
-    previous = scene.get("unbound_surface_report")
+    previous = LAST_REPORT["report"]
     report = yield from surface_steps(objects)
-    if previous:
-        scene["unbound_surface_report"] = previous
+    if previous is not None:
+        LAST_REPORT["report"] = previous
     wanted = {(o.name, i) for o, i in slots}
     built = [b for b in report["Built"] if (b["Object"], b["Slot"]) in wanted]
     failed = [u for u in report["Unsupported"] + report["Issues"] if (u.get("Object"), u.get("Slot")) in wanted]

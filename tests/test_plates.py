@@ -90,7 +90,7 @@ def plate_samples(o, i, texture):
                if g.type == "TEX_IMAGE" and g.image and texture in g.image.name.lower() and any(x.is_linked for x in g.outputs))
 
 
-report_name = bpy.context.scene["unbound_surface_report"]
+report_name = addon.surfaces_module().last_report()
 stock = plate_state()
 check("Every plate slot built", all(s[0] for s in stock.values()), sum(s[0] for s in stock.values()))
 game = P.game_stock(root)
@@ -148,7 +148,7 @@ back = plate_state()
 check("Stock brings the game's plate back (Lakeshore)", ok and root.get("ans_garage_plate") == "Stock"
       and all(s[1] == stock[k][1] for k, s in back.items()))
 check("The car's surface report stays current (plate rebuilds don't replace it)",
-      bpy.context.scene["unbound_surface_report"] == report_name, bpy.context.scene["unbound_surface_report"])
+      addon.surfaces_module().last_report() is report_name)
 
 result = {"Version": ".".join(map(str, addon.bl_info["version"])), "Checks": checks,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}

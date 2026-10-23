@@ -52,7 +52,7 @@ def skipped(key):
 clean = state()
 check("Paint built before (stock, no livery texture)", all(b for b, _ in clean.values())
       and not any("staticliveries" in a for _, im in clean.values() for a in im))
-report_name = bpy.context.scene["unbound_surface_report"]
+report_name = addon.surfaces_module().last_report()
 
 # A plate on the rear bumper first: the livery must not remove it (same object can hold both).
 bpy.context.scene["ans_garage_shared_parts"] = str(plates.parent)
@@ -97,7 +97,7 @@ check("None brings the stock paint back", ok and root.get("ans_garage_livery") =
       and all(b and not any("staticliveries" in a for a in im) for b, im in back.values()))
 check("Plate still there after removing the livery", all(
     json.loads(o.get("unbound_texture_overrides_json", "{}")).get("Ext_T_LicensePlate_Diffuse") for o in both))
-check("The car's surface report stays current", bpy.context.scene["unbound_surface_report"] == report_name)
+check("The car's surface report stays current", addon.surfaces_module().last_report() is report_name)
 
 result = {"Version": ".".join(map(str, addon.bl_info["version"])), "Checks": checks,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}

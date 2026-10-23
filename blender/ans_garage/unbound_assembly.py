@@ -94,12 +94,12 @@ def matrix_from_basis(values):
 
 # Notes at the end of every assembly report: limits of the method, not findings about this car.
 STANDING_NOTES = (
-    "Right-side Rotate flag interpreted as a half turn about source Y; outward rim facing checked, runtime implementation unavailable.",
-    "Tires are fitted per vertex with the game's wheel shader formula (Wheel fit modifier); its inputs are derived from the "
-    "tire configuration and declared part sizes, not yet read from the running game.",
-    "Brake disc/caliper shader sizing, caliper runtime offsets, loaded suspension and camber are not reconstructed.",
-    "Variant collections preserve item permutations; runtime restrictions/offsets are recorded, not guessed.",
-    "Material IDs are custom metadata; no placeholder materials or shaders were generated.")
+    "Tires and rims are fitted with the game's wheel shader formula and brakes sized with its brake shader formula "
+    "(checked against a frame capture of the game).",
+    "Right-side wheels: the Rotate flag is read as a half turn (rim faces checked outward; the game's code for it "
+    "wasn't found).",
+    "Not reproduced: caliper offsets, loaded suspension and camber.",
+    "Part options keep every source variant; the game's restrictions between parts are recorded, not applied.")
 
 
 def findings(root):
@@ -624,7 +624,5 @@ def assemble_existing(manifest_path):
     _suppress_duplicates(root)
     diagnostics += list(STANDING_NOTES)
     root["diagnostics_json"] = json.dumps(diagnostics)
-    text = bpy.data.texts.new("An's Garage assembly report")
-    text.write("Authored vehicle assembly\n" + "\n".join(diagnostics))
     bpy.context.view_layer.update()
     return root, diagnostics

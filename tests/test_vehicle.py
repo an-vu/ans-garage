@@ -36,11 +36,9 @@ import_seconds = time.perf_counter() - started
 check("Import operator finished", status == {"FINISHED"}, {"Status": list(status), "Seconds": round(import_seconds, 1)})
 check("The scene keeps its frame rate and no staging scene is left", bpy.context.scene.render.fps == 25
       and len(bpy.data.scenes) == 1, {"Fps": bpy.context.scene.render.fps, "Scenes": [s.name for s in bpy.data.scenes]})
-imp = bpy.data.texts.get("An's Garage import report")
-print("IMPORT REPORT", (imp.as_string()[:4000] if imp else "none"))
 if not any(c.get("unbound_assembly_path") for c in bpy.context.scene.collection.children):
     bpy.ops.wm.save_as_mainfile(filepath=str(out_dir / ("vehicle-%s-unassembled.blend" % label)))
-report = json.loads(bpy.data.texts[bpy.context.scene["unbound_surface_report"]].as_string())
+report = addon.surfaces_module().last_report()
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
 root = next((c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path")), None)
 check("Vehicle assembled", root is not None, root.name if root else None)
@@ -83,14 +81,49 @@ for g in groups:
         wrong += [[v.get("unbound_label", v.name)] + m for m in misplaced(v)]
         switched += 1
 check("Every part option sits where the assembly placed it when shown", not wrong, wrong[:12])
-# The sidebar's dropdowns pick by position in the list they show.
+# The sidebar's dropdowns are menus told which car and part group they are for (row context): draw them on a recorder
+# and run what an entry would run.
+from types import SimpleNamespace
+
+
+class Recorder:
+    operator_context = ""
+
+    def __init__(self):
+        self.entries = []
+
+    def operator(self, idname, text=""):
+        props = SimpleNamespace()
+        self.entries.append((idname, text, props))
+        return props
+
+
+def menu_entries(menu, **context):
+    layout = Recorder()
+    getattr(bpy.types, menu).draw(SimpleNamespace(layout=layout), SimpleNamespace(**context))
+    return layout
+
+
+def run(entry):
+    idname, _, props = entry
+    category, name = idname.split(".")
+    return getattr(getattr(bpy.ops, category), name)(**vars(props)) == {"FINISHED"}
+
+
 group = next(g for g in groups if len([v for v in g.children if "unbound_option" in v]) > 2)
 options = [v for v in group.children if "unbound_option" in v]
-picked = bpy.ops.object.ans_garage_choose_part(root=root.name, group=group["unbound_choice_group"], choice="2") == {"FINISHED"}
-check("Part dropdown shows the option it lists", picked and not options[2].hide_viewport
-      and all(v.hide_viewport for i, v in enumerate(options) if i != 2), [v.get("unbound_label") for v in options[:3]])
-picked = bpy.ops.object.ans_garage_choose_preset(root=root.name, preset="0") == {"FINISHED"}
-check("Preset dropdown applies its first entry (Stock)", picked and addon.assembly_module().current_preset(root) == "Stock")
+menu = menu_entries("ANS_GARAGE_MT_part", ans_garage_root=root, ans_garage_group=group)
+check("Part dropdown lists every option of its part and runs directly", len(menu.entries) == len(options)
+      and menu.operator_context == "EXEC_DEFAULT" and run(menu.entries[2]) and not options[2].hide_viewport
+      and all(v.hide_viewport for i, v in enumerate(options) if i != 2), [e[1] for e in menu.entries[:4]])
+menu = menu_entries("ANS_GARAGE_MT_preset", ans_garage_root=root)
+check("Preset dropdown lists the car's presets; its first entry is Stock", len(menu.entries) == len(presets)
+      and run(menu.entries[0]) and addon.assembly_module().current_preset(root) == "Stock", [e[1] for e in menu.entries])
+menu = menu_entries("ANS_GARAGE_MT_gloss", ans_garage_root=root)
+check("Paint dropdowns run directly, not through a second search window", menu.operator_context == "EXEC_DEFAULT"
+      and [e[1] for e in menu.entries] == ["Stock", "Gloss", "Satin", "Matte"])
+texts = [t.name for t in bpy.data.texts if t.name.startswith("An's Garage")]
+check("One report text for the car, and nothing else in the Text Editor", texts == [root.get("ans_garage_report")], texts)
 ok &= bpy.ops.object.ans_garage_preset(root=root.name, preset="Stock") == {"FINISHED"}
 check("Every preset and part option switches; Stock restored", ok and addon.assembly_module().current_preset(root) == "Stock",
       {"Presets": len(presets), "Options": switched})
