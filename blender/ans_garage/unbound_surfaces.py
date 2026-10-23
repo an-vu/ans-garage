@@ -275,6 +275,14 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
                                 "the stock %s is built" % (labels[1], labels[0])}
                                for e in candidates if e not in stock]
         candidates = stock
+    # Forward (glass) pairs: the game draws the full program, state bit 9 clear (frame capture of its light lenses);
+    # the reduced one is for other views.
+    full = [e for e in candidates if P.full_forward_program(e)]
+    if full and len(full) < len(candidates):
+        customization_notes += [{"AlternateProgram": e["Programs"][0], "Status": "reduced program (state bit 9 set); the "
+                                 "game draws the full one in its main view (frame capture)"}
+                                for e in candidates if e not in full]
+        candidates = full
     renames = []
     for entry in candidates:
         entry["ShaderAsset"] = shader

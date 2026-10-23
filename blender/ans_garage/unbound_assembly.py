@@ -368,7 +368,7 @@ def assemble_existing(manifest_path):
                 info = next((i for i in infos if any(m["MeshGuid"] == blueprint for m in i["Meshes"])), None)
                 axle = "Front" if facing["Front"] else "Rear"
                 outer = tire_config.get("Diameter" + axle)
-                width = tire_config.get("SectionWidth" + axle)
+                width = wheels.rim_width(data, tire_config, axle)
                 rim = wheels.rim_diameter(data, tire_config, axle)
                 if info and outer and width and rim:
                     # The sidewall size the game picks for this rim; exports before 1.0.9 hold only the default one.
@@ -379,7 +379,7 @@ def assemble_existing(manifest_path):
                         blueprint, rotate, info = mesh["MeshGuid"], mesh["Rotate"], chosen
                     offsets = wheels.tire_offsets(info, outer, rim, width)
                     status = ("Wheel fit (the game's tire shader, per vertex): %.3f m sidewall mesh, tread %+.4f m, bead %+.4f m, "
-                              "each side %+.4f m, from the tire configuration and the %.3f m rim%s"
+                              "one sidewall %+.4f m, from the tire configuration and the %.3f m rim%s"
                               % (info["InnerDiameter"], offsets[0], offsets[1], offsets[2], rim,
                                  "" if info is chosen else "; the game's %.3f m sidewall mesh is not in this export" % chosen["InnerDiameter"]))
                 else:
@@ -389,6 +389,11 @@ def assemble_existing(manifest_path):
                 for i in infos:
                     for m in i["Meshes"]:
                         used.update(u["MeshId"] for u in uses.get(m["MeshGuid"], []))
+            brake = None
+            if item["Type"] in ("BrakeDiscsItemData", "CalipersItemData"):
+                brake = wheels.brake_scale(wheels.factory_rims(data).get("Front" if facing["Front"] else "Rear"))
+                status = ("Brake size (the game's brake shader): x%.4f = rim diameter x BrakeDiscRatio / 0.4 m" % brake
+                          if brake else "Brake size: the factory rim has no BrakeDiscRatio; modelled size kept.")
             rotation = Matrix.Rotation(math.pi, 4, "Y") if rotate else Matrix.Identity(4)
             kind = {"RimsItemData": "Rim", "TiresItemData": "Tire", "BrakeDiscsItemData": "Brake Disc", "CalipersItemData": "Caliper"}[item["Type"]]
             parent = steering if item["Type"] == "CalipersItemData" else spin
@@ -402,7 +407,9 @@ def assemble_existing(manifest_path):
                 inst["dimension_status"] = status
                 inst["source_item_json"] = json.dumps(item["Raw"])
                 if offsets:
-                    wheels.fit(inst.all_objects, offsets)
+                    wheels.fit(inst.all_objects, offsets, tire=True)
+                if brake:
+                    wheels.size_brakes(inst.all_objects, brake)
                 used.add(use["MeshId"])
 
     for item in data["Items"]:

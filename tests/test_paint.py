@@ -54,14 +54,27 @@ now, stock = P.finish_value(a)
 check("Stock finish read from the car's data", now == stock, {"Now": now, "Stock": stock})
 P.set_finish(a, finish="9")
 P.set_finish(a, gloss="2")
+P.set_finish(a, shift="3")
 now, _ = P.finish_value(a)
-check("Finish and gloss set (Forged carbon, Matte)", now == (9, 2), now)
+check("Material, colour shift and gloss set (Forged Carbon, Spectrum, Matte)", now == (9, 3, 2), now)
 check("The other car's finish is unchanged", P.finish_value(b)[0] == P.finish_value(b)[1])
-P.set_finish(a, finish="Stock", gloss="Stock")
+P.set_finish(a, finish="Stock", gloss="Stock", shift="Stock")
 check("Stock restores the car's own finish", P.finish_value(a)[0] == stock, P.finish_value(a))
 ok = bpy.ops.object.ans_garage_gloss(root=roots[0].name, gloss="1") == {"FINISHED"}
-check("Gloss operator", ok and P.finish_value(a)[0][1] == 1, P.finish_value(a))
-check("Finish list covers the 14 shader types", [t for t, _ in P.FINISHES] == list(range(14)))
+check("Gloss operator", ok and P.finish_value(a)[0][2] == 1, P.finish_value(a))
+# The game's preset finishes (frame capture of its garage) decode to the game's own material / colour shift / gloss.
+expected = {"Chameleon Flake": (3, 3, 0), "Carbon": (5, 0, 0), "Color Shift Carbon": (6, 2, 0), "Iridescent": (2, 4, 0),
+            "Damascus": (10, 3, 2), "Chrome": (1, 0, 2)}
+decoded = {}
+for name in expected:
+    ok = bpy.ops.object.ans_garage_finish(root=roots[0].name, finish=name) == {"FINISHED"}
+    decoded[name] = P.finish_value(a)[0] if ok else None
+check("Preset finishes decode like the game's menu", decoded == expected and P.finish_preset(a) == "Chrome", decoded)
+ok = bpy.ops.object.ans_garage_material(root=roots[0].name, material="12") == {"FINISHED"}
+check("Material operator (Honey-Comb Carbon)", ok and P.finish_value(a)[0][0] == 12 and P.finish_preset(a) is None, P.finish_value(a))
+P.set_finish(a, preset="Stock")
+check("The game's 13 materials and 5 colour shifts listed", [t for t, _ in P.FINISHES] == list(range(13))
+      and [t for t, _ in P.COLOR_SHIFTS] == list(range(5)), [l for _, l in P.FINISHES])
 
 result = {"Version": ".".join(map(str, addon.bl_info["version"])), "Checks": checks,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}

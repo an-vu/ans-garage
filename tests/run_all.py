@@ -36,7 +36,7 @@ EXPORTS = setting("exports_dir")
 OUT = setting("validation_dir") / "latest"
 STATE = OUT / "test-state.json"
 VERSION = ".".join(map(str, eval(re.search(r'"version": (\([^)]*\))', (ADDON / "__init__.py").read_text()).group(1))))
-VEHICLES = ["murcielago", "bmw-m3e46", "chiron-sport", "mclaren-p1", "diablo-sv", "taycan", "integra", "audi-s5"]
+VEHICLES = ["murcielago", "bmw-m3e46", "chiron-sport", "mclaren-p1", "diablo-sv", "taycan", "integra", "audi-s5", "evija"]
 QUICK = ["nodes", "vehicle:murcielago"]
 EXPORT_FILES = ("manifest.json", "assembly.json", "materials.json")
 # Add-on files each test exercises (the whole add-on where it imports a car).
@@ -114,7 +114,7 @@ def plan(test):
 def fingerprint(test):
     script, _, data = plan(test)
     h = hashlib.sha256()
-    for path in [HERE / script] + addon_files(test) + data:
+    for path in [HERE / script, HERE / "wheel_fit.py"] + addon_files(test) + data:
         h.update(str(path.name).encode())
         h.update(path.read_bytes() if path.is_file() else b"missing")
     return h.hexdigest()

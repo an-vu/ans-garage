@@ -95,9 +95,14 @@ def apply_rim(root, name, folder):
     root["ans_garage_rim"] = name
     if factory is not None:
         factory.hide_viewport = factory.hide_render = name != STOCK
-    if name == STOCK:
-        return []
     assembly = Path(root["unbound_assembly_path"])
+    if name == STOCK:
+        if assembly.is_file():
+            data = json.loads(assembly.read_text(encoding="utf-8-sig"))
+            stock = wheels.factory_rims(data)
+            for axle in ("Front", "Rear"):
+                size_axle_brakes(root, data, axle, wheels.brake_scale(stock.get(axle)))
+        return []
     if not assembly.is_file():
         raise FileNotFoundError("This car's export folder has moved: %s is missing. Put the export back where it was "
                                 "imported from to change its rims." % assembly)
@@ -142,6 +147,10 @@ def apply_rim(root, name, folder):
         copies = _addon().place_copies(sources, inst, spin, local)
         wheels.fit(copies, offsets)
         placed.extend(copies)
+        # The brakes follow the rim: its BrakeDiscRatio at its fitted diameter (libraries before 1.1.0 lack the ratio).
+        scale = wheels.brake_scale(rim, car["Diameter"])
+        if scale:
+            size_axle_brakes(root, data, axle, scale, wheel["Name"])
     # Built against the car: rim shaders read per-wheel inputs (front or rear) and the car's rim paint.
     slots = []
     for o in placed:
@@ -151,3 +160,18 @@ def apply_rim(root, name, folder):
     built, failed = _addon().surfaces_module().rebuild(slots)
     notes += sorted({f.get("Reason") or f.get("Issue") or "" for f in failed})
     return notes
+
+
+def size_axle_brakes(root, data, axle, scale, wheel_name=None):
+    """Resize the brake discs and calipers on an axle's wheels (or one wheel) to `scale`."""
+    if not scale:
+        return
+    names = [w["Name"] for w in data["Wheels"] if (w["Facing"]["Front"]) == (axle == "Front")]
+    for c in root.children_recursive:
+        item = json.loads(c.get("source_item_json", "{}")).get("Type")
+        if item not in ("BrakeDiscsItemData", "CalipersItemData"):
+            continue
+        wheel = next((p for p in root.children_recursive if c.name in p.children), None)
+        wname = wheel.name.split(".")[0] if wheel else None
+        if wname in names and (wheel_name is None or wname == wheel_name):
+            wheels.size_brakes(c.all_objects, scale)

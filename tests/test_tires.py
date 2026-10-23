@@ -44,6 +44,18 @@ data = json.loads(Path(root["unbound_assembly_path"]).read_text(encoding="utf-8-
 tire_config = {n["Id"]: n for n in data["Nodes"]}[data["TireConfig"]]["Raw"]
 factory_rims = addon.assembly_module().wheels.factory_rims(data)
 check("Car has four stock tire instances", len(stock) == 4, len(stock))
+# The game's own values, read in a frame capture (Lotus Evija rear tire, 2026-10-22): g_wheelCustomizeParam =
+# (0.040105, 0.047770, 0.0, 0.091) on the small sidewall; TireConfig diameter 0.72154, rim 0.57221 x 0.345.
+W = addon.assembly_module().wheels
+evija = [{"InnerDiameter": 0.492, "OuterDiameter": 0.626, "Width": 0.254}, {"InnerDiameter": 0.462, "OuterDiameter": 0.626, "Width": 0.254},
+         {"InnerDiameter": 0.412, "OuterDiameter": 0.626, "Width": 0.254}]
+picked = W.tire_size(evija, 0.57221, 0.72154, 0.77, 0.71)
+offsets = W.tire_offsets(picked, 0.72154, 0.57221, 0.345)
+check("Wheel fit inputs match the game's (frame capture: Lotus Evija rear tire)", picked["InnerDiameter"] == 0.492
+      and all(abs(a - b) < 2e-6 for a, b in zip(offsets, (0.047770, 0.040105, 0.091))),
+      {"Size": picked["InnerDiameter"], "W.y, W.x+W.z, W.w": [round(x, 6) for x in offsets]})
+brake = W.brake_scale({"Diameter": 0.57221, "BrakeDiscRatio": 0.77})
+check("Brake size matches the game's (frame capture: Lotus Evija rear brake, 1.1015043)", abs(brake - 1.1015043) < 1e-6, brake)
 
 for name, lettering in (("Falken Azenis RT615K+", "Plain"), ("Falken Azenis RT615K+", "Brand"), ("Toyo Tires Proxes R888R", "Brand")):
     started = time.perf_counter()

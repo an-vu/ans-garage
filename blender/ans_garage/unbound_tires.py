@@ -133,7 +133,7 @@ def apply_tire(root, name, lettering, folder):
             continue
         tire = next((t for t in index["Tires"] if t["Name"] == name and t["Lettering"] == lettering
                      and t["Position"] == "ItemPosition_" + axle), None)
-        outer, width = tire_config.get("Diameter" + axle), tire_config.get("SectionWidth" + axle)
+        outer, width = tire_config.get("Diameter" + axle), wheels.rim_width(data, tire_config, axle)
         rim = wheels.rim_diameter(data, tire_config, axle)
         if tire is None or not (outer and width and rim):
             notes.append("%s: %s" % (wheel["Name"], "no library tire for this axle" if tire is None else "tire size unknown"))
@@ -155,6 +155,6 @@ def apply_tire(root, name, lettering, folder):
         inst["source_item"] = tire["Asset"]
         offsets = wheels.tire_offsets(size, outer, rim, width)
         inst["dimension_status"] = ("Library tire, %.3f m sidewall mesh fitted per vertex (Wheel fit): tread %+.4f m, bead %+.4f m, "
-                                    "each side %+.4f m" % ((size["InnerDiameter"],) + offsets))
-        wheels.fit(_addon().place_copies(sources, inst, spin, local), offsets)
+                                    "one sidewall %+.4f m" % ((size["InnerDiameter"],) + offsets))
+        wheels.fit(_addon().place_copies(sources, inst, spin, local), offsets, tire=True)
     return notes

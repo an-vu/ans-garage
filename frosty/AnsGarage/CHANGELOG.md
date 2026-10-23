@@ -1,3 +1,7 @@
+# 1.1.0
+
+- The rim library index records each rim's `BrakeDiscRatio` (brake disc and caliper size).
+
 # 1.0.9
 
 - Vehicle exports include every size of the car's tires (each `TireMeshInfo` mesh: small, medium and large sidewall), not only the default permutation's.

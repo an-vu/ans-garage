@@ -42,6 +42,14 @@ factory = next(c for c in root.children if c.get("unbound_choice_group") == "Rim
 factory_rims = addon.assembly_module().wheels.factory_rims(json.loads(Path(root["unbound_assembly_path"]).read_text(encoding="utf-8-sig")))
 
 
+def brake_scales():
+    return sorted({round(o["unbound_brake_scale"], 6) for o in bpy.data.objects
+                   if o.get("unbound_brake_scale") and o.name in root.all_objects})
+
+
+stock_brakes = brake_scales()
+
+
 def library_rims():
     return [c for c in root.children_recursive if c.get("ans_garage_library_rim")]
 
@@ -75,6 +83,11 @@ for name in ("BBS LM", "Work Meister S1"):
           and all(abs(sizes[o.name]["Radius"][1] - rim["Diameter"] / 2) < 0.006 for o, rim in main),
           {"Status": rims[0].get("dimension_status") if rims else None,
            "Rims": {o.name: [round(sizes[o.name]["Radius"][1], 4), round(rim["Diameter"] / 2, 4)] for o, rim in main}})
+bpy.ops.object.ans_garage_rim(root=root.name, rim="BBS LM", pick=False)
+lib = next(r for r in R.load_index(library)["Rims"] if r["Name"] == "BBS LM")
+expected = sorted({round(factory_rims[a]["Diameter"] * lib["BrakeDiscRatio"] / 0.4, 6) for a in factory_rims})
+check("Brakes follow the library rim (its BrakeDiscRatio at the fitted size)", brake_scales() == expected,
+      {"Stock": stock_brakes, "Library": brake_scales(), "Expected": expected})
 paint = R.rim_paint(root)
 check("Rim colors are live per car (primary/secondary, front/rear)", len(paint) >= 2, [label for label, _ in paint])
 if paint:
@@ -90,6 +103,7 @@ if paint:
     check("Stock rim colors restored", [tuple(round(v, 4) for v in s.default_value[:3]) for _, s in paint] == stock)
 ok = bpy.ops.object.ans_garage_rim(root=root.name, rim="Stock", pick=False) == {"FINISHED"}
 check("Stock brings the car's own wheel set back", ok and not library_rims() and visible(factory) and root.get("ans_garage_rim") == "Stock")
+check("Stock brings the brakes back to their size", brake_scales() == stock_brakes, brake_scales())
 
 result = {"Version": ".".join(map(str, addon.bl_info["version"])), "Checks": checks,
           "Passed": sum(c["Passed"] for c in checks), "Failed": sum(not c["Passed"] for c in checks)}

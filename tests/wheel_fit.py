@@ -1,7 +1,8 @@
 """Shared by the tests: measure a fitted wheel mesh (tire or rim) against the game's wheel shader formula.
 
-P.yz += normalize(P.yz) * lerp(W.y, W.x + W.z, Color0.b); P.x += (0.5 - Color0.a) * 2 * W.w, in the mesh's own space
-(axle = X), Color0 read as raw bytes. Applied here with numpy to the mesh as modelled, independently of the add-on.
+P.yz += normalize(P.yz) * lerp(W.y, W.x + W.z, Color0.b); along the axle (X) rims P.x += (0.5 - Color0.a) * 2 * W.w and
+tires P.x -= Color0.a * W.w, in the mesh's own space, Color0 read as raw bytes. Applied here with numpy to the mesh as
+modelled, independently of the add-on.
 """
 import numpy as np
 
@@ -42,7 +43,7 @@ def measure(obj, depsgraph):
     unit = co[:, 1:] / np.where(radius > 0, radius, 1)[:, None]
     expected = co.copy()
     expected[:, 1:] += unit * (w_y + (w_xz - w_y) * blue)[:, None]
-    expected[:, 0] += (0.5 - alpha) * 2 * w_w
+    expected[:, 0] += -alpha * w_w if obj.get("unbound_wheel_fit_tire") else (0.5 - alpha) * 2 * w_w
     fitted_radius = np.linalg.norm(fitted[:, 1:], axis=1)
     error = float(np.abs(fitted - expected).max()) if fitted.shape == expected.shape else float("inf")
     return {"FormulaError": error, "Radius": (float(fitted_radius.min()), float(fitted_radius.max())),

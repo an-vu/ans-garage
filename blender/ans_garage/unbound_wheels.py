@@ -1,16 +1,26 @@
 """Wheel fit: the game's tire and rim resize, per vertex, as a geometry-nodes modifier.
 
 The wheel vertex shaders (tires and rims alike) move each vertex along its wheel radius by
-lerp(W.y, W.x + W.z, Color0.b) and along the axle by (0.5 - Color0.a) * 2 * W.w, W (g_wheelCustomizeParam) being
-offsets from the mesh as modelled. On a tire, blue 0 is the tread, blue 1 the bead and alpha 0 / 1 the two sidewalls;
-on an aftermarket rim, blue rises from the hub (0 on most rims) to the barrel and lip (1), and alpha 1 is the back lip.
-Factory rims are shown as modelled. The W values here come from the car's tire configuration and the parts' declared sizes (the game's own
-values are still to be read in a frame capture); only the sum W.x + W.z shapes the mesh.
+lerp(W.y, W.x + W.z, Color0.b), W (g_wheelCustomizeParam) being offsets from the mesh as modelled, and along the axle:
+rims (g_facingParam.w = 1) by (0.5 - Color0.a) * 2 * W.w, tires (g_facingParam.w = 0) by -W.w * Color0.a, so only one
+sidewall moves. On a tire, blue 0 is the tread, blue 1 the bead and alpha 0 / 1 the two sidewalls; on an aftermarket
+rim, blue rises from the hub (0 on most rims) to the barrel and lip (1), and alpha 1 is the back lip. Factory rims are
+shown as modelled (W = 0).
+
+Checked in a frame capture (Lotus Evija rear wheel): tire W = (rim diameter - InnerDiameter) / 2, (tire diameter -
+OuterDiameter) / 2, 0, rim width - Width, the sidewall size picked by the rim/tire ratio; factory rim W = 0.
+
+Brake discs and calipers: their vertex shaders scale the whole mesh about the wheel centre by
+g_brakeAndCaliperCustomizeParam.x = rim diameter x the rim's BrakeDiscRatio / 0.4 (a 0.4 m reference disc; same
+capture: 0.57221 x 0.77 / 0.4 = 1.1015). Done here by a "Brake size" modifier.
 """
 GROUP = "Unbound | Wheel fit"
 MODIFIER = "Wheel fit"
-VERSION = 1
+VERSION = 2
 INPUTS = ("Radial offset at blue 0 (W.y)", "Radial offset at blue 1 (W.x + W.z)", "Axle offset (W.w)")
+BRAKE_GROUP = "Unbound | Brake size"
+BRAKE_MODIFIER = "Brake size"
+BRAKE_REFERENCE_DISC = 0.4
 
 
 def factory_rims(data):
@@ -28,6 +38,20 @@ def rim_diameter(data, tire_config, axle):
     return rim["Diameter"] if rim and rim.get("Diameter") else tire_config.get("RimDiameter" + axle)
 
 
+def rim_width(data, tire_config, axle):
+    """Width of the rim the tire sits on: the car's factory rim on that axle, else the tire's section width."""
+    rim = factory_rims(data).get(axle)
+    return rim["Width"] if rim and rim.get("Width") else tire_config.get("SectionWidth" + axle, 0) / 1000.0
+
+
+def brake_scale(rim, diameter=None):
+    """g_brakeAndCaliperCustomizeParam.x for a rim (raw item or library entry) at `diameter` (default its own), or None
+    when the rim has no BrakeDiscRatio."""
+    ratio = (rim or {}).get("BrakeDiscRatio")
+    size = diameter or (rim or {}).get("Diameter")
+    return size * ratio / BRAKE_REFERENCE_DISC if ratio and size else None
+
+
 def tire_size(sizes, rim, diameter, small_to_med, med_to_large):
     """The tire mesh size the game shows for a rim/tire diameter ratio: the small sidewall at SmallToMedRatio or above,
     the large one below MedToLargeRatio, else the medium one. `sizes` are TireMeshInfos (or library sizes)."""
@@ -37,10 +61,9 @@ def tire_size(sizes, rim, diameter, small_to_med, med_to_large):
     return ordered[min(k, len(ordered) - 1)]
 
 
-def tire_offsets(size, diameter, rim, section_width):
-    """W for a tire mesh: tread to the tire diameter, bead to the rim, width to the section width (mm)."""
-    return ((diameter - size["OuterDiameter"]) / 2, (rim - size["InnerDiameter"]) / 2,
-            (section_width / 1000.0 - size["Width"]) / 2)
+def tire_offsets(size, diameter, rim, width):
+    """W for a tire mesh: tread to the tire diameter, bead to the rim diameter, one sidewall out to the rim width."""
+    return (diameter - size["OuterDiameter"]) / 2, (rim - size["InnerDiameter"]) / 2, width - size["Width"]
 
 
 def rim_offsets(rim, diameter, width):
@@ -67,6 +90,7 @@ def node_group():
         io.new_socket(name, in_out="INPUT", socket_type="NodeSocketFloat").subtype = "DISTANCE"
     io.new_socket("Colour attribute", in_out="INPUT", socket_type="NodeSocketString")
     io.new_socket("Byte colour (sRGB)", in_out="INPUT", socket_type="NodeSocketBool")
+    io.new_socket("Tire (one sidewall moves)", in_out="INPUT", socket_type="NodeSocketBool")
     nodes, link = g.nodes, g.links.new
     gi, go = nodes.new("NodeGroupInput"), nodes.new("NodeGroupOutput")
 
@@ -107,9 +131,12 @@ def node_group():
     out.operation = "SCALE"
     link(unit.outputs["Vector"], out.inputs[0])
     link(radial, out.inputs["Scale"])
-    # P.x += (0.5 - alpha) * 2 * W.w
+    # Rims: P.x += (0.5 - alpha) * 2 * W.w; tires: P.x -= alpha * W.w
+    alpha = rgba.outputs["Alpha"]
+    both = math("MULTIPLY_ADD", alpha, -2.0, 1.0)
+    side = math("MULTIPLY_ADD", gi.outputs["Tire (one sidewall moves)"], math("SUBTRACT", math("MULTIPLY", alpha, -1.0), both), both)
     axial = nodes.new("ShaderNodeCombineXYZ")
-    link(math("MULTIPLY", math("MULTIPLY_ADD", rgba.outputs["Alpha"], -2.0, 1.0), w_w), axial.inputs["X"])
+    link(math("MULTIPLY", side, w_w), axial.inputs["X"])
     offset = nodes.new("ShaderNodeVectorMath")
     offset.operation = "ADD"
     link(out.outputs["Vector"], offset.inputs[0])
@@ -129,9 +156,9 @@ def _set_input(modifier, identifier, value):
         modifier[identifier] = value
 
 
-def fit(objects, offsets):
-    """Give each mesh with vertex colours a Wheel fit modifier with these offsets in metres (W.y, W.x + W.z, W.w).
-    Meshes without vertex colours are left as modelled. Returns the fitted objects."""
+def fit(objects, offsets, tire=False):
+    """Give each mesh with vertex colours a Wheel fit modifier with these offsets in metres (W.y, W.x + W.z, W.w), as a
+    tire (one sidewall moves) or a rim. Meshes without vertex colours are left as modelled. Returns the fitted objects."""
     group = node_group()
     ids = {i.name: i.identifier for i in group.interface.items_tree if getattr(i, "in_out", None) == "INPUT"}
     fitted = []
@@ -145,6 +172,53 @@ def fit(objects, offsets):
             _set_input(m, ids[name], float(value))
         _set_input(m, ids["Colour attribute"], colour.name)
         _set_input(m, ids["Byte colour (sRGB)"], colour.data_type == "BYTE_COLOR")
+        _set_input(m, ids["Tire (one sidewall moves)"], bool(tire))
         o["unbound_wheel_fit"] = [float(v) for v in offsets]
+        o["unbound_wheel_fit_tire"] = bool(tire)
         fitted.append(o)
     return fitted
+
+
+def brake_group():
+    """The shared geometry-nodes group scaling a brake disc or caliper about the wheel centre (built once per .blend)."""
+    import bpy
+    g = bpy.data.node_groups.get(BRAKE_GROUP)
+    if g is not None and g.get("unbound_wheel_fit_version") == VERSION:
+        return g
+    if g is None:
+        g = bpy.data.node_groups.new(BRAKE_GROUP, "GeometryNodeTree")
+    g.nodes.clear()
+    g.interface.clear()
+    g["unbound_wheel_fit_version"] = VERSION
+    g.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    g.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    size = g.interface.new_socket("Scale (g_brakeAndCaliperCustomizeParam.x)", in_out="INPUT", socket_type="NodeSocketFloat")
+    size.default_value = 1.0
+    nodes, link = g.nodes, g.links.new
+    gi, go = nodes.new("NodeGroupInput"), nodes.new("NodeGroupOutput")
+    scaled = nodes.new("ShaderNodeVectorMath")
+    scaled.operation = "SCALE"
+    link(nodes.new("GeometryNodeInputPosition").outputs[0], scaled.inputs[0])
+    link(gi.outputs[1], scaled.inputs["Scale"])
+    setpos = nodes.new("GeometryNodeSetPosition")
+    link(gi.outputs[0], setpos.inputs["Geometry"])
+    link(scaled.outputs["Vector"], setpos.inputs["Position"])
+    link(setpos.outputs["Geometry"], go.inputs[0])
+    return g
+
+
+def size_brakes(objects, scale):
+    """Give each brake mesh a Brake size modifier at `scale` (updated when it already has one). Returns the objects."""
+    group = brake_group()
+    ident = next(i.identifier for i in group.interface.items_tree
+                 if getattr(i, "in_out", None) == "INPUT" and i.socket_type == "NodeSocketFloat")
+    sized = []
+    for o in objects:
+        if o.type != "MESH":
+            continue
+        m = o.modifiers.get(BRAKE_MODIFIER) or o.modifiers.new(BRAKE_MODIFIER, "NODES")
+        m.node_group = group
+        _set_input(m, ident, float(scale))
+        o["unbound_brake_scale"] = float(scale)
+        sized.append(o)
+    return sized

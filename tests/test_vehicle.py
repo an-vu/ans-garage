@@ -78,7 +78,7 @@ depsgraph = bpy.context.evaluated_depsgraph_get()
 tires, sizes_exported = {}, True
 for w in data["Wheels"]:
     axle = "Front" if w["Facing"]["Front"] else "Rear"
-    diameter, width = tire_config["Diameter" + axle], tire_config["SectionWidth" + axle] / 1000
+    diameter, width = tire_config["Diameter" + axle], addon.assembly_module().wheels.rim_width(data, tire_config, axle)
     rim = factory_rims[axle]["Diameter"] if axle in factory_rims else tire_config["RimDiameter" + axle]
     wheel = next(c for c in root.children_recursive if c.name.split(".")[0] == w["Name"])
     for inst in [c for c in wheel.children if json.loads(c.get("source_item_json", "{}")).get("Type") == "TiresItemData"]:
@@ -98,12 +98,29 @@ for w in data["Wheels"]:
                                           "Sidewall": [placed and placed["InnerDiameter"], expected["InnerDiameter"]]}
 check("Stock tires fitted per vertex with the game's tire shader formula",
       len(tires) == len(data["Wheels"]) and all(t and t["FormulaError"] < 1e-5 for t in tires.values()), tires)
-check("Stock tires at the car's tire size: tread at the diameter, bead at the rim, width at the section width",
+check("Stock tires at the car's tire size: tread at the diameter, bead at the rim, width at the rim width",
       tires and all(t and abs(t["Tread"][0] - t["Tread"][1]) < 0.005 and abs(t["Bead"][0] - t["Bead"][1]) < 0.005
                     and 0 <= t["Width"][0] - t["Width"][1] < 0.04 for t in tires.values()))
 check("Stock tire sidewall size as the game picks it (rim/tire ratio)" + ("" if sizes_exported else ": export before 1.0.9 holds one size"),
       tires and (not sizes_exported or all(t and t["Sidewall"][0] == t["Sidewall"][1] for t in tires.values())),
       {k: t and t["Sidewall"] for k, t in tires.items()})
+# Brake discs and calipers: scaled about the wheel centre by rim diameter x BrakeDiscRatio / 0.4, like the game.
+import numpy as np  # noqa: E402
+brakes, brake_ok = {}, True
+for w in data["Wheels"]:
+    axle = "Front" if w["Facing"]["Front"] else "Rear"
+    rim = factory_rims.get(axle, {})
+    expected = rim["Diameter"] * rim["BrakeDiscRatio"] / 0.4 if rim.get("BrakeDiscRatio") else None
+    wheel = next(c for c in root.children_recursive if c.name.split(".")[0] == w["Name"])
+    for inst in [c for c in wheel.children if json.loads(c.get("source_item_json", "{}")).get("Type") in ("BrakeDiscsItemData", "CalipersItemData")]:
+        for o in [o for o in inst.all_objects if o.type == "MESH"]:
+            co = np.empty(len(o.data.vertices) * 3); o.data.vertices.foreach_get("co", co)
+            ev = o.evaluated_get(depsgraph).to_mesh(); fitted = np.empty(len(ev.vertices) * 3); ev.vertices.foreach_get("co", fitted)
+            o.evaluated_get(depsgraph).to_mesh_clear()
+            error = float(np.abs(fitted - co * (expected or 1.0)).max()) if fitted.shape == co.shape else float("inf")
+            brake_ok &= expected is not None and abs(o.get("unbound_brake_scale", 0) - expected) < 1e-9 and error < 1e-5
+            brakes.setdefault(w["Name"], []).append([o.name[:24], round(o.get("unbound_brake_scale", 0), 4), error])
+check("Brake discs and calipers sized like the game (rim diameter x BrakeDiscRatio / 0.4)", brakes and brake_ok, brakes)
 moving = json.loads(root.get("ans_garage_moving_parts_json") or "null") if root else None
 check("Moving parts built from the source graph", moving is not None and all(c["Attached"] > 0 for c in moving["Controls"]),
       moving and {"Controls": ["%s/%s" % (c["Group"], c["Label"]) for c in moving["Controls"]], "Issues": moving["Issues"],

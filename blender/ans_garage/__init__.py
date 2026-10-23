@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 0, 9), "blender": (4, 0, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 0), "blender": (4, 0, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -762,7 +762,11 @@ def register():
 
     profiles = surfaces_module().profiles_module()
     finish_items = [("Stock", "Stock", "This car's own finish")] + [
-        (str(t), label, "The game's paint finish type %d" % t) for t, label in profiles.FINISHES]
+        (name, name, "The game's preset finish") for name, _ in profiles.FINISH_PRESETS]
+    material_items = [("Stock", "Stock", "This car's own material")] + [
+        (str(t), label, "The game's paint material") for t, label in profiles.FINISHES]
+    shift_items = [("Stock", "Stock", "This car's own colour shift")] + [
+        (str(t), label, "The game's colour shift") for t, label in profiles.COLOR_SHIFTS]
 
     livery_choices = []
 
@@ -822,29 +826,38 @@ def register():
                 return {"CANCELLED"}
             return {"FINISHED"}
 
-    class OBJECT_OT_ans_garage_finish(bpy.types.Operator):
-        bl_idname = "object.ans_garage_finish"
-        bl_label = "Paint finish"
-        bl_description = "The game's paint finishes (type to filter); Stock is the car's own"
-        bl_options = {"REGISTER", "UNDO"}
-        bl_property = "finish"
-        root: StringProperty(options={"SKIP_SAVE"})
-        finish: EnumProperty(items=finish_items, name="Finish")
-
-        def invoke(self, context, event):
-            context.window_manager.invoke_search_popup(self)
-            return {"RUNNING_MODAL"}
-
+    def finish_operator(idname, label, description, prop, items, keyword):
+        """A search-popup operator that sets one part of the car's paint finish."""
         def execute(self, context):
             root = bpy.data.collections.get(self.root)
             if root is None:
                 return {"CANCELLED"}
             try:
-                profiles.set_finish(car_scope(root), finish=self.finish)
+                profiles.set_finish(car_scope(root), **{keyword: getattr(self, prop)})
             except ValueError as exc:
                 self.report({"ERROR"}, str(exc))
                 return {"CANCELLED"}
             return {"FINISHED"}
+
+        def invoke(self, context, event):
+            context.window_manager.invoke_search_popup(self)
+            return {"RUNNING_MODAL"}
+
+        return type(idname.replace(".", "_OT_").upper(), (bpy.types.Operator,), {
+            "bl_idname": idname, "bl_label": label, "bl_description": description, "bl_options": {"REGISTER", "UNDO"},
+            "bl_property": prop, "__annotations__": {"root": StringProperty(options={"SKIP_SAVE"}),
+                                                     prop: EnumProperty(items=items, name=label)},
+            "invoke": invoke, "execute": execute})
+
+    OBJECT_OT_ans_garage_finish = finish_operator(
+        "object.ans_garage_finish", "Paint finish", "The game's preset finishes (type to filter); Stock is the car's own",
+        "finish", finish_items, "preset")
+    OBJECT_OT_ans_garage_material = finish_operator(
+        "object.ans_garage_material", "Paint material", "The game's paint materials (type to filter); Stock is the car's own",
+        "material", material_items, "finish")
+    OBJECT_OT_ans_garage_color_shift = finish_operator(
+        "object.ans_garage_color_shift", "Color shift", "The game's colour shift modes; Stock is the car's own",
+        "shift", shift_items, "shift")
 
     class OBJECT_OT_ans_garage_gloss(bpy.types.Operator):
         bl_idname = "object.ans_garage_gloss"
@@ -1050,13 +1063,17 @@ def register():
                     pbox.prop(profiles.runtime_rgb(paint), "default_value", text="Color")
                     now, stock = profiles.finish_value(scope)
                     if now:
-                        names = dict(profiles.FINISHES)
-                        text = names.get(now[0], "Type %d" % now[0]) + (" (stock)" if now[0] == stock[0] else "")
-                        pbox.operator("object.ans_garage_finish", text="Finish: " + text, icon="DOWNARROW_HLT").root = root.name
+                        is_stock = now == stock
+                        preset = "Stock" if is_stock else profiles.finish_preset(scope) or "Custom"
+                        pbox.operator("object.ans_garage_finish", text="Finish: " + preset, icon="DOWNARROW_HLT").root = root.name
+                        for idname, title, table, i in (("object.ans_garage_material", "Material", profiles.FINISHES, 0),
+                                                         ("object.ans_garage_color_shift", "Color shift", profiles.COLOR_SHIFTS, 1)):
+                            text = dict(table).get(now[i], "Type %d" % now[i]) + (" (stock)" if now[i] == stock[i] else "")
+                            pbox.operator(idname, text="%s: %s" % (title, text), icon="DOWNARROW_HLT").root = root.name
                         row = pbox.row(align=True)
                         for key, label in [("Stock", "Stock")] + [(str(k), l) for k, l in profiles.GLOSS_LEVELS]:
                             # Levels 2 and up render the same (no clear coat): shown as Matte.
-                            on = now[1] == stock[1] if key == "Stock" else now[1] != stock[1] and min(now[1], 2) == int(key)
+                            on = now[2] == stock[2] if key == "Stock" else now[2] != stock[2] and min(now[2], 2) == int(key)
                             op = row.operator("object.ans_garage_gloss", text=label, depress=on)
                             op.root, op.gloss = root.name, key
                 livery_index = liveries_module().load_index(root)
@@ -1165,7 +1182,8 @@ def register():
                            IMPORT_SCENE_OT_ans_garage_locate_plates, OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_text,
                            IMPORT_SCENE_OT_ans_garage_locate_rims, OBJECT_OT_ans_garage_rim, OBJECT_OT_ans_garage_rim_paint_stock,
                            OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts,
-                           OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_gloss,
+                           OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_material,
+                           OBJECT_OT_ans_garage_color_shift, OBJECT_OT_ans_garage_gloss,
                            OBJECT_OT_ans_garage_livery, OBJECT_OT_ans_garage_livery_car,
                            IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,

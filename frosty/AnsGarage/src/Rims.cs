@@ -97,6 +97,7 @@ namespace AnsGarage
                     { "Name", (string)ui["LongName"] ?? e.Name.Substring(e.Name.LastIndexOf('/') + 1) },
                     { "Position", location == null ? null : location.ToString() },
                     { "Diameter", Convert.ToDouble(Batch.Get(item, "Diameter")) }, { "Width", Convert.ToDouble(Batch.Get(item, "Width")) },
+                    { "BrakeDiscRatio", Convert.ToDouble(Batch.Get(item, "BrakeDiscRatio")) },
                     { "SizeOptions", new JArray(List(item, "SizeOptions").Cast<object>().Select(Convert.ToDouble)) },
                     { "PrimaryPaint", Vec(Batch.Get(item, "PrimaryPaint")) }, { "SecondaryPaint", Vec(Batch.Get(item, "SecondaryPaint")) },
                     { "PrimaryMaterial", Vec(Batch.Get(item, "PrimaryMaterial")) }, { "SecondaryMaterial", Vec(Batch.Get(item, "SecondaryMaterial")) },

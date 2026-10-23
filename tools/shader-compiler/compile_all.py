@@ -182,6 +182,10 @@ def main(argv):
         for n, (h, how) in enumerate(pool.map(run, shaders), 1):
             print("%d/%d %s %s %s" % (n, len(shaders), h, names.get(h, ""), how), flush=True)
 
+    # States[solution][4] bit 9 separates the full and reduced programs of a pair; a frame capture of the game shows
+    # light lenses drawn with the full one (bit 9 clear). Recorded per entry so the add-on can pick it.
+    parsed = json.loads((DATA / "parsed.json").read_text())
+    states = (parsed[0] if isinstance(parsed, list) else parsed)["States"]
     profiles, report = {}, {}
     for h in programs:
         path = CACHE / (h + ".json")
@@ -195,6 +199,11 @@ def main(argv):
         if r["Profile"]:
             if names.get(h):
                 r["Profile"]["Name"] = names[h]
+            bit9 = {}
+            for s in programs[h]["Solutions"]:
+                bit9.setdefault(s["PS"], set()).add(bool(states[s["SolutionIndex"]][4] & 0x200))
+            for e in r["Profile"]["Entries"]:
+                e["StateBit9"] = sorted({b for ps in e["Programs"] for b in bit9.get(ps, ())})
             profiles[h] = r["Profile"]
     import profile_compiler as pc
     doc = {"Schema": 3, "Generator": "compile_all.py (DXC disassembly of the v293 vehicle shader database; symbolic "

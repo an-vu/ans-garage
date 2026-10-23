@@ -15,6 +15,9 @@ import math
 from pathlib import Path
 
 ENGINE_ZERO_MAX_EFFECT = 0.1
+# Engine constants outside the shader database, read in a frame capture of the game (Lotus Evija, garage): the forward
+# pixel shaders' function-constant buffer b0, row 1.x (scales the metal reflection of glass, lenses and livery windows).
+ENGINE_VALUES = {"cb0[1].x": 1.0}
 # Largest output difference tolerated between permutations of one vertex layout (light glass: see-through/reflection).
 PERMUTATION_MAX = 0.1
 PERMUTATION_GLASS_MAX = 0.12
@@ -1068,10 +1071,21 @@ LIVE_FIELDS = ("PaintFacingColorParameter", "PaintMaterialParameter") + RIM_COLO
 # (measured on cs_pbr_carpaint_max), the garage's Gloss / Satin / Matte. y is left as the car has it. The game's
 # type -> name table is in its code: names come from each layer's texture and the stock cars that use the type, and
 # the descriptive ones are confirmed in the game capture (see the research notes).
-FINISHES = ((0, "Solid"), (1, "Metal, no flake"), (2, "Smooth metallic"), (3, "Metallic flake"), (4, "Brushed metal"),
-            (5, "Carbon weave 1"), (6, "Carbon weave 2"), (7, "Carbon weave 3"), (8, "Carbon weave 4"),
-            (9, "Forged carbon"), (10, "Damascus"), (11, "Fine flake 1"), (12, "Honeycomb carbon"), (13, "Fine flake 2"))
+# The game's paint menu, read in a frame capture of its garage: Ext_Carpaint_Material x = material / 15, y = colour
+# shift / 15, z = glossiness (0, 0.075, 0.15); the paint shader uses floor(16 x), floor(16 y) and floor(16 z).
+FINISHES = ((0, "Non-Metallic"), (1, "Chrome"), (2, "Metallic"), (3, "Fine Metalflake"), (4, "Brushed Metal"),
+            (5, "Black Carbon"), (6, "Carbon"), (7, "Chequered Carbon"), (8, "Broad Carbon"), (9, "Forged Carbon"),
+            (10, "Damascus"), (11, "Large Metalflake"), (12, "Honey-Comb Carbon"))
+COLOR_SHIFTS = ((0, "Single"), (1, "Near"), (2, "Opposite"), (3, "Spectrum"), (4, "Iridescent"))
 GLOSS_LEVELS = ((0, "Gloss"), (1, "Satin"), (2, "Matte"))
+GLOSS_VALUES = (0.0, 0.075, 0.15)
+# The game's preset finishes (its "Material" tab), exact values. Its "Satin" presets use 0.13, which the shader draws
+# like Matte.
+FINISH_PRESETS = (("Gloss", (0.0, 0.0, 0.0)), ("Metallic", (0.133, 0.0, 0.0)), ("Chrome", (0.066, 0.0, 0.13)),
+                  ("Satin Metallic", (0.133, 0.0, 0.13)), ("Carbon", (0.333, 0.0, 0.0)), ("Matte Carbon", (0.333, 0.0, 0.13)),
+                  ("Forged Carbon", (0.6, 0.0, 0.0)), ("Chameleon Flake", (0.2, 0.19, 0.0)), ("Color Shift", (0.0, 0.07, 0.13)),
+                  ("Iridescent", (0.133, 0.26, 0.0)), ("Color Shift Carbon", (0.4, 0.13, 0.0)),
+                  ("Damascus", (0.666, 0.19, 0.13)), ("Honey-Comb Carbon", (0.8, 0.0, 0.0)))
 
 
 # Texture overrides a slot may go without: a livery shows wherever the shader can be built with it; a part whose shader
@@ -1147,26 +1161,38 @@ WET_PHASE = (0.6, 0.1)
 
 
 def finish_value(scope):
-    """(finish type, gloss level) of the car's paint now, and (type, level) of its stock paint."""
+    """(material, colour shift, gloss level) of the car's paint now, and of its stock paint."""
     g = runtime_group(scope, "Ext_Carpaint_Material")
     if g is None:
         return None, None
     rgb = runtime_rgb(g).default_value
     stock = g["unbound_stock_value"]
     level = lambda v: int(math.floor(16 * v + 1e-6))
-    return (level(rgb[0]), level(rgb[2])), (level(stock[0]), level(stock[2]))
+    return tuple(level(rgb[i]) for i in range(3)), tuple(level(stock[i]) for i in range(3))
 
 
-def set_finish(scope, finish=None, gloss=None):
-    """Set the car's paint finish type and/or gloss level; "Stock" restores the car's own value."""
+def finish_preset(scope):
+    """Name of the game's preset finish the car's paint is set to, or None."""
+    g = runtime_group(scope, "Ext_Carpaint_Material")
+    if g is None:
+        return None
+    rgb = runtime_rgb(g).default_value
+    return next((name for name, v in FINISH_PRESETS if all(abs(rgb[i] - v[i]) < 1e-4 for i in range(3))), None)
+
+
+def set_finish(scope, finish=None, gloss=None, shift=None, preset=None):
+    """Set the car's paint finish: a game preset by name, and/or the material, colour shift and gloss level (as the
+    game's own menu sets them); "Stock" restores the car's own value."""
     g = runtime_group(scope, "Ext_Carpaint_Material")
     if g is None:
         raise ValueError("This car's paint has no finish control (rebuild its materials)")
     rgb = runtime_rgb(g)
     value, stock = list(rgb.default_value), g["unbound_stock_value"]
-    for i, choice in ((0, finish), (2, gloss)):
+    if preset is not None:
+        value[:3] = stock[:3] if preset == "Stock" else dict(FINISH_PRESETS)[preset]
+    for i, choice, values in ((0, finish, None), (1, shift, None), (2, gloss, GLOSS_VALUES)):
         if choice is not None:
-            value[i] = stock[i] if choice == "Stock" else (int(choice) + 0.25) / 16.0
+            value[i] = stock[i] if choice == "Stock" else values[int(choice)] if values else int(choice) / 15.0
     rgb.default_value = value
 
 
@@ -1310,6 +1336,14 @@ def specialize(profile, values, live, input_consts, rename, tex_consts):
 STOCK_PERMUTATION_TEXTURES = {"licenseplate/licenseplatefont": ("printed license plate", "LED license plate")}
 
 
+def full_forward_program(entry):
+    """True for a forward (glass) entry whose programs are all the full variant (state bit 9 clear); profiles compiled
+    before 1.1.0 don't record the bit (None)."""
+    if entry.get("Kind") != "forward_transmittance" or "StateBit9" not in entry:
+        return None
+    return entry["StateBit9"] == [False]
+
+
 def stock_permutation(entry):
     """(stock label, customization label) when a compiled entry samples a stock-marker texture, else None."""
     for slot in (entry.get("Slots") or {}).values():
@@ -1418,6 +1452,15 @@ def _check(profile, values, live, input_consts, rename, tex_consts, spec, outs):
     used = reachable(spec, [x for v in connected.values() for x in (v if isinstance(v, list) else [v])])
     names = {spec.nodes[i].get("name", "") for i in used if spec.nodes[i]["op"] in ("input", "view")}
     unsupported, engine = None, None
+    known = {n: ENGINE_VALUES[n[7:]] for n in names if n.startswith("Engine:") and n[7:] in ENGINE_VALUES}
+    if known:
+        input_consts.update(known)
+        spec, outs = specialize(profile, values, live, input_consts, rename, tex_consts)
+        connected = {k: outs[k] for k in CONNECTED_OUTPUTS + ("Emissive",) if k in outs}
+        used = reachable(spec, [x for v in connected.values() for x in (v if isinstance(v, list) else [v])])
+        names = {spec.nodes[i].get("name", "") for i in used if spec.nodes[i]["op"] in ("input", "view")}
+        engine = {"Constants": sorted(c[7:] for c in known), "Values": {c[7:]: v for c, v in known.items()},
+                  "Reason": "Engine constant outside the shader database; value read from the game (frame capture)"}
     if any(n.startswith("Engine:") for n in names):
         # Engine constants outside the shader database: 0 only if the measured effect is small.
         import numpy as np
@@ -1445,7 +1488,7 @@ def _check(profile, values, live, input_consts, rename, tex_consts, spec, outs):
     vsconst = sorted(n for n in names if n.startswith("VSConst:"))
     if not unsupported and vsconst:
         unsupported = "; ".join(("Not mounted on an assembled wheel: per-wheel input %s unknown" % n)
-                                if VS_CONSTANTS.get(tuple(n[8:].split(".", 1))) == "Front"
+                                if VS_CONSTANTS.get(tuple(n[8:].split(".", 1))) in ("Front", "Side")
                                 else "Unknown per-instance vertex constant " + n for n in vsconst)
     if not unsupported and any(n.startswith(("Unresolved:", "View:")) for n in names):
         unsupported = "Unresolved runtime inputs after specialization: " + ", ".join(
@@ -1606,9 +1649,11 @@ def make_profile_material(source, profile, group, connected, report_entry):
 
 
 # ------------------------------------------------------------------ program/layout entries (profile schema 2)
-# Vertex-program constants passed straight to the pixel program, set per wheel instance at runtime.
-# Polarity evidence: the pixel programs compute lerp(rear parameter, front parameter, clamp(value)).
-VS_CONSTANTS = {("g_facingParam", "x"): "Front", ("g_brakeAndCaliperCustomizeParam", "y"): "Front"}
+# Vertex-program constants passed straight to the pixel program, set per wheel instance at runtime. Values read in a
+# frame capture (rear-right wheel: g_facingParam = g_brakeAndCaliperCustomizeParam.yz = -1, -1): front +1 / rear -1,
+# left +1 / right -1 (the +1 sides by symmetry). The pixel programs compute lerp(rear, front, clamp(value)).
+VS_CONSTANTS = {("g_facingParam", "x"): "Front", ("g_facingParam", "y"): "Side",
+                ("g_brakeAndCaliperCustomizeParam", "y"): "Front", ("g_brakeAndCaliperCustomizeParam", "z"): "Side"}
 CONNECTED_OUTPUTS = ("BaseColor", "Metallic", "Smoothness", "Normal", "CoatSmoothness", "CoatNormal", "RT2.x",
                      "Discard", "Transmittance", "Reflectance")
 
@@ -1658,7 +1703,7 @@ def element_inputs(entry, layout):
 
 
 def wheel_facing(obj, assembly_doc):
-    """Front flag of the wheel an assembled part belongs to (assembly Wheels[].Facing.Front)."""
+    """Facing of the wheel an assembled part belongs to (assembly Wheels[].Facing: Front, Left), or None."""
     o = obj
     while o is not None and not o.get("wheel_side"):
         o = o.parent
@@ -1667,7 +1712,7 @@ def wheel_facing(obj, assembly_doc):
     wheels = [w for w in assembly_doc.get("Wheels", []) if w.get("Name") == o["wheel_side"]]
     if len(wheels) != 1 or not isinstance(wheels[0].get("Facing"), dict):
         return None
-    return bool(wheels[0]["Facing"].get("Front"))
+    return wheels[0]["Facing"]
 
 
 def input_constants(entry, obj, assembly_doc):
@@ -1677,11 +1722,10 @@ def input_constants(entry, obj, assembly_doc):
     for n in entry["Nodes"]:
         if n["op"] == "input" and n["name"].startswith("VSConst:"):
             name, _, comp = n["name"][8:].partition(".")
-            if VS_CONSTANTS.get((name, comp)) != "Front":
-                continue
-            front = wheel_facing(obj, assembly_doc)
-            if front is not None:
-                values[n["name"]] = 1.0 if front else 0.0
+            role = VS_CONSTANTS.get((name, comp))
+            facing = wheel_facing(obj, assembly_doc) if role else None
+            if facing is not None:
+                values[n["name"]] = 1.0 if facing.get("Front" if role == "Front" else "Left") else -1.0
     return values
 
 

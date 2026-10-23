@@ -2,6 +2,23 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.0
+
+Built from a frame capture of the game itself (NVIDIA Nsight Graphics, the Lotus Evija in the garage): the values the
+game's shaders actually receive, where the shader data alone left them open.
+
+- **Every surface builds on all nine test cars.** The last light-glass pieces (McLaren P1 3, Diablo SV 3, BMW M3 E46 1, Integra 2, Taycan 2) and the 22 window slots that couldn't take a livery now build:
+  - the game draws its light lenses with the **full** program of each full/reduced pair (state bit 9 clear). The shader compiler records the bit; the add-on picks the full one;
+  - the glass shaders' engine constant (`cb0[1].x`, metal reflection strength) is **1.0** in the game.
+- **Dirt and dust on lenses and calipers:** the 36 Murciélago lenses that stayed clean now take dirt and dust colour (full program). Calipers and discs get the game's per-wheel flags (front/rear, left/right), so 6 of the 11 calipers that stayed clean take dirt now. Still clean (reason recorded): 4 skinned calipers, and 1 caliper that isn't mounted on a wheel. On the Murciélago 5 of 589 surfaces stay clean, down from 47.
+- **Brake size:** discs and calipers are scaled like the game does it: rim diameter × the rim's BrakeDiscRatio ÷ 0.4 m, about the wheel centre (a **Brake size** modifier). Before, they kept their modelled size. A library rim brings its own ratio; Stock puts the car's back.
+- **Paint finishes with the game's names:** the 13 materials of the game's paint menu (Non-Metallic, Chrome, Metallic, Fine Metalflake, Brushed Metal, Black Carbon, Carbon, Chequered Carbon, Broad Carbon, Forged Carbon, Damascus, Large Metalflake, Honey-Comb Carbon), with the game's exact values.
+  - New **Color shift** (Single, Near, Opposite, Spectrum, Iridescent) and the game's Gloss / Satin / Matte values.
+  - **Finish** now lists the game's 13 preset finishes (Gloss, Metallic, Chrome, Satin Metallic, Carbon, Matte Carbon, Forged Carbon, Chameleon Flake, Color Shift, Iridescent, Color Shift Carbon, Damascus, Honey-Comb Carbon); **Material** and **Color shift** set each part as in the game's PRO tab.
+- **Tire width as the game does it:** a tire widens by the rim's width minus the tire mesh's width, one sidewall only (the tire shader branches on a per-wheel flag; rims use the two-sided formula). 1.0.9 used half the section-width difference on each side. Tread, bead, sidewall size and factory rims were already exact.
+- **Frosty:** the rim library index records each rim's BrakeDiscRatio (re-export the rim library; older ones keep the brakes' size on a library rim).
+- **Tests:** the Lotus Evija joins the vehicle tests; checks that the Wheel fit and brake size reproduce the captured values; every vehicle test checks the brake size; rim test checks the brakes follow the rim; paint test checks the preset finishes decode like the game's menu.
+
 ## 1.0.9
 
 - **Exact tire fit:** tires are reshaped per vertex the way the game's tire shader does it, instead of scaling the whole tire.
