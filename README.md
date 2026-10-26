@@ -28,7 +28,7 @@ No game data is stored here: no textures, meshes, shader bytecode or disassembly
 3. In Frosty, choose **Tools → An's Garage → Export vehicle...**, then **Choose vehicle...**, then **Export...**.
 4. Once, for every car: **Tools → An's Garage → Export shared parts...** into one folder (shader textures, tires, rims, plates, frames), then set that folder in Blender (add-on preferences, **Shared parts folder**). Car materials need the shader textures.
 5. In Blender, press **N → An's Garage → Import car…** (or **File → Import → An's Garage vehicle (.json)**) and pick the export's `manifest.json`.
-6. The car's section has its preset, body parts by in-game name, paint and livery, wheels, license plate, moving parts (0–1 sliders for doors, windows, hood, boot and active aero), materials, and dirt, dust and wet.
+6. The car's section has its preset, body parts by in-game name, paint and livery, wheels, license plate, stance (ride height, camber), moving parts (0–1 sliders for doors, windows, hood, boot and active aero), materials, and dirt, dust and wet.
 
 ## Development
 

@@ -65,7 +65,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 
 ## 4. Validation
 
-`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, `paint`, `liveries`, `rims`, `static`, and `vehicle:<name>` for nine cars covering every moving-part pattern found by the scan of all 200 vehicles. Each vehicle test shows every part option and checks that its parts sit where the assembly placed them.
+`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, `paint`, `liveries`, `rims`, `static`, and `vehicle:<name>` for ten cars covering every moving-part pattern found by the scan of all 200 vehicles. Each vehicle test shows every part option and checks that its parts sit where the assembly placed them.
 
 ## 5. Open items
 

@@ -14,6 +14,12 @@ Collections use item types, location, source variant names and preset membership
 
 The first source permutation is an explicit preview policy. Source template SubItems allow stock/body-kit selection. Full engine restrictions and offsets are retained raw, not evaluated. Arbitrary compatible customization combinations are therefore not certified.
 
+## Stance
+
+`assembly.json` "Stance" (Frosty `AssemblyRun.Stance`): the stock car item's `ControlArmTuningItemData` sub-item (`items/stanceitems/visualsuspensionsliders_<travel>`) and its tuning items, each `PerformanceModificationTuningItemData` → `TuningConfig` (`GenericTuningConfigData`) → `PerformanceTuning.PerformanceTuningData` (`RaceVehiclePerformanceTuningData`). A slider changes each attribute linearly from `ModificationMin` (slider minimum) to `ModificationMax` (maximum); attributes from several sliders add up.
+
+`blender/ans_garage/unbound_stance.py` drives each wheel's Suspension empty: `ATM_XCarBodyYOffset` (body down = wheels up), `ATM_XCarWheelCamberTop/Bottom<axle>` (camber, tops in, read as radians), `ATM_XCarWheelXOffsetTop/Bottom<axle>` (out along the axle). Caster and `ATM_XCarMultiplier` aren't applied. Unchecked: camber units and sign, and the top/bottom pair (equal in every car checked).
+
 ## Moving parts
 
 `blender/ans_garage/unbound_animation.py` reads the vehicle blueprint's animation graph from `assembly.json` (field names are Frosty field-name hashes; the module computes them from the names).
@@ -28,7 +34,9 @@ The first source permutation is an explicit preview policy. Source template SubI
   - Tracks reach a component's `Transform` (Murciélago vents) or `TransformOffset` (spoiler base and flap) through:
     - `TransformBlendEntityData.In2`, weighted by the spoiler component's `AnimationExtent`: stock item 1, aftermarket 0;
     - `TransformMultiplierEntityData` (wing in `In1`, airbrake in `In2`);
-    - `RealmTransformCombinerEntityData.ClientTransform`.
+    - `RealmTransformCombinerEntityData.ClientTransform`;
+    - a `TransformBlendEntityData` fed by two sequences (Ford GT: the wing-up sequence in `In1`, the airbrake sequence in `In2`), blended by its `BlendValue` = `ClampEntityData` of a `MathOpEntityData` Multiply of the airbrake output and a `FloatEntityData` (3). In Blender: Copy Transforms to the first pose, then to the second with that influence.
+  - The animation component's two outputs are told apart by what they drive in the cars checked: `0x33ff5416` the wing sequence, `0xac7e87ed` the airbrake.
 - **Pop-up headlights** (Diablo SV):
   - two sequences are played by light events (no `ExternalTime`) and feed a `TransformHubEntityData`, which passes on whichever played last;
   - the sequence that starts at rest opens the lights and becomes the slider; the other is its reverse;
@@ -45,4 +53,4 @@ The first source permutation is an explicit preview policy. Source template SubI
 - Tire fitting reproduces the tire vertex shader's formula per vertex (Wheel fit modifier, see `development-notes.md`). Its inputs come from TireConfig (diameter, section width), the factory rim item (diameter, width) and the TireMeshInfo reference dimensions, and match a frame capture of the game (Lotus Evija rear). The sidewall size follows the tire item's `SmallToMedRatio` / `MedToLargeRatio`.
 - Factory rims keep their source dimensions; library rims are resized with the same formula. Brake discs and calipers are sized like the game's brake shader (rim diameter × `BrakeDiscRatio` / 0.4). Caliper offsets (`BrakeDiscXOffset`), loaded suspension and animation simulation are not reconstructed.
 
-Production algorithms contain no vehicle-specific offsets or asset IDs. The test suite (`tests/run_all.py`) assembles nine cars and checks placement (every part option, shown one by one), part switching, presets and moving parts on each.
+Production algorithms contain no vehicle-specific offsets or asset IDs. The test suite (`tests/run_all.py`) assembles ten cars and checks placement (every part option, shown one by one), part switching, presets and moving parts on each.

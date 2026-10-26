@@ -1,3 +1,10 @@
+# 1.1.7
+
+- `assembly.json` has the car's **Stance**: its stock visual-suspension item and that item's tuning sliders (ride height, front and rear camber), in the garage's order (`UISortIndex`), each with its range, stock setting and the physics attributes it changes (`AttributeToModify`, `ModificationType`, Min/Max), read through the item's `TuningConfig` and `PerformanceTuningData`.
+
+
+- No changes; version kept in step with An's Garage for Blender 1.1.6.
+
 # 1.1.5
 
 - No changes; version kept in step with An's Garage for Blender 1.1.5.

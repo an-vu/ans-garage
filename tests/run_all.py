@@ -36,7 +36,8 @@ EXPORTS = setting("exports_dir")
 OUT = setting("validation_dir") / "latest"
 STATE = OUT / "test-state.json"
 VERSION = ".".join(map(str, eval(re.search(r'"version": (\([^)]*\))', (ADDON / "__init__.py").read_text()).group(1))))
-VEHICLES = ["murcielago", "bmw-m3e46", "chiron-sport", "mclaren-p1", "diablo-sv", "taycan", "integra", "audi-s5", "evija"]
+VEHICLES = ["murcielago", "bmw-m3e46", "chiron-sport", "mclaren-p1", "diablo-sv", "taycan", "integra", "audi-s5", "evija",
+            "ford-gt"]
 QUICK = ["nodes", "vehicle:murcielago"]
 EXPORT_FILES = ("manifest.json", "assembly.json", "materials.json")
 # Add-on files each test exercises (the whole add-on where it imports a car).

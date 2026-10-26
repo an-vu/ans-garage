@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 5), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 7), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -234,9 +234,14 @@ def animation_module():
     return unbound_animation
 
 
+def stance_module():
+    from . import unbound_stance
+    return unbound_stance
+
+
 class CarReport:
     """The one readable report of a car ("An's Garage report: <car>" in the Text Editor): sections of plain lines."""
-    ORDER = ("Import", "Materials", "Assembly", "Moving parts", "License plate", "How the car was built")
+    ORDER = ("Import", "Materials", "Assembly", "Moving parts", "Stance", "License plate", "How the car was built")
 
     def __init__(self, title):
         self.title, self.sections, self.slots = title, {}, {}
@@ -569,6 +574,10 @@ def import_steps(filepath, assemble=True, materials=True):
             else:
                 root["ans_garage_static_export"] = True
                 report.add("Moving parts", "Not built: exported as a static model (Add moving parts builds them)")
+            try:
+                report.add("Stance", *stance_module().build(root))
+            except Exception as exc:
+                report.add("Stance", "Not built: %s" % exc)
             if materials and path.with_name("materials.json").is_file():
                 # Per-wheel inputs (front/rear selectors) exist only on assembled wheel parts.
                 surface_report = yield from _scaled(surfaces_module().surface_steps(None, path),
@@ -1124,6 +1133,20 @@ def register():
                 op = self.layout.operator("object.ans_garage_tire", text="Stock (car's own)" if name == "Stock" else name)
                 op.root, op.tire, op.lettering = root.name, name, current.get("Lettering", "Plain")
 
+    class OBJECT_OT_ans_garage_stance_stock(bpy.types.Operator):
+        bl_idname = "object.ans_garage_stance_stock"
+        bl_label = "Stock stance"
+        bl_description = "Put ride height and camber back to the car's stock settings"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            stance_module().set_stock(root)
+            return {"FINISHED"}
+
     class OBJECT_OT_ans_garage_hide_note(bpy.types.Operator):
         bl_idname = "object.ans_garage_hide_note"
         bl_label = "Hide note"
@@ -1509,6 +1532,19 @@ def register():
             if plates:
                 self.draw_plate(context, root, plates)
 
+            stance = stance_module().controls(root)
+            if stance is not None:
+                header, body = section(car, root, "stance")
+                header.label(text="Stance")
+                if body:
+                    col = body.column()
+                    col.use_property_split = True
+                    col.use_property_decorate = False
+                    for s in stance_module().sliders(root):
+                        if s["Key"] in stance:
+                            col.prop(stance, '["%s"]' % s["Key"], text=s["Text"], slider=True)
+                    field(body, "").operator("object.ans_garage_stance_stock", text="Stock").root = root.name
+
             header, moving = section(car, root, "moving")
             header.label(text="Moving parts")
             if moving:
@@ -1657,10 +1693,9 @@ def register():
                 col = layout.column(align=True)
                 col.use_property_split = True
                 col.use_property_decorate = False
-                for group in animation_module().GROUPS:
-                    for c in [c for c in controls if c["Group"] == group]:
-                        if c["Key"] in obj:
-                            col.prop(obj, '["%s"]' % c["Key"], text=c["Label"], slider=True)
+                for c in controls:  # front to back (sorted when the moving parts are built)
+                    if c["Key"] in obj:
+                        col.prop(obj, '["%s"]' % c["Key"], text=c["Label"], slider=True)
             elif root.get("ans_garage_moving_parts_json"):
                 layout.label(text="None in this car's data")
             else:
@@ -1676,7 +1711,7 @@ def register():
                            OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_frame,
                            OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_rim, OBJECT_OT_ans_garage_rim_paint_stock,
-                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts, OBJECT_OT_ans_garage_hide_note, ANS_GARAGE_MT_part,
+                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts, OBJECT_OT_ans_garage_hide_note, OBJECT_OT_ans_garage_stance_stock, ANS_GARAGE_MT_part,
                            ANS_GARAGE_MT_preset, ANS_GARAGE_MT_tire, ANS_GARAGE_MT_finish, ANS_GARAGE_MT_material,
                            ANS_GARAGE_MT_shift, ANS_GARAGE_MT_gloss,
                            OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_catch_up, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_material,

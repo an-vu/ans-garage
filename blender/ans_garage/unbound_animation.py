@@ -9,6 +9,8 @@ hashes, resolved below); nothing is posed by hand.
   The sequence's transform tracks (keys in TrackData) reach a component's Transform or TransformOffset through
   TransformBlendEntityData (In2, weighted by the spoiler item's AnimationExtent: stock 1, aftermarket 0),
   TransformMultiplierEntityData (In1, then In2) and RealmTransformCombinerEntityData (ClientTransform).
+  A TransformBlendEntityData between two sequences (Ford GT: the wing-up pose in In1, the airbrake pose in In2) blends
+  them by its BlendValue, read from a Clamp of a Multiply of an animation output and a constant (clamp(3 x airbrake)).
 - Pop-up headlights: two sequences played by light events (no ExternalTime) feed a TransformHubEntityData, which passes
   on whichever played last. The one starting at rest opens the lights and becomes the slider; the other is its reverse.
 A slider is one source input from 0 to 1: the property's T, or the sequence time across its keys. The game's speed
@@ -132,6 +134,23 @@ def _trs(translation, degrees):
     return Matrix.Translation(translation) @ rotation
 
 
+def factor_controls(f):
+    """The sliders a factor follows."""
+    return f.get("Controls") or [f["Control"]]
+
+
+def factor_at(f, values):
+    """Source transform of a factor entry with the sliders at `values` ({key: 0..1})."""
+    factor = f["Factor"]
+    if factor["Kind"] != "Blend":
+        return factor_matrix(factor, values.get(f["Control"], 0.0))
+    w = factor["Weight"]
+    weight = min(max(values.get(w["Control"], 0.0) * w["Scale"], w["Min"]), w["Max"])
+    a = factor_matrix(factor["A"], values.get(factor["ControlA"], 0.0))
+    b = factor_matrix(factor["B"], values.get(factor["ControlB"], 0.0))
+    return a.lerp(b, weight)
+
+
 def factor_matrix(factor, s):
     """Source transform (Frostbite axes, column vectors) of one factor at slider value s in 0..1."""
     from mathutils import Matrix
@@ -186,13 +205,54 @@ def _named_properties(g, moving, controls, skipped, issues):
                 issues.append("%s: %s" % (key, exc))
 
 
+# AnimationComponentData outputs, by what they drive in the cars checked: the wing sequence (P1, Chiron, Murciélago,
+# Ford GT) and the airbrake (the P1's and Chiron's airbrake MathEntity, the Ford GT's airbrake sequence).
+WING_OUTPUT, AIRBRAKE_OUTPUT = "0x33ff5416", "0xac7e87ed"
+
+
+def _sequence_blend(g, node):
+    """True for a TransformBlendEntityData whose two inputs both come from sequences (not the AnimationExtent kind)."""
+    return bool(g.into(node, "In1")) and bool(g.into(node, "In2"))
+
+
+def _blend_weight(g, node):
+    """The BlendValue of a blend between two sequences, as clamp(Scale x control, Min, Max). Supported source:
+    ClampEntityData.In <- MathOpEntityData (Multiply) of an animation output and a FloatEntityData."""
+    src = g.into(node, "BlendValue")
+    if len(src) != 1 or g.type(src[0][0]) != "ClampEntityData":
+        raise Unsupported("Blend weight is not a Clamp")
+    clamp = src[0][0]
+    ins = g.into(clamp, "In")
+    if len(ins) != 1 or g.type(ins[0][0]) != "MathOpEntityData":
+        raise Unsupported("Blend weight Clamp is not fed by a MathOp")
+    op = ins[0][0]
+    if [o.get("Name") for o in g.raw(op).get("Operators") or []] != ["MathOp_Multiply"]:
+        raise Unsupported("Blend weight MathOp is not a single Multiply")
+    control = scale = None
+    for s, sf, t, *_ in g.props:
+        if t != op:
+            continue
+        if g.type(s) == "AnimationComponentData" and sf in (WING_OUTPUT, AIRBRAKE_OUTPUT):
+            control = "airbrake" if sf == AIRBRAKE_OUTPUT else "aero"
+        elif g.type(s) == "FloatEntityData":
+            scale = float(g.raw(s)["DefaultValue"])
+        else:
+            raise Unsupported("Blend weight MathOp input %s" % g.type(s))
+    if control is None or scale is None:
+        raise Unsupported("Blend weight MathOp needs an animation output and a constant")
+    raw = g.raw(clamp)
+    return {"Control": control, "Scale": scale, "Min": float(raw["Min"]), "Max": float(raw["Max"])}
+
+
 def _follow(g, node, infield, path, out):
     """From a sequence output into the transform graph, down to a component field."""
     typ = g.type(node)
     if node in g.comps and infield in (field("Transform"), field("TransformOffset")):
         out.append((node, "Transform" if infield == field("Transform") else "TransformOffset", path))
         return
-    if typ == "TransformBlendEntityData" and infield == field("In2"):
+    if typ == "TransformBlendEntityData" and infield in (field("In1"), field("In2")) and _sequence_blend(g, node):
+        path = path + [("Blend", (node, 0 if infield == field("In1") else 1))]
+    elif typ == "TransformBlendEntityData" and infield == field("In2"):
         if g.into(node, "In1") or any(abs(a - b) > 1e-6 for a, b in zip(g.raw(node)["In1"]["Basis"], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0])):
             raise Unsupported("Transform blend with a non-identity In1")
         weights = g.into(node, "BlendValue")
@@ -210,7 +270,7 @@ def _follow(g, node, infield, path, out):
         _follow(g, target, tf, path, out)
 
 
-def _sequences(g, moving, controls, skipped, issues):
+def _sequences(g, moving, controls, skipped, issues, blends):
     tracks_data = g.data.get("TrackData") or {}
     for node, n in g.nodes.items():
         if n["Type"] != "SequenceEntityData" or not any(node in (s, t) for s, _, t, *_ in g.props):
@@ -218,7 +278,7 @@ def _sequences(g, moving, controls, skipped, issues):
         drivers = g.into(node, "ExternalTime")
         source = g.type(drivers[0][0]) if len(drivers) == 1 else None
         if source == "AnimationComponentData":
-            key, group = "aero", "Active aero"
+            key, group = ("airbrake" if drivers[0][1] == AIRBRAKE_OUTPUT else "aero"), "Active aero"
         elif source == "MathEntityData" and any(g.type(s) == "AnimationComponentData" for s, _ in g.into(drivers[0][0], "Value")):
             key, group = "airbrake", "Active aero"
         elif source == "LogicPrefabReferenceObjectData" and "spoiler" in (
@@ -287,7 +347,12 @@ def _sequences(g, moving, controls, skipped, issues):
             for comp, fld, factor, path in reached:
                 extent = next((c for kind, c in path if kind == "Extent"), None)
                 order = next((o for kind, o in path if kind == "Multiply"), 0)
-                _add(moving, comp, fld, key, factor, order, extent)
+                blend = next((b for kind, b in path if kind == "Blend"), None)
+                if blend is not None:
+                    # One input of a blend between two sequences: paired with the other input after every sequence.
+                    blends.setdefault((comp, fld, blend[0]), {})[blend[1]] = (key, factor, extent)
+                else:
+                    _add(moving, comp, fld, key, factor, order, extent)
             if not any(c["Key"] == key for c in controls):
                 controls.append({"Key": key, "Label": label, "Group": group, "Source": "SequenceEntity " + ", ".join(sorted(set(names)))})
         except (Unsupported, KeyError, TypeError) as exc:
@@ -310,7 +375,22 @@ def analyse(data):
     g = Graph(data)
     moving, controls, skipped, issues = {}, [], [], []
     _named_properties(g, moving, controls, skipped, issues)
-    _sequences(g, moving, controls, skipped, issues)
+    blends = {}
+    _sequences(g, moving, controls, skipped, issues, blends)
+    for (comp, fld, node), sides in blends.items():
+        try:
+            if set(sides) != {0, 1}:
+                raise Unsupported("Blend between sequences with one input reached")
+            (key_a, factor_a, extent), (key_b, factor_b, _) = sides[0], sides[1]
+            weight = _blend_weight(g, node)
+            factor = {"Kind": "Blend", "A": factor_a, "B": factor_b, "ControlA": key_a, "ControlB": key_b, "Weight": weight}
+            entry = moving.setdefault(comp, {"Field": fld, "Factors": []})
+            if entry["Field"] != fld:
+                raise Unsupported("Component driven through both Transform and TransformOffset")
+            entry["Factors"].append({"Control": key_a, "Controls": sorted({key_a, key_b, weight["Control"]}),
+                                     "Factor": factor, "Order": 0, "Extent": extent})
+        except (Unsupported, KeyError, TypeError, ValueError) as exc:
+            issues.append("blend %s: %s" % (node.rsplit(":", 1)[-1], exc))
     for entry in moving.values():
         # Column order: TransformMultiplier In2 is applied after In1 (In1 * In2 in Frostbite's row-vector form).
         entry["Factors"].sort(key=lambda f: f["Order"])
@@ -367,6 +447,22 @@ def _drive(constraint, controls_obj, key):
         curve.modifiers.remove(m)
 
 
+def _drive_weight(constraint, controls_obj, weight):
+    """Constraint influence = clamp(Scale x slider, Min, Max) (a simple expression: no Python scripts needed)."""
+    curve = constraint.driver_add("influence")
+    driver = curve.driver
+    driver.type = "SCRIPTED"
+    driver.expression = "min(max(x * %r, %r), %r)" % (weight["Scale"], weight["Min"], weight["Max"])
+    var = driver.variables.new()
+    var.name = "x"
+    var.type = "SINGLE_PROP"
+    var.targets[0].id_type = "OBJECT"
+    var.targets[0].id = controls_obj
+    var.targets[0].data_path = '["%s"]' % weight["Control"]
+    for m in list(curve.modifiers):
+        curve.modifiers.remove(m)
+
+
 def _body_armature(root):
     body = next((c for c in root.children if c.name.split(".")[0] == "Body"), None)
     for inst in (body.children if body else []):
@@ -380,7 +476,7 @@ def build(root):
     """Sliders and rig for the moving parts of an assembled vehicle. Returns the report (also on the root)."""
     import bpy
     from collections import defaultdict
-    from mathutils import Matrix
+    from mathutils import Matrix, Vector
     data = json.loads(open(root["unbound_assembly_path"], encoding="utf-8-sig").read())
     result = analyse(data)
     g, moving = result["Graph"], result["Moving"]
@@ -408,7 +504,7 @@ def build(root):
     def local_matrix(comp, values):
         m = Matrix.Identity(4)
         for f in moving[comp]["Factors"]:
-            m = m @ factor_matrix(f["Factor"], values.get(f["Control"], 0.0))
+            m = m @ factor_at(f, values)
         return m
 
     def world(comp, values):
@@ -439,19 +535,20 @@ def build(root):
                 if c == comp and moving[comp]["Field"] == "Transform":
                     continue
                 static = static @ matrix_from_basis(g.comps[c]["Transform"])
-            names = sorted({label_of[f["Control"]] for f in moving[comp]["Factors"]})
+            names = sorted({label_of[k] for f in moving[comp]["Factors"] for k in factor_controls(f)})
             base = bpy.data.objects.new("Moving | %s | %s" % (" + ".join(names), comp.rsplit(":", 1)[-1]), None)
             base.empty_display_size = 0.05
             rig.objects.link(base)
             base.parent = ends.get(owner)
             base.matrix_basis = conv @ static @ inv
             parent = base
-            for f in moving[comp]["Factors"]:
-                e = bpy.data.objects.new(base.name + " | " + label_of[f["Control"]], None)
+            def keyed(name, factor, key, parent):
+                """An empty under `parent` that follows `factor` over the slider `key`."""
+                e = bpy.data.objects.new(name, None)
                 e.empty_display_size = 0.05
                 rig.objects.link(e)
                 e.parent = parent
-                frames = [conv @ factor_matrix(f["Factor"], i / SAMPLES) @ inv for i in range(SAMPLES + 1)]
+                frames = [conv @ factor_matrix(factor, i / SAMPLES) @ inv for i in range(SAMPLES + 1)]
                 act, slot = _action(e.name, e, frames)
                 con = e.constraints.new("ACTION")
                 con.action = act
@@ -459,13 +556,33 @@ def build(root):
                     con.action_slot = slot
                 con.use_eval_time = True
                 con.frame_start, con.frame_end = 0, SAMPLES
-                _drive(con, controls_obj, f["Control"])
+                _drive(con, controls_obj, key)
+                return e
+
+            for f in moving[comp]["Factors"]:
+                factor = f["Factor"]
+                if factor["Kind"] != "Blend":
+                    parent = keyed(base.name + " | " + label_of[f["Control"]], factor, f["Control"], parent)
+                    continue
+                # Both poses side by side; a third empty copies the first and blends to the second by the weight.
+                a = keyed(base.name + " | " + label_of[factor["ControlA"]], factor["A"], factor["ControlA"], parent)
+                b = keyed(base.name + " | " + label_of[factor["ControlB"]] + " pose", factor["B"], factor["ControlB"], parent)
+                e = bpy.data.objects.new(base.name + " | blend", None)
+                e.empty_display_size = 0.05
+                rig.objects.link(e)
+                e.parent = parent
+                e.constraints.new("COPY_TRANSFORMS").target = a
+                to_b = e.constraints.new("COPY_TRANSFORMS")
+                to_b.target = b
+                _drive_weight(to_b, controls_obj, factor["Weight"])
                 parent = e
             ends[comp] = parent
             frames_of[comp] = world(comp, {})
         except Exception as exc:
             issues.append("%s: %s" % (comp.rsplit(":", 1)[-1], exc))
     attached = defaultdict(int)
+    # Where each moving component's geometry sits along the car (Blender Y, front negative), for the slider order.
+    centres, bones_of = defaultdict(list), defaultdict(list)
 
     def needs_extent(comp, item):
         """False when the selected item turns the motion off (AnimationExtent 0, like every aftermarket spoiler)."""
@@ -499,6 +616,7 @@ def build(root):
             con.inverse_matrix = (conv @ frames_of[comp] @ inv).inverted() @ rest
             con.set_inverse_pending = False
             attached[comp] += 1
+            bones_of[comp].append(bone.name)
     else:
         issues.append("Body armature not found; body parts stay still")
 
@@ -534,22 +652,64 @@ def build(root):
                 o.parent = ends[comp]
                 o.matrix_parent_inverse = rest.inverted()
                 o.matrix_basis = matrix
+        ys = [(world_matrix(o) @ Vector(c)).y for o in inst.all_objects if o.type == "MESH" for c in o.bound_box]
+        if ys:
+            centres[comp].append(sum(ys) / len(ys))
         attached[comp] += 1
+    for comp, y in _group_centres(arm, {b for names in bones_of.values() for b in names}).items():
+        for c, names in bones_of.items():
+            if comp in names:
+                centres[c].append(y)
     for c in result["Controls"]:
-        comps = [comp for comp, entry in moving.items() if any(f["Control"] == c["Key"] for f in entry["Factors"])]
+        comps = [comp for comp, entry in moving.items() if any(c["Key"] in factor_controls(f) for f in entry["Factors"])]
         moved = sum(attached[comp] for comp in comps)
-        entry = dict(c, Components=[x.rsplit(":", 1)[-1] for x in comps], Attached=moved)
+        ys = [y for comp in comps for y in centres[comp]]
+        entry = dict(c, Components=[x.rsplit(":", 1)[-1] for x in comps], Attached=moved,
+                     Y=round(sum(ys) / len(ys), 3) if ys else None)
         if moved:
             report["Controls"].append(entry)
         else:
             issues.append("%s: no geometry found on its components; slider not shown" % c["Label"])
             del controls_obj[c["Key"]]
+    # Front to back, like the body parts. A left/right pair stays together, left first, at the pair's front; the
+    # airbrake follows its wing.
+    def pair(c):
+        return "Rear wing" if c["Label"] == "Airbrake" else c["Label"].replace("Left ", "").replace("Right ", "")
+    front = {}
+    for c in report["Controls"]:
+        if c["Y"] is not None:
+            front[pair(c)] = min(front.get(pair(c), c["Y"]), c["Y"])
+    report["Controls"].sort(key=lambda c: (pair(c) not in front, front.get(pair(c), 0.0), pair(c),
+                                           c["Label"] == "Airbrake", not c["Label"].startswith("Left ")))
     root["ans_garage_controls"] = controls_obj.name
     root["ans_garage_moving_parts_json"] = json.dumps(report)
     layer = _layer(bpy.context.view_layer.layer_collection, rig)
     if layer is not None:
         layer.hide_viewport = True
     return report
+
+
+def _group_centres(arm, names):
+    """{bone name: Y of the mean of the body vertices it moves (weight over 0.5)}, over the meshes the armature
+    deforms."""
+    import bpy
+    sums = {n: [0.0, 0] for n in names}
+    if arm is None or not sums:
+        return {}
+    for o in bpy.data.objects:
+        if o.type != "MESH" or not any(m.type == "ARMATURE" and m.object == arm for m in o.modifiers):
+            continue
+        groups = {g.index: sums[g.name] for g in o.vertex_groups if g.name in sums}
+        if not groups:
+            continue
+        mw = world_matrix(o)
+        for v in o.data.vertices:
+            for e in v.groups:
+                total = groups.get(e.group)
+                if total is not None and e.weight > 0.5:
+                    total[0] += (mw @ v.co).y
+                    total[1] += 1
+    return {n: t[0] / t[1] for n, t in sums.items() if t[1]}
 
 
 def _collections(root):

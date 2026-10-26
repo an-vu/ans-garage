@@ -82,6 +82,44 @@ namespace AnsGarage
         private EbxAsset Load(Guid id) {EbxAsset a;if(!cache.TryGetValue(id,out a)){var e=App.AssetManager.GetEbxEntry(id);if(e==null)throw new InvalidDataException("Missing EBX "+id);a=App.AssetManager.GetEbx(e);cache[id]=a;}return a;}
         private object Resolve(object value) {if(!(value is PointerRef))throw new InvalidDataException("Expected PointerRef.");return Batch.Resolve((PointerRef)value,Load);}
         private static Guid Owner(object value,Guid owner) {var p=(PointerRef)value;return p.Type==PointerRefType.External?p.External.FileGuid:owner;}
+        // The car's stance sliders as the garage shows them: its stock visual-suspension item (ControlArmTuningItemData)
+        // and that item's tuning sub-items (ride height, front and rear camber), each with its slider range, stock setting,
+        // garage order and the physics attributes it changes (Min at the slider's minimum, Max at its maximum).
+        private JToken Stance(object stock)
+        {
+            foreach(var sub in List(stock,"SubItems")) {
+                if(!(sub is PointerRef)||((PointerRef)sub).Type!=PointerRefType.External)continue;
+                object item;
+                try {item=Resolve(sub);} catch(Exception ex) {Issue("Stance",ex.Message);continue;}
+                if(item==null||item.GetType().Name!="ControlArmTuningItemData")continue;
+                var sliders=new JArray();
+                foreach(var t in List(item,"SubItems")) {
+                    try {
+                        var tuning=Resolve(t);
+                        var config=Resolve(Batch.Get(tuning,"TuningConfig"));
+                        var data=Resolve(Batch.Get(Batch.Get(config,"PerformanceTuning"),"PerformanceTuningData"));
+                        var changes=new JArray();
+                        foreach(var m in List(data,"PerformanceTunings"))
+                            changes.Add(new JObject {{"Attribute",Batch.Get(m,"AttributeToModify").ToString()},{"Type",Batch.Get(m,"ModificationType").ToString()},
+                                {"Min",Convert.ToDouble(Batch.Get(m,"ModificationMin"))},{"Max",Convert.ToDouble(Batch.Get(m,"ModificationMax"))}});
+                        sliders.Add(new JObject {{"Item",AssetName(t)},{"Label",Batch.Get(tuning,"LabelId").ToString()},
+                            {"Min",Convert.ToInt32(Batch.Get(tuning,"MinValue"))},{"Max",Convert.ToInt32(Batch.Get(tuning,"MaxValue"))},
+                            {"Stock",Convert.ToInt32(Batch.Get(tuning,"TuningSetting"))},{"Sort",Convert.ToInt32(Batch.Get(tuning,"UISortIndex"))},
+                            {"Changes",changes}});
+                    } catch(Exception ex) {Issue("Stance "+AssetName(t),ex.Message);}
+                }
+                // In the garage's order (UISortIndex: ride height, then front and rear camber).
+                return new JObject {{"Item",AssetName(sub)},{"Sliders",new JArray(sliders.OrderBy(x=>(int)x["Sort"]))}};
+            }
+            return JValue.CreateNull();
+        }
+        private static string AssetName(object value)
+        {
+            var p=value as PointerRef?;
+            if(p==null||p.Value.Type!=PointerRefType.External)return null;
+            var e=App.AssetManager.GetEbxEntry(p.Value.External.FileGuid);
+            return e==null?null:e.Name;
+        }
         private static IEnumerable<object> List(object obj,string field) {var list=Batch.Get(obj,field) as IEnumerable;return list==null?Enumerable.Empty<object>():list.Cast<object>();}
         private static Guid ObjectGuid(object obj) {return ((AssetClassGuid)obj.GetType().GetMethod("GetInstanceGuid",Type.EmptyTypes).Invoke(obj,null)).ExportedGuid;}
         public static double[] Matrix(object t)
@@ -217,6 +255,7 @@ namespace AnsGarage
             var stockUi=Names.ItemUi(stock,Resolve);
             Document["VehicleName"]=new JObject {{"Long",stockUi["LongName"]},{"Medium",stockUi["MediumName"]},{"Short",stockUi["ShortName"]},
                 {"LongNameId",stockUi["LongNameId"]},{"Item",vehicleItem.Name}};
+            Document["Stance"]=Stance(stock);
             var defaultFiles=new HashSet<Guid>(List(stock,"SubItems").Where(v=>v is PointerRef&&((PointerRef)v).Type==PointerRefType.External).Select(v=>((PointerRef)v).External.FileGuid));
             string itemFolder=vehicleItem.Name.Substring(0,vehicleItem.Name.LastIndexOf('/'));
             var selected=entries.Where(e=>Core.InScope(e.Name,itemFolder)||defaultFiles.Contains(e.Guid)).ToList();

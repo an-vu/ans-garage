@@ -2,6 +2,21 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.7
+
+- **Stance, as in the game's garage:** a **Stance** section per car with **Ride height**, **Front camber** and **Rear camber** (0-10, the game's slider steps) and **Stock**.
+  - The values are the game's: each car's stock visual-suspension item (its ride-height travel: 7 mm on the Murciélago and Ford GT up to 75 mm on the BMW M3 E46), and the physics changes each slider makes, exported by An's Garage for Frosty into `assembly.json`.
+  - Ride height is stock at 10 (the top): lowering moves the body down by the car's travel and, as in the game's data, adds camber (front 0.125, rear 0.1) and pushes the wheels out (front 17.5 mm, rear 12.5 mm). The camber sliders add up to 0.2 and 20 mm.
+  - In Blender the wheels rise into the body (the car stays where it is) and lean in at the top, through drivers on each wheel's Suspension empty.
+  - Unchecked, to confirm in a game session: camber read as radians (0.2 = 11.5°), its top/bottom pair (equal in every car checked) taken as one angle, and tops in. Caster is not shown (no visible change at rest).
+- Re-export cars (or **Add assembly to an existing export**) to get their stance.
+- **Tests:** every vehicle test checks the stance: stock leaves the wheels in place, the lowest ride height lifts them by the car's travel and moves them out, front camber 10 leans the fronts in by 0.2 rad.
+
+
+- **Moving parts listed front to back,** like the body parts (they were grouped by kind: aero, doors, windows, hood and boot). Each slider is placed by where its geometry sits on the car (item meshes, and the body vertices its bone moves), and a left/right pair stays together, left first. Murciélago: Hood, Left door, Right door, Left window, Right window, Air vents, Boot. The order is set when the moving parts are built, so reimport a car to get it.
+- **Ford GT: rear wing and airbrake move,** as in the game. Its wing and flap blend between two sequences (wing up, and the airbrake pose) by clamp(3 × airbrake), which the moving parts didn't support ("Transform blend with a non-identity In1"). Now: **Rear wing** raises the wing on its struts, **Airbrake** tilts it up; in Blender a Copy Transforms constraint does the blend, driven by the same clamp. The wing and airbrake are told apart by the animation output that drives them (the same outputs as the P1's and Chiron's). The blend's exact interpolation in the game is unchecked (Blender's: position and rotation interpolated).
+- **Tests:** every vehicle test checks the order; the Ford GT is the tenth test car.
+
 ## 1.1.5
 
 - **Sidebar text uses the full width:** lines wrapped well before the edge (e.g. a two-word second line with plenty of room left). The wrap now uses the width Blender really gives a label (measured: the panel's width less 40 px at any sub-panel level), plus room only for an icon, a box or the ✕ beside a note.

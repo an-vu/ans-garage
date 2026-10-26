@@ -193,6 +193,54 @@ moving = json.loads(root.get("ans_garage_moving_parts_json") or "null") if root 
 check("Moving parts built from the source graph", moving is not None and all(c["Attached"] > 0 for c in moving["Controls"]),
       moving and {"Controls": ["%s/%s" % (c["Group"], c["Label"]) for c in moving["Controls"]], "Issues": moving["Issues"],
                   "Skipped": [x["Control"] for x in moving["Skipped"]]})
+stance = addon.stance_module()
+st_obj, st_rows = stance.controls(root), stance.sliders(root)
+check("Stance sliders from the car's own data (ride height, front and rear camber)",
+      st_obj is not None and {s["Key"] for s in st_rows} >= {"ride_height", "camber_front", "camber_rear"},
+      [(s["Text"], s["Min"], s["Max"], s["Stock"]) for s in st_rows])
+if st_obj is not None:
+    from mathutils import Vector
+    susp = [o for o in root.all_objects if o.get("wheel_side") and o.name.split(".")[0].endswith("| Suspension")]
+
+    def wheel_state():
+        st_obj.update_tag()  # a script setting a custom property doesn't tag it (the sidebar slider does)
+        bpy.context.view_layer.update()
+        return {o["wheel_side"]: (o.matrix_world.translation.copy(), (o.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized())
+                for o in susp}
+    stock_state = wheel_state()
+    rest = {o["wheel_side"]: o.parent.matrix_world.translation.copy() for o in susp}
+    check("Stance at stock leaves the wheels where the assembly put them",
+          len(susp) == 4 and all((stock_state[k][0] - rest[k]).length < 1e-6 for k in stock_state),
+          {k: round((stock_state[k][0] - rest[k]).length, 6) for k in stock_state})
+    rows = {s["Key"]: s for s in st_rows}
+    travel = -min(c["Min"] for c in rows["ride_height"]["Changes"] if c["Attribute"] == "ATM_XCarBodyYOffset")
+    st_obj["ride_height"] = rows["ride_height"]["Min"]
+    low = wheel_state()
+    lifts = {k: round(low[k][0].z - stock_state[k][0].z, 4) for k in low}
+    outs = {k: round(abs(low[k][0].x) - abs(stock_state[k][0].x), 4) for k in low}
+    check("Lowest ride height: wheels rise into the body by the car's travel and move out (front 17.5 mm, rear 12.5 mm)",
+          all(abs(v - travel) < 1e-4 for v in lifts.values())
+          and all(abs(outs[k] - (0.0175 if "Front" in k else 0.0125)) < 1e-4 for k in outs), {"Lift": lifts, "Out": outs})
+    st_obj["ride_height"] = rows["ride_height"]["Stock"]
+    st_obj["camber_front"] = rows["camber_front"]["Max"]
+    tilted = wheel_state()
+    import math
+    tops_in = {k: round(math.degrees(math.asin(max(-1, min(1, -math.copysign(1, tilted[k][0].x) * tilted[k][1].x)))), 2)
+               for k in tilted}
+    check("Front camber at 10: front wheel tops lean in by 0.2 rad (11.46 degrees), rear wheels unchanged",
+          all(abs(v - (11.46 if "Front" in k else 0.0)) < 0.05 for k, v in tops_in.items()), tops_in)
+    stance.set_stock(root)
+    check("Stock button puts the stance back", wheel_state() == stock_state or all(
+        (wheel_state()[k][0] - stock_state[k][0]).length < 1e-6 for k in stock_state))
+if moving and moving["Controls"]:
+    labels = [c["Label"] for c in moving["Controls"]]
+    pairs = ["Rear wing" if l == "Airbrake" else l.replace("Left ", "").replace("Right ", "") for l in labels]
+    fronts = [min(c["Y"] for c in moving["Controls"] if pairs[labels.index(c["Label"])] == p) for p in pairs]
+    check("Moving parts listed front to back (where their geometry sits), each left/right pair together, left first",
+          None not in [c.get("Y") for c in moving["Controls"]] and fronts == sorted(fronts)
+          and all(not l.startswith("Right ") or (i and labels[i - 1] == l.replace("Right ", "Left ", 1))
+                  for i, l in enumerate(labels) if "Left " + l[6:] in labels),
+          [(c["Label"], c.get("Y")) for c in moving["Controls"]])
 if moving and moving["Controls"]:
     ctrl = bpy.data.objects[root["ans_garage_controls"]]
     bones = [(a, pb) for a in bpy.data.objects if a.type == "ARMATURE" for pb in a.pose.bones
