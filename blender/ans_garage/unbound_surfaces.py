@@ -362,9 +362,9 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
     ikey = ("images", str(root), str(car), obj.get("unbound_override_textures", ""))
     if ikey not in caches:
         import bpy
-        caches[ikey] = P.Images(root, [bpy.context.scene.get("unbound_shader_defaults_path", ""),
-                                       obj.get("unbound_override_textures", ""),
-                                       str(car.parent / "shader-defaults"), str(car.parent.parent / "shader-defaults")])
+        import importlib
+        shader_textures = importlib.import_module(__package__).library_folder(bpy.context, "shader")
+        caches[ikey] = P.Images(root, [shader_textures, obj.get("unbound_override_textures", "")])
     if ("runtime", str(car)) not in caches:
         caches[("runtime", str(car))] = P.runtime_values(car)
     images = caches[ikey]

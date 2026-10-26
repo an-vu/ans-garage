@@ -1,10 +1,16 @@
+# 1.1.4
+
+- **Shader textures** are part of Export shared parts (first checkbox, written to `AnsGarage_ShaderTextures`, skipped when already complete). Export vehicle no longer writes a `shader-defaults` folder next to the car. The headless `defaults` mode writes into the folder it is given.
+- The menu item is now **Export shared parts...** (it is more than tires, rims and plates).
+- Export folders with accented letters (the Murciélago's own name) export their meshes: the native FBX writer can't open such paths, so each FBX is written to a temporary folder without them first, checked, then moved into place (`Core.FbxStagingPath`). Before, every mesh failed with "Native FBX export returned without a valid binary FBX header".
+
 # 1.1.3
 
 - No changes; version kept in step with An's Garage for Blender 1.1.3.
 
 # 1.1.2
 
-- **Tools > An's Garage > Export shared parts (tires, rims, plates)...** replaces the three library menus (tire, rim, license plate):
+- **Tools > An's Garage > Export shared parts...** replaces the three library menus (tire, rim, license plate):
   - tick what to export (Tires, Rims, License plates, Plate frames; **All / none**), pick one folder; each library gets its own subfolder there;
   - plates and frames share one library: exporting only one of them keeps the other (index and texture list merged).
 - The license plate library adds the Simple and Palifornia plates and eight frames (None, Simple, Illest, Mean Streets, Shirts Tucked In, German Automotive, Most Wanted, Underground): each frame item's diffuse and normal map from the shared plate texture collection, and the frame item itself (`Item`), in `plates.json` "Frames".

@@ -1,6 +1,6 @@
 """Rim library: put a real-brand aftermarket rim (BBS, HRE, Rotiform, Work...) on a car.
 
-The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts (tires, rims, plates)...); each brand is
+The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts...); each brand is
 imported into a hidden collection the first time one of its rims is chosen. Choosing a rim hides the car's own wheel
 sets and places the library rim on every wheel's rotation empty, resized from its declared size (Diameter, Width) to the
 car's factory rim on that axle the way the game's wheel shader does it (Wheel fit: the barrel and back lip move, the hub
@@ -20,7 +20,7 @@ STOCK = "Stock"
 def load_index(folder):
     path = Path(folder) / "rims.json"
     if not path.is_file():
-        raise FileNotFoundError("No rims.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts (tires, rims, plates)...)" % folder)
+        raise FileNotFoundError("No rims.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts...)" % folder)
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 

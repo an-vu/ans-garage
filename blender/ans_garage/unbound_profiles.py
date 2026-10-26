@@ -855,8 +855,7 @@ class Images:
         for n in doc.get("Nodes", []):
             if n.get("Type") == "TextureAsset" and n.get("TextureResource") in textures:
                 self.by_asset.setdefault(n["Asset"].casefold(), (self.root, textures[n["TextureResource"]]))
-        for folder in (self.root / "shader-defaults", self.root.parent / "shader-defaults", self.root / "liveries" / "textures",
-                       *[Path(f) for f in extra_folders if f]):
+        for folder in (self.root / "liveries" / "textures", *[Path(f) for f in extra_folders if f]):
             index = folder / "textures.json"
             if index.is_file():
                 for t in json.loads(index.read_text(encoding="utf-8-sig")).get("Textures", []):
@@ -917,7 +916,7 @@ class Images:
         if kind == "default":
             hit = self.by_asset.get(value.casefold())
             if not hit:
-                raise FileNotFoundError("Shader default texture not exported: " + value)
+                raise FileNotFoundError("Shader texture not found (the shared parts folder needs Shader textures): " + value)
             if hit[1].get("Slices"):
                 return [self.load(hit[0], dict(hit[1], Path=s["Path"]), value + "[%d]" % i)
                         for i, s in enumerate(hit[1]["Slices"])]

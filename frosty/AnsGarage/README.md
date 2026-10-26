@@ -17,7 +17,6 @@ C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It expo
 | Assembly: blueprint, wheels, parts, presets, shared tires/brakes, in-game names, moving-part keyframes | `assembly.json` |
 | Geometry: LOD0 binary FBX per mesh, meters, hierarchy kept | `parts/*.fbx`, `manifest.json` |
 | Materials: source material graph, original DDS textures | `materials.json`, `textures/` |
-| Shader default textures (shared by all vehicles; written once next to the car folders) | `../shader-defaults/` |
 
 Import `manifest.json` in Blender with **File → Import → An's Garage vehicle (.json)**.
 
@@ -25,9 +24,9 @@ The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\
 
 **Tools → An's Garage → Add assembly to an existing export...** adds or refreshes assembly data in an older export folder.
 
-**Tools → An's Garage → Export shared parts (tires, rims, plates)...** exports the parts every car can use, once, into one folder:
-- tick what to export: Tires (Falken, Toyo), Rims (real brands), License plates, Plate frames, or all of them;
-- each library gets its own subfolder (`AnsGarage_TireLibrary`, `AnsGarage_RimLibrary`, `AnsGarage_PlateLibrary`);
+**Tools → An's Garage → Export shared parts...** exports what every car can use, once, into one folder:
+- tick what to export: Shader textures (every car's materials need them), Tires (Falken, Toyo), Rims (real brands), License plates, Plate frames, or all of them;
+- each gets its own subfolder (`AnsGarage_ShaderTextures`, `AnsGarage_TireLibrary`, `AnsGarage_RimLibrary`, `AnsGarage_PlateLibrary`);
 - plates and frames share one library: exporting only one of them keeps the other.
 
 In Blender, set that folder once (the add-on's preferences, **Shared parts folder**); it finds each library by itself.

@@ -9,7 +9,7 @@ namespace AnsGarage
     public static class Core
     {
         // The version of An's Garage (shared with An's Garage for Blender); the only place it is written.
-        public const string Version = "1.1.3";
+        public const string Version = "1.1.4";
         public static string Normalize(string value) { return (value ?? "").Replace('\\', '/').Trim('/'); }
         public static bool InScope(string name, string prefix)
         {
@@ -45,6 +45,22 @@ namespace AnsGarage
             // The FBX SDK appends .fbx when given an unfamiliar final extension.
             return Path.Combine(Path.GetDirectoryName(file), Path.GetFileNameWithoutExtension(file) + ".partial.fbx");
         }
+        public static string FbxStagingPath(string file)
+        {
+            // The native FBX writer can't open a path with non-ASCII characters (e.g. a "Murciélago" export folder): it
+            // writes nothing. Such files are written in a plain temporary folder first, then moved into place.
+            string partial = PendingFbxPath(file);
+            if (IsAscii(partial)) return partial;
+            foreach (string root in new[] { Path.GetTempPath(), Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData) })
+            {
+                if (string.IsNullOrEmpty(root) || !IsAscii(root)) continue;
+                string dir = Path.Combine(root, "AnsGarage", "fbx");
+                Directory.CreateDirectory(dir);
+                return Path.Combine(dir, Guid.NewGuid().ToString("N") + ".partial.fbx");
+            }
+            throw new IOException("The FBX writer needs a folder without accented letters; the temporary folder has some: " + Path.GetTempPath());
+        }
+        public static bool IsAscii(string value) { return value.All(c => c < 128); }
         public static bool HasBinaryFbxHeader(string file)
         {
             if (!File.Exists(file) || new FileInfo(file).Length < 27) return false;

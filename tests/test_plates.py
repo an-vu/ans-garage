@@ -12,6 +12,7 @@ args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, library, out_dir = Path(args[0]), Path(args[1]), Path(args[2]), Path(args[3])
 out_dir.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.context.scene["ans_garage_shared_parts"] = str(Path(args[1]).parent)  # the test exports folder: shader textures and libraries
 sys.path.insert(0, str(addon_parent))
 addon = importlib.import_module("ans_garage")
 addon.register()
@@ -41,7 +42,7 @@ check("Library: Simple and Palifornia plates, An's eight frames",
 bpy.context.scene["ans_garage_shared_parts"] = str(library.parent)
 addon.import_manifest(str(export / "manifest.json"))
 root = next(c for c in bpy.context.scene.collection.children if c.get("unbound_assembly_path"))
-# The libraries sit side by side, as Frosty's Export shared parts (tires, rims, plates)... writes them: one shared folder finds them all.
+# The libraries sit side by side, as Frosty's Export shared parts... writes them: one shared folder finds them all.
 status = addon.library_status(str(library.parent))
 bpy.context.scene["ans_garage_shared_parts"] = str(library.parent)
 check("Shared parts folder: tires, rims, plates and frames found by themselves",

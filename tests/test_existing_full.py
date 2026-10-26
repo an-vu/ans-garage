@@ -66,6 +66,7 @@ before_materials = {m.name for m in bpy.data.materials}
 VERSION = ".".join(map(str, addon.bl_info["version"]))
 check("Baseline scene has 593 Unbound meshes", len(meshes) == 593, len(meshes))
 
+bpy.context.scene["ans_garage_shared_parts"] = str(Path(materials).parent)  # its shader-defaults subfolder
 status = bpy.ops.import_scene.ans_garage_locate_export(filepath=materials)
 check("Locate export manifest operator finished", status == {"FINISHED"}, status)
 report = addon.surfaces_module().last_report()

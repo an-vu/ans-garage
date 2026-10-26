@@ -12,6 +12,7 @@ args = sys.argv[sys.argv.index("--") + 1:]
 addon_parent, export, out_dir = Path(args[0]), Path(args[1]), Path(args[2])
 out_dir.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.context.scene["ans_garage_shared_parts"] = str(Path(args[1]).parent)  # the test exports folder: shader textures and libraries
 sys.path.insert(0, str(addon_parent))
 addon = importlib.import_module("ans_garage")
 addon.register()

@@ -148,7 +148,7 @@ namespace AnsGarage
             var skel = Ui.Text("Skeleton asset path (optional; skinned meshes are skipped if empty):");
             g.Controls.Add(skel, 0, 2); g.SetColumnSpan(skel, 2);
             g.Controls.Add(Skeleton, 0, 3); g.SetColumnSpan(Skeleton, 2);
-            var info = Ui.Text("LOD0, binary FBX 2014, meters, hierarchy retained. Current loaded asset state.\nTextures, in-game part names, shader default textures and assembly data are exported.");
+            var info = Ui.Text("LOD0, binary FBX 2014, meters, hierarchy retained. Current loaded asset state.\nTextures, in-game part names and assembly data are exported. Textures every car uses come from Export shared parts.");
             info.MaximumSize = new Size(680, 0);
             g.Controls.Add(info, 0, 4); g.SetColumnSpan(info, 2);
             liveryNote.MaximumSize = new Size(680, 0);
@@ -440,10 +440,6 @@ namespace AnsGarage
                 } catch(Exception ex) {materialRun.Issue("run",ex);}
                 finally {materialRun.Save(true);}
                 if(!Cancel && !Library) {
-                    task.Update("Shader default textures");
-                    Time("Shader default textures", () => {
-                        try { ExportShaderDefaults(output,true); } catch(Exception ex) { Manifest.Errors.Add("Shader defaults: "+ex.Message); }
-                    });
                     if(Liveries.Count>0) Time("Liveries", () => {
                         try { AnsGarage.Liveries.Export(output,Liveries,task); } catch(Exception ex) { Manifest.Errors.Add("Liveries: "+ex.Message); }
                     });
@@ -454,17 +450,15 @@ namespace AnsGarage
         }
         // Shared textures that vehicle shaders read by default (swatch atlases, trim swatches, flake normals, grime masks).
         // The asset list ships next to the plugin (generated from the Blender add-on's compiled shader profiles).
-        // They are the same for every car (about 180 MB), so a vehicle export writes them once into a shader-defaults
-        // folder next to the car folders, where the Blender add-on also looks, and skips them when that folder already
-        // holds every listed texture. shared=false writes them inside the given folder (headless "defaults" mode).
-        public static void ExportShaderDefaults(string output,bool shared=false)
+        // They are the same for every car (about 240 MB), so they are a shared part: Export shared parts writes them once
+        // into the given folder (AnsGarage_ShaderTextures), where the Blender add-on finds them, and skips them when the
+        // folder already holds every listed texture.
+        public static void ExportShaderDefaults(string target)
         {
             string list=Path.Combine(Path.GetDirectoryName(typeof(Batch).Assembly.Location),"UnboundShaderDefaults.json");
             if(!File.Exists(list)) throw new FileNotFoundException("UnboundShaderDefaults.json missing next to the plugin");
             var names=Newtonsoft.Json.Linq.JArray.Parse(File.ReadAllText(list)).Select(t=>(string)t).ToList();
-            string target=shared?Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output).TrimEnd('\\','/')),"shader-defaults")
-                                :Path.Combine(output,"shader-defaults");
-            if(shared && HasTextures(target,names)) return;
+            if(HasTextures(target,names)) return;
             var run=new MaterialRun(target,"shader defaults");
             foreach(string name in names) {
                 var entry=App.AssetManager.GetEbxEntry(name);
@@ -518,7 +512,7 @@ namespace AnsGarage
             string relative="parts/" + Core.SafeName(Path.GetFileName(Core.Normalize(record.Asset))) + "_" + record.Id + "/LOD0.fbx";
             string file=Path.Combine(output,relative.Replace('/',Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(file));
-            string partial=Core.PendingFbxPath(file);
+            string partial=Core.FbxStagingPath(file);
             try
             {
                 new FBXExporter(task).ExportFBX(record.Object,partial,"2014","Meters",false,true,false,skeleton,"binary",mesh);

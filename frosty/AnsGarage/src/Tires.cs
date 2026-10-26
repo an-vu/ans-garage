@@ -18,16 +18,16 @@ namespace AnsGarage
     {
         public override string TopLevelMenuName { get { return "Tools"; } }
         public override string SubLevelMenuName { get { return "An's Garage"; } }
-        public override string MenuItemName { get { return "Export shared parts (tires, rims, plates)..."; } }
+        public override string MenuItemName { get { return "Export shared parts..."; } }
         public override RelayCommand MenuItemClicked { get { return new RelayCommand(o => SharedParts.Run()); } }
     }
 
-    // The parts every car can use (tires, rims, plates, plate frames): tick what to export, pick one folder, and each
-    // library goes into its own subfolder there, where the Blender add-on finds it.
+    // What every car can use (shader textures, tires, rims, plates, plate frames): tick what to export, pick one folder,
+    // and each goes into its own subfolder there, where the Blender add-on finds it.
     internal static class SharedParts
     {
-        private static readonly string[] Labels = { "Tires", "Rims", "License plates", "Plate frames" };
-        private static readonly bool[] Ticked = { true, true, true, true };
+        private static readonly string[] Labels = { "Shader textures (every car needs them)", "Tires", "Rims", "License plates", "Plate frames" };
+        private static readonly bool[] Ticked = { true, true, true, true, true };
         private static string lastFolder;
         private static int busy;
 
@@ -38,13 +38,20 @@ namespace AnsGarage
             {
                 if (!Choose()) return;
                 string root = lastFolder;
-                bool tires = Ticked[0], rims = Ticked[1], plates = Ticked[2], frames = Ticked[3];
+                bool shader = Ticked[0], tires = Ticked[1], rims = Ticked[2], plates = Ticked[3], frames = Ticked[4];
                 var lines = new List<string>();
                 FrostyTaskWindow.Show("An's Garage: export shared parts", "Reading game data", task => {
                     Action<string, Func<string>> step = (label, export) => {
                         try { lines.Add(label + ": " + export()); }
                         catch (Exception ex) { lines.Add(label + ": failed: " + ex.Message); }
                     };
+                    if (shader)
+                        step("Shader textures", () => {
+                            string dir = Path.Combine(root, "AnsGarage_ShaderTextures");
+                            Batch.ExportShaderDefaults(dir);
+                            var index = JObject.Parse(File.ReadAllText(Path.Combine(dir, "textures.json")));
+                            return ((JArray)index["Textures"]).Count + " textures";
+                        });
                     if (tires)
                         step("Tires", () => ((JArray)TireLibrary.Export(Path.Combine(root, "AnsGarage_TireLibrary"), task)["Tires"]).Count + " tires");
                     if (rims)
@@ -71,8 +78,8 @@ namespace AnsGarage
             {
                 var layout = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, Dock = DockStyle.Fill };
                 layout.Controls.Add(new Label { AutoSize = true, Margin = new Padding(0, 0, 0, 8),
-                    Text = "Parts every car can use. Export them once into one folder; the Blender add-on\n" +
-                           "finds them there (its preferences: Shared parts folder)." });
+                    Text = "What every car can use. Export it once into one folder; the Blender add-on\n" +
+                           "finds it there (its preferences: Shared parts folder)." });
                 var boxes = Labels.Select((label, i) => new CheckBox { Text = label, Checked = Ticked[i], AutoSize = true }).ToList();
                 foreach (var b in boxes) layout.Controls.Add(b);
                 var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, AutoSize = true, Margin = new Padding(0, 8, 0, 0) };

@@ -1,5 +1,5 @@
-"""Fresh import from the install ZIP (factory settings), with negative test for missing shader defaults.
-blender --background --factory-startup --python-exit-code 1 --python test_fresh.py -- <zip> <scratch dir> <export dir with shader-defaults> <export dir without shader-defaults> <out dir>
+"""Fresh import from the install ZIP (factory settings), with a negative test for a missing shared parts folder.
+blender --background --factory-startup --python-exit-code 1 --python test_fresh.py -- <zip> <scratch dir> <shared parts folder (has shader-defaults)> <export dir> <out dir>
 """
 import json
 import shutil
@@ -39,27 +39,31 @@ check("Install ZIP has exactly the add-on files", sorted(names) == ["ans_garage/
 VERSION = ".".join(map(str, unbound_batch.bl_info["version"]))
 check("Installed version matches the ZIP's name", Path(args[0]).stem.endswith("-" + VERSION), VERSION)
 
-# Negative case first: export without shader-defaults must fail closed with an explicit reason.
+# Negative case first: without the shared parts folder (its shader textures) the build fails closed with a reason.
 bpy.ops.wm.read_factory_settings(use_empty=True)
 unbound_batch.register()
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export_bare / "manifest.json"))
 r = report()
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
-check("Bare export imports geometry (593 meshes)", status == {"FINISHED"} and len(meshes) == 593, len(meshes))
-missing = [i for i in r["Issues"] if "Shader default texture not exported" in i.get("Issue", "")]
-check("Missing shader defaults fail closed with explicit reason", missing and r["Summary"]["IssueSlots"] == len(missing),
+check("Export imports geometry without the shared parts folder (593 meshes)", status == {"FINISHED"} and len(meshes) == 593,
+      len(meshes))
+missing = [i for i in r["Issues"] if "Shader texture not found" in i.get("Issue", "")]
+check("Missing shader textures fail closed with an explicit reason", missing and r["Summary"]["IssueSlots"] == len(missing),
       r["Summary"]["IssueReasons"])
-check("Swatch-dependent opaque surfaces not connected without shader defaults",
+check("Swatch-dependent opaque surfaces not connected without shader textures",
       r["Summary"]["BuiltByShader"].get("cs_pbr_opaque_max", 0) == 0, r["Summary"]["BuiltByShader"])
-status = bpy.ops.import_scene.ans_garage_locate_shader_defaults(filepath=str(export_ok / "shader-defaults" / "textures.json"))
+status = bpy.ops.wm.ans_garage_shared_parts(directory=str(export_ok))
+status2 = bpy.ops.object.ans_garage_build_materials()
 r = report()
-check("Locate shader default textures operator recovers the build", status == {"FINISHED"} and r["Summary"]["IssueSlots"] == 0
+check("Setting the shared parts folder, then Build missing materials, recovers the build",
+      status == {"FINISHED"} and status2 == {"FINISHED"} and r["Summary"]["IssueSlots"] == 0
       and r["Summary"]["BuiltByShader"].get("cs_pbr_opaque_max", 0) > 0, r["Summary"])
 unbound_batch.unregister()
 
 # Normal fresh import.
 bpy.ops.wm.read_factory_settings(use_empty=True)
 unbound_batch.register()
+bpy.context.scene["ans_garage_shared_parts"] = str(export_ok)
 status = bpy.ops.import_scene.ans_garage_vehicle(filepath=str(export_ok / "manifest.json"))
 r = report()
 meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]

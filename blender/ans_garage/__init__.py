@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 3), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 4), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -94,7 +94,14 @@ def rims_module():
     return unbound_rims
 
 
-LIBRARIES = {"tire": tires_module, "plate": plates_module, "rim": rims_module}
+class _ShaderTextures:
+    """The shared shader textures' index (textures.json), read like a library's."""
+    @staticmethod
+    def load_index(folder):
+        return json.loads((Path(folder) / "textures.json").read_text(encoding="utf-8-sig"))
+
+
+LIBRARIES = {"tire": tires_module, "plate": plates_module, "rim": rims_module, "shader": lambda: _ShaderTextures}
 _LIBRARY_INDEX = {}
 _PLATE_ITEMS = []  # Blender keeps only references to enum item strings: hold them here
 _RIM_ITEMS = []
@@ -125,13 +132,16 @@ def visible_surfaces(context, root=None, ttl=2.0):
     return shown, built
 
 
-LIBRARY_FILES = {"tire": "tires.json", "rim": "rims.json", "plate": "plates.json"}
+LIBRARY_FILES = {"tire": "tires.json", "rim": "rims.json", "plate": "plates.json", "shader": "textures.json"}
+# Other folders have a textures.json too (inside the plate library): shader textures are only taken from these.
+SHADER_FOLDERS = ("AnsGarage_ShaderTextures", "shader-defaults")
 _SHARED_SCAN = {}
 
 
 def shared_parts(folder, reload=False):
     """{kind: library folder} found in a shared parts folder: the folder itself or one of its subfolders (Frosty's
-    Export shared parts (tires, rims, plates)... writes AnsGarage_TireLibrary, AnsGarage_RimLibrary and AnsGarage_PlateLibrary there).
+    Export shared parts... writes AnsGarage_ShaderTextures, AnsGarage_TireLibrary, AnsGarage_RimLibrary and
+    AnsGarage_PlateLibrary there).
     Looked up again after a few seconds, so a library exported meanwhile shows up."""
     import bpy
     cached = _SHARED_SCAN.get(folder)
@@ -145,7 +155,7 @@ def shared_parts(folder, reload=False):
     except OSError:
         candidates = []
     for kind, name in LIBRARY_FILES.items():
-        hit = next((d for d in candidates if (d / name).is_file()), None)
+        hit = next((d for d in candidates if (d / name).is_file() and (kind != "shader" or d.name in SHADER_FOLDERS)), None)
         if hit is not None:
             found[kind] = str(hit)
     _SHARED_SCAN[folder] = (time.time(), found)
@@ -167,8 +177,9 @@ def library_status(folder):
     found = shared_parts(folder)
     index = {kind: library_index(kind, found[kind]) if kind in found else None for kind in LIBRARY_FILES}
     count = lambda kind, key, unit: ("%d %s" % (len(index[kind][key]), unit)) if index[kind] and index[kind].get(key) else None
-    return [("Tires", count("tire", "Tires", "tires")), ("Rims", count("rim", "Rims", "rims")),
-            ("License plates", count("plate", "Plates", "plates")), ("Plate frames", count("plate", "Frames", "frames"))]
+    return [("Shader textures", count("shader", "Textures", "textures")), ("Tires", count("tire", "Tires", "tires")),
+            ("Rims", count("rim", "Rims", "rims")), ("License plates", count("plate", "Plates", "plates")),
+            ("Plate frames", count("plate", "Frames", "frames"))]
 
 
 def draw_library_status(layout, folder):
@@ -178,7 +189,7 @@ def draw_library_status(layout, folder):
     for label, found in rows:
         col.label(text="%s: %s" % (label, found or "not found"), icon="CHECKMARK" if found else "X")
     if not all(found for _, found in rows):
-        layout.label(text="Missing ones: Frosty > Tools > An's Garage > Export shared parts (tires, rims, plates)...", icon="INFO")
+        layout.label(text="Missing ones: Frosty > Tools > An's Garage > Export shared parts...", icon="INFO")
 
 
 def library_index(kind, folder, reload=False):
@@ -637,8 +648,8 @@ def car_notes(context, root):
         notes.append(("assembly:%d:%d" % (issues, unused), "INFO",
                       "%s (listed in the An's Garage report in the Text Editor)" % " and ".join(found)))
     if not any(library_folder(context, kind) for kind in LIBRARY_FILES):
-        notes.append(("shared-parts", "INFO", "No shared parts folder yet: tires, rims, plates and frames come from it, and "
-                      "the plate shows the car's placeholder until then (Set shared parts folder…)"))
+        notes.append(("shared-parts", "INFO", "No shared parts folder yet: the shader textures, tires, rims, plates and "
+                      "frames come from it (Set folder…, under Wheels or License plate)"))
     if not liveries_module().load_index(root):
         notes.append(("liveries", "INFO", "No liveries exported with this car (Frosty: Tools > An's Garage > Add liveries "
                       "to an existing export…)"))
@@ -828,8 +839,8 @@ def register():
     class AnsGaragePreferences(bpy.types.AddonPreferences):
         bl_idname = __name__
         shared_parts: StringProperty(name="Shared parts folder", subtype="DIR_PATH",
-                                     description="The folder Frosty's Tools > An's Garage > Export shared parts (tires, rims, plates)... wrote to; "
-                                                 "the tire, rim and plate libraries in it are found by themselves")
+                                     description="The folder Frosty's Tools > An's Garage > Export shared parts... wrote to; "
+                                                 "the shader textures and the tire, rim and plate libraries in it are found by themselves")
         plate_frame: EnumProperty(name="Plate frame for new imports", default="Stock",
                                   items=(("Stock", "Stock (as the game)", "The frame the game shows on the car: none on every car checked"),
                                          ("simple", "Simple", "The game's plain black frame"),
@@ -841,14 +852,14 @@ def register():
             if self.shared_parts:
                 draw_library_status(box, self.shared_parts)
             else:
-                box.label(text="Export them once in Frosty (Tools > An's Garage > Export shared parts (tires, rims, plates)...), then pick that folder.")
+                box.label(text="Export them once in Frosty (Tools > An's Garage > Export shared parts...), then pick that folder.")
             self.layout.prop(self, "plate_frame")
 
     class WM_OT_ans_garage_shared_parts(bpy.types.Operator):
         bl_idname = "wm.ans_garage_shared_parts"
         bl_label = "Set shared parts folder"
-        bl_description = ("Pick the folder that Frosty's Tools > An's Garage > Export shared parts (tires, rims, plates)... wrote to. The tire, rim "
-                          "and plate libraries in it are found by themselves (also saved in the add-on's preferences)")
+        bl_description = ("Pick the folder that Frosty's Tools > An's Garage > Export shared parts... wrote to. The shader "
+                          "textures, tire, rim and plate libraries in it are found by themselves (also saved in the add-on's preferences)")
         directory: StringProperty(subtype="DIR_PATH")
         filter_folder: BoolProperty(default=True, options={"HIDDEN", "SKIP_SAVE"})
 
@@ -859,7 +870,7 @@ def register():
         def execute(self, context):
             found = shared_parts(self.directory, reload=True)
             if not found:
-                self.report({"ERROR"}, "No tire, rim or plate library in %s (Frosty: Tools > An's Garage > Export shared parts (tires, rims, plates)...)"
+                self.report({"ERROR"}, "Nothing from Export shared parts in %s (Frosty: Tools > An's Garage > Export shared parts...)"
                             % self.directory)
                 return {"CANCELLED"}
             context.scene["ans_garage_shared_parts"] = self.directory
@@ -1388,25 +1399,6 @@ def register():
                 (len(result["Built"]), len(result["Issues"])))
             return {"FINISHED"}
 
-    class IMPORT_SCENE_OT_ans_garage_locate_shader_defaults(bpy.types.Operator, ImportHelper):
-        bl_idname = "import_scene.ans_garage_locate_shader_defaults"
-        bl_label = "Locate shader default textures"
-        bl_description = ("The shared shader-defaults folder (textures all cars use) moved or is missing: choose its "
-                          "textures.json, then build the materials")
-        bl_options = {"REGISTER", "UNDO"}
-        filename_ext = ".json"
-        filter_glob: StringProperty(default="*textures.json", options={"HIDDEN"})
-        def execute(self, context):
-            folder = Path(self.filepath).resolve().parent
-            if not (folder / "textures.json").is_file():
-                self.report({"ERROR"}, "Select the textures.json inside a shader-defaults folder")
-                return {"CANCELLED"}
-            context.scene["unbound_shader_defaults_path"] = str(folder)
-            result = surfaces_module().apply_supported_surfaces()
-            self.report({"WARNING" if result["Issues"] else "INFO"},
-                "%d slots built; %d not built" % (len(result["Built"]), len(result["Issues"])))
-            return {"FINISHED"}
-
     class OBJECT_OT_ans_garage_variant(bpy.types.Operator):
         bl_idname = "object.ans_garage_variant"
         bl_label = "Switch vehicle part"
@@ -1455,7 +1447,6 @@ def register():
             if tools:
                 for idname, text in (("object.ans_garage_build_materials", "Build missing materials"),
                                      ("import_scene.ans_garage_locate_export", "Find moved car folder…"),
-                                     ("import_scene.ans_garage_locate_shader_defaults", "Find moved shared textures…"),
                                      ("object.ans_garage_catch_up", "Refresh dirt on unhidden parts")):
                     tools.operator(idname, text=text)
 
@@ -1692,7 +1683,7 @@ def register():
                            OBJECT_OT_ans_garage_livery, OBJECT_OT_ans_garage_livery_car,
                            IMPORT_SCENE_OT_ans_garage_vehicle, WM_OT_ans_garage_cancel_import,
                            OBJECT_OT_ans_garage_build_materials, IMPORT_SCENE_OT_ans_garage_locate_export,
-                           IMPORT_SCENE_OT_ans_garage_locate_shader_defaults,
+
                            OBJECT_OT_ans_garage_variant, OBJECT_OT_ans_garage_preset,
                            VIEW3D_PT_ans_garage_vehicle]
     _menu = menu

@@ -2,6 +2,15 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.4
+
+- **Exports into a folder with accented letters work** (e.g. "Lamborghini Murciélago LP 670-4 SV (2009)", the car's own name). Frosty's FBX writer can't open such paths and wrote no meshes at all, so Blender had nothing to import. Each FBX is now written to a plain temporary folder first and moved into place. Re-export cars whose export failed.
+- **Shader textures are a shared part.** The textures every car's shaders read (240 MB: swatches, grime, flakes…) were written next to each car folder, so cars exported to different places each carried a copy, and a car folder moved on its own lost them.
+  - They now come from **Export shared parts...** (new first checkbox, **Shader textures**) into the shared parts folder (`AnsGarage_ShaderTextures`), where Blender finds them with the other shared parts; the preferences list them too.
+  - **Export vehicle** no longer writes them, and **Find moved shared textures…** is gone.
+  - Export shared parts once with Shader textures ticked and set that folder in Blender. A car without them imports, but its materials that need them aren't built, and its notes say why.
+- The Frosty menu item is now just **Export shared parts...**.
+
 ## 1.1.3
 
 - **Sidebar dropdowns fixed:** body parts and presets showed only "-", and Finish, Material, Color shift and Gloss opened a second search window after picking. Every dropdown is now a Blender menu that knows which car (and part) its row is for and runs the choice directly.
@@ -12,7 +21,7 @@ Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
 ## 1.1.2
 
-Re-export the shared parts in Frosty (**Tools > An's Garage > Export shared parts (tires, rims, plates)...**) for the
+Re-export the shared parts in Frosty (**Tools > An's Garage > Export shared parts...**) for the
 plate frames and the new plates, and set that folder once in Blender.
 
 ### Fixes
@@ -34,7 +43,7 @@ plate frames and the new plates, and set that folder once in Blender.
 - **Front and rear rims separately,** as the game's Front Rims / Rear Rims; the brakes follow each axle.
 
 ### Shared parts
-- **One folder for everything every car can use.** Frosty's **Export shared parts (tires, rims, plates)...** exports tires, rims, plates and frames, all or one at a time, into one folder (a subfolder per library).
+- **One folder for everything every car can use.** Frosty's **Export shared parts...** exports tires, rims, plates and frames, all or one at a time, into one folder (a subfolder per library).
 - In Blender, set it once: the add-on preferences' **Shared parts folder**, or **Set shared parts folder…** in a car's Wheels or License plate section. The add-on finds each library by its index file; the preferences show what was found (Tires, Rims, License plates, Plate frames, with counts).
 - This replaces the three **Locate … library** buttons and the per-library folder settings.
 

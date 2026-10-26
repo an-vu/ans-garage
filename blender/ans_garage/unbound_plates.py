@@ -1,7 +1,7 @@
 """License plate library: put a real US state or territory, Japanese, NFS-place, plain or Palifornia plate on a car,
 and a plate frame.
 
-The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts (tires, rims, plates)...). Choosing
+The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts...). Choosing
 a plate overrides the plate shader's background texture (Ext_T_LicensePlate_Diffuse) on every license plate of the car,
 the way the game's plate customization does, and rebuilds those material slots; choosing a frame overrides its frame
 textures (Ext_T_Frame_Diffuse, Ext_T_Frame_Normalmap) the same way. The plate's text colour comes from its own texture,
@@ -23,8 +23,8 @@ PLATE_PARAMETER = "Ext_T_LicensePlate_Diffuse"  # the library's plates.json "Par
 def load_index(folder):
     path = Path(folder) / "plates.json"
     if not path.is_file():
-        raise FileNotFoundError("No plates.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts "
-                                "(tires, rims, plates)...)" % folder)
+        raise FileNotFoundError("No plates.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts...)"
+                                % folder)
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 

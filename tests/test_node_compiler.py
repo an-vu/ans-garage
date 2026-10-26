@@ -234,7 +234,7 @@ def main():
     doc = json.loads(materials.read_text(encoding="utf-8-sig"))
     resolver = M.Resolver(doc)
     runtime, _, _ = P.runtime_values(materials.with_name("assembly.json"))
-    images = P.Images(materials.parent)
+    images = P.Images(materials.parent, [materials.parent / "shader-defaults"])
     # Every entry the export's renderable sections select (vehicle-agnostic profiles: one entry per program and
     # vertex declaration), once per (entry, usage layout), with the first state that uses it.
     chosen = {}

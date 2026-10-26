@@ -275,7 +275,7 @@ static void Run(string[] a) {
   return;
  }
  if(mode=="defaults") {
-  // Shader default textures only (list next to the plugin): a[5] = export folder.
+  // Shader textures only (list next to the plugin), as Export shared parts writes them: a[5] = their folder.
   Batch.ExportShaderDefaults(Path.GetFullPath(a[5]));
   Console.WriteLine("DEFAULTS done");
   return;

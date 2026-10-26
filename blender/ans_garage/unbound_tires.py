@@ -1,6 +1,6 @@
 """Tire library: swap a car's tires for real-brand tires (Falken, Toyo) at the car's own stock tire size.
 
-The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts (tires, rims, plates)...) and imported
+The library is exported once by An's Garage for Frosty (Tools > An's Garage > Export shared parts...) and imported
 once per .blend into a hidden collection: each tire mesh in a plain and a brand-lettered version. Choosing a tire
 hides the car's stock tire instances and places the library tire the same way the stock tire is placed: the sidewall
 size the game picks for the car's rim, fitted per vertex to the car's tire configuration (Wheel fit), on the wheel's
@@ -19,7 +19,7 @@ STOCK = "Stock"
 def load_index(folder):
     path = Path(folder) / "tires.json"
     if not path.is_file():
-        raise FileNotFoundError("No tires.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts (tires, rims, plates)...)" % folder)
+        raise FileNotFoundError("No tires.json in %s (export it in Frosty: Tools > An's Garage > Export shared parts...)" % folder)
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
