@@ -1,3 +1,7 @@
+# 1.1.5
+
+- No changes; version kept in step with An's Garage for Blender 1.1.5.
+
 # 1.1.4
 
 - **Shader textures** are part of Export shared parts (first checkbox, written to `AnsGarage_ShaderTextures`, skipped when already complete). Export vehicle no longer writes a `shader-defaults` folder next to the car. The headless `defaults` mode writes into the folder it is given.

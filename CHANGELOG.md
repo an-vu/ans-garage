@@ -2,6 +2,10 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.5
+
+- **Sidebar text uses the full width:** lines wrapped well before the edge (e.g. a two-word second line with plenty of room left). The wrap now uses the width Blender really gives a label (measured: the panel's width less 40 px at any sub-panel level), plus room only for an icon, a box or the ✕ beside a note.
+
 ## 1.1.4
 
 - **Exports into a folder with accented letters work** (e.g. "Lamborghini Murciélago LP 670-4 SV (2009)", the car's own name). Frosty's FBX writer can't open such paths and wrote no meshes at all, so Blender had nothing to import. Each FBX is now written to a plain temporary folder first and moved into place. Re-export cars whose export failed.

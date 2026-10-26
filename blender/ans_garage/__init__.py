@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 4), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 5), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -608,11 +608,12 @@ def wrap_lines(context, text, icon=False, reserve=0):
     system = context.preferences.system
     # Blender's interface scale as the UI draws it (dpi already includes Resolution Scale and the screen's scaling).
     scale = getattr(system, "dpi", 72) / 72.0
-    # Panel and up to three nested boxes on each side, plus the icon.
-    room = context.region.width - (76 + (22 if icon else 0) + reserve) * scale
+    # A label gets the panel's width less 40 px (measured; sub-panels don't narrow it), less the icon and `reserve`
+    # (a box around it, a button beside it).
+    room = context.region.width - (42 + (22 if icon else 0) + reserve) * scale
     try:
         blf.size(0, context.preferences.ui_styles[0].widget.points * scale)
-        width = lambda t: blf.dimensions(0, t)[0] * 1.04
+        width = lambda t: blf.dimensions(0, t)[0]
     except Exception:
         width = lambda t: len(t) * 7.0 * scale
     lines, line = [], ""
@@ -731,7 +732,7 @@ def car_name(context, root):
             names = {}
         _NAMES[path] = [n for n in (names.get("Long"), names.get("Medium"), names.get("Short")) if n] or [root.name]
     for name in _NAMES[path]:
-        if not context.region or len(wrap_lines(context, name, True)) == 1:
+        if not context.region or len(wrap_lines(context, name, True, 40)) == 1:  # header: arrow, icon, drag handle
             return name
     return _NAMES[path][-1]
 
@@ -1457,12 +1458,12 @@ def register():
                 self.layout.operator("import_scene.ans_garage_vehicle", text="Import car…", icon="IMPORT")
             if RUN:
                 run = self.layout.box()
-                wrapped(run, context, RUN.get("title", "Importing ") + RUN["name"], icon="IMPORT")
+                wrapped(run, context, RUN.get("title", "Importing ") + RUN["name"], icon="IMPORT", reserve=14)
                 text = "%d%%" % RUN["pct"]
                 run.progress(factor=RUN["pct"] / 100.0, type="BAR", text=text)
                 run.label(text=RUN["stage"] + ("  %d / %d" % (RUN["done"], RUN["total"]) if RUN["total"] > 1 else ""))
                 run.label(text="Elapsed %d:%02d" % divmod(int(time.time() - RUN["start"]), 60))
-                wrapped(run, context, "Leave the scene alone until it finishes", icon="INFO")
+                wrapped(run, context, "Leave the scene alone until it finishes", icon="INFO", reserve=14)
                 if "title" not in RUN:  # an import; a surface rebuild runs to the end
                     run.operator("wm.ans_garage_cancel_import", text="Cancel", icon="CANCEL")
             for root in cars:
@@ -1549,7 +1550,7 @@ def register():
                 col = car.column()
                 for key, icon, text in notes:
                     row = col.row(align=False)
-                    wrapped(row.column(), context, text, icon=icon, reserve=26)
+                    wrapped(row.column(), context, text, icon=icon, reserve=56)
                     op = row.operator("object.ans_garage_hide_note", text="", icon="X", emboss=False)
                     op.root, op.key = root.name, key
 
