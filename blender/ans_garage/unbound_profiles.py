@@ -26,10 +26,13 @@ PERMUTATION_GLASS_MAX = 0.12
 VIEW_CONSTANT_RANGE = (1e-5, 1e-4, 1e-3, 0.01, 0.1, 0.5, 2.0, 10.0, 100.0)
 _PROFILES = None
 # Runtime vehicle customization -> shader parameter, by parameter-key equality (see SHADER-FINDINGS).
-# RaceVehicleCustomizationComponentData key field -> (RaceVehicleItemData field, component fallback field).
+# RaceVehicleCustomizationComponentData key field -> (RaceVehicleItemData field or None, component fallback field).
+# The tints' keys drive Ext_Glass_Color (window glass), Ext_Headlight_Color and Ext_Taillight_Tint (light lenses).
 RUNTIME_PAINT = {"PaintFacingColorParameter": ("DefaultPaint", "DefaultPaint"),
                  "PaintMaterialParameter": ("Material", "DefaultMaterial"),
-                 "WindowsTintParameter": ("WindowsTint", "DefaultWindowsTint")}
+                 "WindowsTintParameter": ("WindowsTint", "DefaultWindowsTint"),
+                 "HeadlightsTintParameter": (None, "DefaultHeadlightsTint"),
+                 "TaillightsTintParameter": (None, "DefaultTaillightsTint")}
 OMITTED_REASON = "Output needs engine constants outside the shader database (e.g. exposure/day-night view constants); omitted"
 UNSUPPORTED_OUTPUTS = {
     "RT1.w": "G-buffer occlusion/specular-occlusion term (vertex color ambient treatment) has no Principled input",
@@ -84,12 +87,13 @@ def runtime_values(assembly_path):
         key = ((comps[0].get(field) or {}).get("ShaderParameterHandle") or {}).get("Data")
         if not key:
             continue
-        source = items[0].get(item_field) if len(items) == 1 else None
-        origin = "RaceVehicleItemData." + item_field
+        source = items[0].get(item_field) if item_field and len(items) == 1 else None
+        origin = "RaceVehicleItemData.%s" % item_field
         if not isinstance(source, dict):
             source = comps[0].get(fallback)
             origin = "RaceVehicleCustomizationComponentData." + fallback
-            notes.append(field + ": no unique RaceVehicleItemData value; component default used")
+            if item_field:
+                notes.append(field + ": no unique RaceVehicleItemData value; component default used")
         if isinstance(source, dict):
             out[key.casefold()] = {"Value": [float(source.get(c, 0.0)) for c in "xyz"], "Origin": origin, "Field": field}
     # Wheel customization: (Front|Rear)(Rim|Caliper)(Primary|Secondary)(Color|Material)Parameter keys take the
@@ -1061,10 +1065,12 @@ def is_const(v, value=None):
 
 
 # ------------------------------------------------------------------ live runtime parameters
-# Vehicle customization kept live, one control group per car: the paint colour and finish, and the rims' primary and
-# secondary colours, front and rear.
+# Vehicle customization kept live, one control group per car: the paint colour and finish, the rims' primary and
+# secondary colours, front and rear, and the window, headlight and taillight tints.
 RIM_COLOR_FIELDS = tuple("%sRim%sColorParameter" % (axle, layer) for axle in ("Front", "Rear") for layer in ("Primary", "Secondary"))
-LIVE_FIELDS = ("PaintFacingColorParameter", "PaintMaterialParameter") + RIM_COLOR_FIELDS
+TINT_FIELDS = (("WindowsTintParameter", "Window tint"), ("HeadlightsTintParameter", "Headlight tint"),
+               ("TaillightsTintParameter", "Taillight tint"))
+LIVE_FIELDS = ("PaintFacingColorParameter", "PaintMaterialParameter") + RIM_COLOR_FIELDS + tuple(f for f, _ in TINT_FIELDS)
 # Paint finish (Ext_Carpaint_Material): x = finish type floor(16x), 0-13; types 3-13 sample layer (type - 3) of
 # paintnormalarray. z = gloss level floor(16z): 0 clear coat smoothness 1.0, 1 coat 0.70, 2 and above no clear coat
 # (measured on cs_pbr_carpaint_max), the garage's Gloss / Satin / Matte. y is left as the car has it. The game's

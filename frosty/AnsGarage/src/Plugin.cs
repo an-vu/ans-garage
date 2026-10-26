@@ -66,6 +66,7 @@ namespace AnsGarage
                         string target = ExportFolder(folder.SelectedPath, options.VehicleName, Core.Normalize(options.Prefix.Text));
                         var batch = new Batch(Core.Normalize(options.Prefix.Text), options.Skeleton.Text.Trim(), target);
                         if (options.Blueprint != null && Core.InScope(options.Blueprint, Core.Normalize(options.Prefix.Text))) batch.Blueprint = options.Blueprint;
+                        batch.Manifest.Item = options.Item;
                         batch.Liveries = Liveries.Checked(options.LiveryBox);
                         batch.Manifest.MovingParts = options.MovingParts.Checked;
                         Exception fatal = null;
@@ -112,7 +113,7 @@ namespace AnsGarage
     internal sealed class Options : Form
     {
         public readonly TextBox Prefix = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        public string Blueprint, VehicleName;
+        public string Blueprint, VehicleName, Item;
         private string picked;
         public readonly TextBox Skeleton = new TextBox { Width = 560, Anchor = AnchorStyles.Left | AnchorStyles.Right };
         public readonly CheckedListBox LiveryBox = Liveries.Picker(new List<Liveries.Livery>());
@@ -137,11 +138,11 @@ namespace AnsGarage
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             g.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             var choose = Ui.Button("Choose vehicle...");
-            choose.Click += (s,e) => { using (var picker = new VehiclePicker()) if (picker.ShowDialog(this) == DialogResult.OK) { picked = Core.Normalize(picker.Folder); Prefix.Text = picker.Folder; Blueprint = picker.Blueprint; VehicleName = picker.VehicleName; ListLiveries(); } };
+            choose.Click += (s,e) => { using (var picker = new VehiclePicker()) if (picker.ShowDialog(this) == DialogResult.OK) { picked = Core.Normalize(picker.Folder); Prefix.Text = picker.Folder; Blueprint = picker.Blueprint; VehicleName = picker.VehicleName; Item = picker.Item; ListLiveries(); } };
             Prefix.Leave += (s,e) => ListLiveries();
             Prefix.TextChanged += (s,e) => {
                 if (Blueprint != null && !Core.InScope(Blueprint, Core.Normalize(Prefix.Text))) Blueprint = null;
-                if (VehicleName != null && Core.Normalize(Prefix.Text) != picked) VehicleName = null;  // edited after picking
+                if (VehicleName != null && Core.Normalize(Prefix.Text) != picked) VehicleName = Item = null;  // edited after picking
             };
             g.Controls.Add(Ui.Text("Vehicle folder (or click Choose vehicle... to pick by in-game name):"), 0, 0); g.SetColumnSpan(g.GetControlFromPosition(0, 0), 2);
             g.Controls.Add(Prefix, 0, 1); g.Controls.Add(choose, 1, 1);
@@ -170,11 +171,12 @@ namespace AnsGarage
 
     internal sealed class VehiclePicker : Form
     {
-        public string Folder, Blueprint, VehicleName;
-        // Two columns: in-game name and the vehicle's folder; click a header to sort by it.
+        public string Folder, Blueprint, VehicleName, Item;
+        // Three columns: in-game name, model year and the vehicle's folder; click a header to sort by it, again to reverse.
         private readonly ListView list = new ListView { Width = 900, Height = 480, View = View.Details, FullRowSelect = true,
             MultiSelect = false, HideSelection = false, Dock = DockStyle.Fill };
         private int sortColumn;
+        private bool sortDescending;
         private readonly TextBox search = new TextBox { Dock = DockStyle.Fill };
         private readonly Label status = Ui.Text("");
         private readonly Button ok = Ui.Button("Select"), refresh = Ui.Button("Refresh list");
@@ -189,9 +191,9 @@ namespace AnsGarage
             var cancel = Ui.Button("Cancel"); cancel.DialogResult = DialogResult.Cancel;
             g.Controls.Add(Ui.Buttons(cancel, ok, refresh));
             Controls.Add(g);
-            list.Columns.Add("Car", 420); list.Columns.Add("Folder", 440);
-            list.ColumnClick += (s,e) => { sortColumn = e.Column; Fill(); };
-            ok.Click += (s,e) => { if (list.SelectedItems.Count == 0) return; var v = (VehicleCatalog.Vehicle)list.SelectedItems[0].Tag; Folder = v.Folder; Blueprint = v.Blueprint; VehicleName = v.Name; DialogResult = DialogResult.OK; };
+            list.Columns.Add("Car", 380); list.Columns.Add("Year", 70); list.Columns.Add("Folder", 410);
+            list.ColumnClick += (s,e) => { sortDescending = e.Column == sortColumn && !sortDescending; sortColumn = e.Column; Fill(); };
+            ok.Click += (s,e) => { if (list.SelectedItems.Count == 0) return; var v = (VehicleCatalog.Vehicle)list.SelectedItems[0].Tag; Folder = v.Folder; Blueprint = v.Blueprint; VehicleName = v.Name; Item = v.Item; DialogResult = DialogResult.OK; };
             list.DoubleClick += (s,e) => ok.PerformClick();
             search.TextChanged += (s,e) => Fill();
             refresh.Click += (s,e) => Start(true);
@@ -219,16 +221,44 @@ namespace AnsGarage
             worker.RunWorkerAsync();
         }
         private static string Leaf(string folder) { return folder.Substring(folder.LastIndexOf('/') + 1); }
+        // The game writes the year in several ways: "Lamborghini Aventador S (2016)", "2019 Ford Mustang GT Convertible",
+        // "Aston Martin Vulcan 2016", "Porsche 959 S (1987) - Cop Edition", "MINI John Cooper Works Countryman '17", and
+        // asset names ending in _2006. The year goes to its own column; the name keeps the rest.
+        private static readonly System.Text.RegularExpressions.Regex[] YearPatterns = {
+            new System.Text.RegularExpressions.Regex(@"\s*\(((?:19|20)\d\d)\)"),
+            new System.Text.RegularExpressions.Regex(@"^((?:19|20)\d\d)\s+"),
+            new System.Text.RegularExpressions.Regex(@"\s+((?:19|20)\d\d)$"),
+            new System.Text.RegularExpressions.Regex(@"\s+'(\d\d)$") };
+        private static readonly System.Text.RegularExpressions.Regex AssetYear = new System.Text.RegularExpressions.Regex(@"_((?:19|20)\d\d)$");
+        private static string[] NameAndYear(string name)
+        {
+            name = (name ?? "").Trim();
+            foreach (var pattern in YearPatterns)
+            {
+                var m = pattern.Match(name);
+                if (!m.Success) continue;
+                string year = m.Groups[1].Value;
+                if (year.Length == 2) year = (int.Parse(year) > 50 ? "19" : "20") + year;
+                return new[] { (name.Substring(0, m.Index) + " " + name.Substring(m.Index + m.Length)).Trim().Replace("  ", " "), year };
+            }
+            var a = AssetYear.Match(name);
+            return new[] { name, a.Success ? a.Groups[1].Value : "" };
+        }
         private void Fill()
         {
             list.BeginUpdate(); list.Items.Clear();
             string q = search.Text.Trim();
             var rows = vehicles.Where(v => q.Length == 0 || v.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 || v.Folder.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);
-            rows = sortColumn == 0 ? rows.OrderBy(v => v.Name, StringComparer.CurrentCultureIgnoreCase) : rows.OrderBy(v => Leaf(v.Folder), StringComparer.OrdinalIgnoreCase);
+            Func<VehicleCatalog.Vehicle, string> car = v => NameAndYear(v.Name)[0], year = v => NameAndYear(v.Name)[1];
+            IOrderedEnumerable<VehicleCatalog.Vehicle> sorted =
+                sortColumn == 1 ? (sortDescending ? rows.OrderByDescending(year) : rows.OrderBy(year)).ThenBy(car, StringComparer.CurrentCultureIgnoreCase)
+                : sortColumn == 2 ? (sortDescending ? rows.OrderByDescending(v => Leaf(v.Folder), StringComparer.OrdinalIgnoreCase) : rows.OrderBy(v => Leaf(v.Folder), StringComparer.OrdinalIgnoreCase))
+                : (sortDescending ? rows.OrderByDescending(car, StringComparer.CurrentCultureIgnoreCase) : rows.OrderBy(car, StringComparer.CurrentCultureIgnoreCase)).ThenBy(year);
+            rows = sorted;
             foreach (var v in rows)
             {
                 // The folder column shows the folder's own name; the full path stays searchable and in the tooltip.
-                var item = new ListViewItem(new[] { v.Name, Leaf(v.Folder) }) { Tag = v, ToolTipText = v.Folder };
+                var item = new ListViewItem(new[] { car(v), year(v), Leaf(v.Folder) }) { Tag = v, ToolTipText = v.Folder };
                 list.Items.Add(item);
             }
             list.ShowItemToolTips = true;
@@ -242,6 +272,8 @@ namespace AnsGarage
         public string PluginVersion = Core.Version;
         public string Target = "HarGabt 1.0.7 v1.0.7_26.10.12 / NFS Unbound";
         public string Scope, CreatedUtc, MeshSetPluginVersion, Blueprint;
+        // The vehicle's own RaceVehicleItemData (chosen in the list), when its bundle has a twin (a Cop Edition).
+        public string Item;
         public string TransformPolicy = "Mesh-local geometry unchanged; hierarchy retained; rigid composite transforms only. Raw composite matrices retained. No blueprint/entity placement inferred.";
         public string VariantPolicy = "Database row/material references only; variation hashes are not body-kit assembly definitions. Shared geometry exported once.";
         public string Units = "Meters";
@@ -412,7 +444,7 @@ namespace AnsGarage
             }
             AssemblyRun assembly=null;
             if(!Cancel && !Library) Time("Assembly", () => {
-                try {assembly=new AssemblyRun(Manifest,output) {CancellationRequested=()=>Cancel,Blueprint=Blueprint};assembly.Run();}
+                try {assembly=new AssemblyRun(Manifest,output) {CancellationRequested=()=>Cancel,Blueprint=Blueprint,Item=Manifest.Item};assembly.Run();}
                 catch(Exception ex) {if(assembly!=null){assembly.Issue("run",ex.Message);assembly.Save();}Manifest.Errors.Add("Assembly: "+ex.Message);}
             });
             Save();

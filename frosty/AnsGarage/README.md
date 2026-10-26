@@ -20,7 +20,7 @@ C# x64 plugin for Frosty Editor 1.0.7 (v1.0.7_26.10.12) and NFS Unbound. It expo
 
 Import `manifest.json` in Blender with **File → Import → An's Garage vehicle (.json)**.
 
-The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\AnsGarage\vehicle-catalog.json`. **Refresh list** re-reads it.
+The vehicle list is read once (about 3.5 minutes) and cached in `%LOCALAPPDATA%\AnsGarage\vehicle-catalog.json`. **Refresh list** re-reads it. Click a column header (Car, Year, Folder) to sort by it, again to reverse.
 
 **Tools → An's Garage → Add assembly to an existing export...** adds or refreshes assembly data in an older export folder.
 

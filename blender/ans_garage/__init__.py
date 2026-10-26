@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 7), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 8), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -1133,6 +1133,24 @@ def register():
                 op = self.layout.operator("object.ans_garage_tire", text="Stock (car's own)" if name == "Stock" else name)
                 op.root, op.tire, op.lettering = root.name, name, current.get("Lettering", "Plain")
 
+    class OBJECT_OT_ans_garage_tint_stock(bpy.types.Operator):
+        bl_idname = "object.ans_garage_tint_stock"
+        bl_label = "Stock tints"
+        bl_description = "Put the window, headlight and taillight tints back to the car's own"
+        bl_options = {"REGISTER", "UNDO"}
+        root: StringProperty(options={"SKIP_SAVE"})
+
+        def execute(self, context):
+            root = bpy.data.collections.get(self.root)
+            if root is None:
+                return {"CANCELLED"}
+            for field, _ in profiles.TINT_FIELDS:
+                g = profiles.runtime_group(car_scope(root), field=field)
+                if g:
+                    stock = list(g["unbound_stock_value"])
+                    profiles.runtime_rgb(g).default_value = (stock + [1.0] * 4)[:3] + [1.0]
+            return {"FINISHED"}
+
     class OBJECT_OT_ans_garage_stance_stock(bpy.types.Operator):
         bl_idname = "object.ans_garage_stance_stock"
         bl_label = "Stock stance"
@@ -1609,6 +1627,14 @@ def register():
                     # Levels 2 and up render the same (no clear coat): shown as Matte.
                     gloss = dict(profiles.GLOSS_LEVELS).get(min(now[2], 2), "Matte") + (" (stock)" if now[2] == stock[2] else "")
                     menu_field(layout, "Gloss", "ANS_GARAGE_MT_gloss", gloss, root)
+            tints = [(text, g) for field, text in profiles.TINT_FIELDS for g in [profiles.runtime_group(scope, field=field)] if g]
+            if tints:
+                col = layout.column()
+                col.use_property_split = True
+                col.use_property_decorate = False
+                for text, g in tints:
+                    col.prop(profiles.runtime_rgb(g), "default_value", text=text)
+                field(layout, "").operator("object.ans_garage_tint_stock", text="Stock tints").root = root.name
             livery_index = liveries_module().load_index(root)
             if livery_index:
                 current = root.get("ans_garage_livery", "None")
@@ -1711,7 +1737,7 @@ def register():
                            OBJECT_OT_ans_garage_plate, OBJECT_OT_ans_garage_plate_frame,
                            OBJECT_OT_ans_garage_plate_text,
                            OBJECT_OT_ans_garage_rim, OBJECT_OT_ans_garage_rim_paint_stock,
-                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts, OBJECT_OT_ans_garage_hide_note, OBJECT_OT_ans_garage_stance_stock, ANS_GARAGE_MT_part,
+                           OBJECT_OT_ans_garage_moving_parts, OBJECT_OT_ans_garage_close_moving_parts, OBJECT_OT_ans_garage_hide_note, OBJECT_OT_ans_garage_stance_stock, OBJECT_OT_ans_garage_tint_stock, ANS_GARAGE_MT_part,
                            ANS_GARAGE_MT_preset, ANS_GARAGE_MT_tire, ANS_GARAGE_MT_finish, ANS_GARAGE_MT_material,
                            ANS_GARAGE_MT_shift, ANS_GARAGE_MT_gloss,
                            OBJECT_OT_ans_garage_conditions, OBJECT_OT_ans_garage_catch_up, OBJECT_OT_ans_garage_finish, OBJECT_OT_ans_garage_material,

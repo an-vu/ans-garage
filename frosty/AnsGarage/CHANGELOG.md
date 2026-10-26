@@ -1,7 +1,14 @@
+# 1.1.8
+
+- **Vehicle list: a Year column.** The game writes years in several ways ("Lamborghini Aventador S (2016)", "2019 Ford Mustang GT Convertible", "Aston Martin Vulcan 2016", "Porsche 959 S (1987) - Cop Edition", "MINI ... Countryman '17"); the year goes to its own column and the name keeps the rest. Click a header to sort by it, again to reverse.
+- **Cars with a Cop Edition get their assembly data.** A car and its Cop Edition share one vehicle bundle, so 16 cars failed with "Multiple vehicle stock items match bundle; stock selection is ambiguous." The vehicle chosen in the list now brings its own item (`manifest.json` `Item`); without one (an older export), the item that isn't the Cop Edition is used, and `assembly.log` says so.
+- Headless `assemblyall` mode: assembly data only, for every vehicle (for checks across all cars).
+
 # 1.1.7
 
 - `assembly.json` has the car's **Stance**: its stock visual-suspension item and that item's tuning sliders (ride height, front and rear camber), in the garage's order (`UISortIndex`), each with its range, stock setting and the physics attributes it changes (`AttributeToModify`, `ModificationType`, Min/Max), read through the item's `TuningConfig` and `PerformanceTuningData`.
 
+# 1.1.6
 
 - No changes; version kept in step with An's Garage for Blender 1.1.6.
 

@@ -30,7 +30,7 @@ namespace AnsGarage
                     if(manifest==null || manifest.Schema!=1)throw new InvalidDataException("Unsupported manifest.");
                     var batch=new Batch(manifest.Scope,"",folder);
                     batch.Manifest.Meshes.AddRange(manifest.Meshes);
-                    var assembly=new AssemblyRun(batch.Manifest,folder) {Blueprint=manifest.Blueprint};
+                    var assembly=new AssemblyRun(batch.Manifest,folder) {Blueprint=manifest.Blueprint,Item=manifest.Item};
                     FrostyTaskWindow.Show("Vehicle assembly","Reading vehicle blueprint",task=> {
                         try {
                             assembly.Run(); manifest.Errors.RemoveAll(e=>e.StartsWith("Assembly:"));
@@ -60,6 +60,8 @@ namespace AnsGarage
         public volatile bool Cancel;
         public Func<bool> CancellationRequested;
         public string Blueprint;
+        // The chosen vehicle's own RaceVehicleItemData, when several share its bundle (a car and its Cop Edition).
+        public string Item;
         private bool IsCancelled {get {return Cancel || (CancellationRequested!=null && CancellationRequested());}}
         public readonly JObject Document;
         private readonly Manifest manifest;
@@ -237,20 +239,26 @@ namespace AnsGarage
             }
             if(wheels.Count!=4||wheels.Select(w=>(string)w["Name"]).Distinct().Count()!=4)Issue("Wheels","Expected four uniquely tagged wheel links.");
             // Match the item through its RaceVehicleReference bundle hash, not a guessed asset spelling.
-            EbxAssetEntry vehicleItem=null;object stock=null;int stockMatches=0;
+            var matches=new List<Tuple<EbxAssetEntry,object>>();
             foreach(var e in entries.Where(e=>e.Type=="RaceVehicleItemData")) {
                 try {
                     var o=Load(e.Guid).RootObject;var ptr=Batch.Get(o,"RaceVehicle");
                     if(!(ptr is PointerRef)||((PointerRef)ptr).Type==PointerRefType.Null)continue;
                     var reference=Resolve(ptr);var bundle=Batch.Get(reference,"VehicleBundleHash");
-                    if(bundle!=null&&Convert.ToUInt32(Batch.Get(bundle,"Hash"))==hash) {
-                        stockMatches++;
-                        vehicleItem=e;stock=o;
-                    }
+                    if(bundle!=null&&Convert.ToUInt32(Batch.Get(bundle,"Hash"))==hash)matches.Add(Tuple.Create(e,o));
                 } catch(Exception ex) {Issue(e.Name,ex.Message);}
             }
-            if(stockMatches>1)throw new InvalidDataException("Multiple vehicle stock items match bundle; stock selection is ambiguous.");
-            if(stock==null)throw new InvalidDataException("Vehicle stock item not found by bundle hash.");
+            // Several items share a bundle when a car has a twin (its Cop Edition): the chosen vehicle's own item, else
+            // the one that isn't a cop car.
+            if(matches.Count>1) {
+                var chosen=matches.Where(m=>Item!=null&&m.Item1.Name.Equals(Item,StringComparison.OrdinalIgnoreCase)).ToList();
+                if(chosen.Count!=1)chosen=matches.Where(m=>m.Item1.Name.IndexOf("cop",StringComparison.OrdinalIgnoreCase)<0).ToList();
+                if(chosen.Count!=1)throw new InvalidDataException("Several vehicle items match the bundle ("+string.Join(", ",matches.Select(m=>m.Item1.Name))+"); choose the vehicle in the list.");
+                Issue("StockItem","Several items share this vehicle's bundle ("+string.Join(", ",matches.Select(m=>m.Item1.Name))+"); used "+chosen[0].Item1.Name);
+                matches=chosen;
+            }
+            if(matches.Count==0)throw new InvalidDataException("Vehicle stock item not found by bundle hash.");
+            EbxAssetEntry vehicleItem=matches[0].Item1;object stock=matches[0].Item2;
             Document["StockItem"]=Capture(vehicleItem.Guid,stock);
             var stockUi=Names.ItemUi(stock,Resolve);
             Document["VehicleName"]=new JObject {{"Long",stockUi["LongName"]},{"Medium",stockUi["MediumName"]},{"Short",stockUi["ShortName"]},

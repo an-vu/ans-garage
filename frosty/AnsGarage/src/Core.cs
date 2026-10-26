@@ -9,7 +9,7 @@ namespace AnsGarage
     public static class Core
     {
         // The version of An's Garage (shared with An's Garage for Blender); the only place it is written.
-        public const string Version = "1.1.7";
+        public const string Version = "1.1.8";
         public static string Normalize(string value) { return (value ?? "").Replace('\\', '/').Trim('/'); }
         public static bool InScope(string name, string prefix)
         {

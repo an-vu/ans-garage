@@ -65,6 +65,8 @@ def misplaced(variant):
         for o in inst.objects:
             if o.parent is not None and o.parent.name in inst.objects:
                 continue
+            if o.get("ans_garage_rest_moves"):
+                continue  # held at the game's rest pose by the moving-parts rig (checked below)
             baseline = Matrix(json.loads(o["unbound_baseline_matrix_world"]))
             gap = ((transform @ baseline).translation - o.matrix_world.translation).length
             if gap > 1e-3:
@@ -193,6 +195,13 @@ moving = json.loads(root.get("ans_garage_moving_parts_json") or "null") if root 
 check("Moving parts built from the source graph", moving is not None and all(c["Attached"] > 0 for c in moving["Controls"]),
       moving and {"Controls": ["%s/%s" % (c["Group"], c["Label"]) for c in moving["Controls"]], "Issues": moving["Issues"],
                   "Skipped": [x["Control"] for x in moving["Skipped"]]})
+profiles_mod = addon.surfaces_module().profiles_module()
+scope = addon.car_scope(root)
+tint_groups = {text: profiles_mod.runtime_group(scope, field=f) for f, text in profiles_mod.TINT_FIELDS}
+# Light tints only where the car's lens shaders take them (not the Evija's, Integra's or Chiron's).
+check("Window tint (and headlight/taillight tints where the lenses take them) are live controls with the car's own values",
+      tint_groups["Window tint"] is not None and all(g is None or g.users > 0 for g in tint_groups.values()),
+      {t: (list(g["unbound_stock_value"]), g.users) if g else None for t, g in tint_groups.items()})
 stance = addon.stance_module()
 st_obj, st_rows = stance.controls(root), stance.sliders(root)
 check("Stance sliders from the car's own data (ride height, front and rear camber)",
@@ -268,9 +277,17 @@ if moving and moving["Controls"]:
         for con in pb.constraints:
             con.mute = False
     rest_items = [json.loads(o["ans_garage_rest_matrix_json"]) for o in items]
-    error = max([apart(closed[:len(bones)], unrigged[:len(bones)])] +
-                [apart([o.matrix_world], [m]) for o, m in zip(items, rest_items)] + [0.0])
-    check("Sliders at 0 leave the car as imported", error < 1e-4, {"MaxDifference": error, "Bones": len(bones), "Items": len(items)})
+    # Parts whose game rest pose is their modelled one stay exactly as imported at 0; the others (the Ford GT's wing,
+    # modelled raised) are moved to the rest pose the game's sequences start from.
+    still_b = [i for i, (a, pb) in enumerate(bones) if not pb.get("ans_garage_rest_moves")]
+    still_i = [i for i, o in enumerate(items) if not o.get("ans_garage_rest_moves")]
+    error = max([apart([closed[i] for i in still_b], [unrigged[i] for i in still_b])] +
+                [apart([items[i].matrix_world], [rest_items[i]]) for i in still_i] + [0.0])
+    check("Sliders at 0 leave the car as imported where the game's rest pose is the modelled one", error < 1e-4,
+          {"MaxDifference": error, "Bones": len(still_b), "Items": len(still_i)})
+    moved = [round(apart([items[i].matrix_world], [rest_items[i]]), 3) for i in range(len(items)) if i not in still_i]
+    check("Parts modelled away from their rest pose are moved to it at 0, staying on the car (under 30 cm)",
+          all(1e-3 < m < 0.3 for m in moved), moved)
     moved = {}
     for c in moving["Controls"]:
         ctrl[c["Key"]] = 1.0

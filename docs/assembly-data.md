@@ -35,9 +35,13 @@ The first source permutation is an explicit preview policy. Source template SubI
     - `TransformBlendEntityData.In2`, weighted by the spoiler component's `AnimationExtent`: stock item 1, aftermarket 0;
     - `TransformMultiplierEntityData` (wing in `In1`, airbrake in `In2`);
     - `RealmTransformCombinerEntityData.ClientTransform`;
-    - a `TransformBlendEntityData` fed by two sequences (Ford GT: the wing-up sequence in `In1`, the airbrake sequence in `In2`), blended by its `BlendValue` = `ClampEntityData` of a `MathOpEntityData` Multiply of the airbrake output and a `FloatEntityData` (3). In Blender: Copy Transforms to the first pose, then to the second with that influence.
+    - a `TransformBlendEntityData` with no `BlendValue` connection and its own `BlendValue` 1 (identity `In1`): passes `In2` through (Evija, Pagani Huayra BC, '67 Camaro, '67 Cougar, '69 Charger);
+    - a `TransformBlendEntityData` fed by two sequences (Ford GT: the wing-up sequence in `In1`, the airbrake sequence in `In2`), blended by its `BlendValue` = `ClampEntityData` of a `MathOpEntityData` Multiply of the airbrake output and a `FloatEntityData` (3). In Blender: Copy Transforms to the first pose, then to the second with that influence;
+    - a `TransformHubEntityData` fed by the wing and the airbrake sequences (Pagani Huayra BC flaps), which passes on whichever changed last. In Blender: the airbrake's pose once its slider leaves 0, else the wing's.
   - The animation component's two outputs are told apart by what they drive in the cars checked: `0x33ff5416` the wing sequence, `0xac7e87ed` the airbrake.
-- **Pop-up headlights** (Diablo SV):
+  - **Rest pose:** at slider 0 a part takes the pose its sequence starts from. `TransformOffset` parts are modelled with no offset: the Ford GT's wing is modelled raised and its sequences start 16-23 cm lower, so it is moved there at 0. Parts whose motion replaces `Transform` (doors, the Murciélago's vents) are modelled in their slider-0 pose. Checked on all 187 cars with assembly data: only the Ford GT rests away from its modelled pose.
+  - **Repeated placement:** a `TransformOffset` sequence that starts at its parent's place in the car repeats that placement (the Evija's spoiler top keys (0, 0.733, -2.009), the spoiler's own position). It is taken out of the track's translation, so the part stays on its parent.
+- **Pop-up headlights** (Diablo SV; the '67 Camaro, '67 Cougar and '69 Charger through a fixed blend):
   - two sequences are played by light events (no `ExternalTime`) and feed a `TransformHubEntityData`, which passes on whichever played last;
   - the sequence that starts at rest opens the lights and becomes the slider; the other is its reverse;
   - the tracks reach the `LightsCustomizationComponentData` `TransformOffset` through the same blend and combiner as the wings.

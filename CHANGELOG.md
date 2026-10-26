@@ -2,6 +2,18 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.8
+
+- **Window, headlight and taillight tint,** as in the game's garage: colour controls under Paint and livery, with **Stock tints**. The car's tint keys drive the shaders' `Ext_Glass_Color` (windows), `Ext_Headlight_Color` and `Ext_Taillight_Tint` (lenses), matched by the game's parameter keys; stock values are the car's own (window tint from its vehicle item, light tints from its customization defaults). Light tints show only where the car's lens shaders take them (not on the Evija, Integra or Chiron).
+- **Ford GT: the wing rests tucked in,** as in the game. Its wing is modelled raised and its sequences start 16-23 cm lower; the rig took the modelled pose for slider 0, so the wing sat up at rest and flew higher when moved. Parts are now attached in their modelled pose, so slider 0 is the game's rest pose.
+- **Moving parts on five more cars:** pop-up headlights on the '67 Camaro, '67 Cougar and '69 Charger, the Evija's rear wing, the Pagani Huayra BC's flaps (**Air vents**, **Airbrake**). Their sequences pass through a blend with a fixed full weight, which wasn't read before.
+  - **Evija:** the wing's top blade sequence starts at the spoiler's own place in the car, so it carried that position twice (the blade floated 2 m off the car). It is taken out: the blade sits flush at rest and rises on its posts.
+  - **Pagani:** the wing and airbrake sequences meet in a hub that passes on whichever changed last. In Blender the flaps take the airbrake's pose once its slider leaves 0, else the wing's.
+- **All cars checked:** the moving parts were read from all 187 cars with assembly data. Only the Ford GT rests away from its modelled pose; none rest off the car.
+- **Cars with a Cop Edition get their assembly data** (16 cars failed: the car and its Cop Edition share one bundle). See the Frosty changelog.
+- Reimport cars to get the tints and moving parts.
+- **Tests:** the window tint is live on every test car, light tints where the lenses take them; parts held away from their modelled pose at rest are moved there and stay on the car (under 30 cm).
+
 ## 1.1.7
 
 - **Stance, as in the game's garage:** a **Stance** section per car with **Ride height**, **Front camber** and **Rear camber** (0-10, the game's slider steps) and **Stock**.

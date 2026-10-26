@@ -3,6 +3,7 @@ param([Parameter(Mandatory=$true)][string]$Mode,[string]$A='',[string]$B='',[str
 #   catalog   <out.json>                         every vehicle by in-game name (also refreshes the picker cache)
 #   export    <vehicle folder> <out dir> [blueprint] [static]   static (any position): no moving parts built on import
 #   assembly  <export dir> <blueprint>           re-run assembly for an existing export
+#   assemblyall <out dir>                        assembly data only (no meshes) for every vehicle, one folder each
 #   defaults  <out dir>                          shader textures (shared by all cars), as Export shared parts writes them
 #   liveries  <export dir> <list|all|k1|k2...>   list a car's stock liveries, or add them to an existing export
 #   hashes    <h1|h2|...> <out.json>             EBX assets whose name hash matches

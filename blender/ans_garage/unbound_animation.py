@@ -256,14 +256,22 @@ def _follow(g, node, infield, path, out):
         if g.into(node, "In1") or any(abs(a - b) > 1e-6 for a, b in zip(g.raw(node)["In1"]["Basis"], [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0])):
             raise Unsupported("Transform blend with a non-identity In1")
         weights = g.into(node, "BlendValue")
-        if len(weights) != 1 or weights[0][1] != field("AnimationExtent") or weights[0][0] not in g.comps:
+        if not weights:
+            # No weight connected: the blend's own BlendValue. A full weight passes In2 through (the Evija, Pagani
+            # Huayra BC, Porsche 911s, '67 Camaro and Cougar, '69 Charger).
+            value = float(g.raw(node).get("BlendValue", 0.0))
+            if abs(value - 1.0) > 1e-6:
+                raise Unsupported("Transform blend with a fixed weight of %g" % value)
+        elif len(weights) != 1 or weights[0][1] != field("AnimationExtent") or weights[0][0] not in g.comps:
             raise Unsupported("Transform blend weight is not a component's AnimationExtent")
-        path = path + [("Extent", weights[0][0])]
+        else:
+            path = path + [("Extent", weights[0][0])]
     elif typ == "TransformMultiplierEntityData" and infield in (field("In1"), field("In2")):
         path = path + [("Multiply", 1 if infield == field("In1") else 0)]
     elif typ == "TransformHubEntityData" and infield in (field("In1"), field("In2")):
-        # Passes on whichever input changed last: an opening and a closing sequence share it.
-        path = path + [("Hub", node)]
+        # Passes on whichever input changed last: an opening and a closing sequence share it, or the wing and airbrake
+        # sequences (the Pagani Huayra BC's flaps).
+        path = path + [("Hub", (node, 0 if infield == field("In1") else 1))]
     elif not (typ == "RealmTransformCombinerEntityData" and infield == field("ClientTransform")):
         raise Unsupported("Sequence output reaches %s.%s" % (typ, infield))
     for target, tf in g.out(node, "Out"):
@@ -323,7 +331,8 @@ def _sequences(g, moving, controls, skipped, issues, blends):
                     reached += [(comp, fld, factor, path) for comp, fld, path in found]
             if not reached:
                 raise Unsupported("No component reached")
-            if key is None:
+            events = key is None
+            if events:
                 # Event-played sequences come in pairs through a transform hub: the one that starts at rest opens the
                 # part (the slider); the other plays it back closed.
                 if not all(any(kind == "Hub" for kind, _ in path) for *_, path in reached):
@@ -347,9 +356,10 @@ def _sequences(g, moving, controls, skipped, issues, blends):
             for comp, fld, factor, path in reached:
                 extent = next((c for kind, c in path if kind == "Extent"), None)
                 order = next((o for kind, o in path if kind == "Multiply"), 0)
-                blend = next((b for kind, b in path if kind == "Blend"), None)
+                blend = next((b for kind, b in path if kind == "Blend" or (kind == "Hub" and not events)), None)
                 if blend is not None:
-                    # One input of a blend between two sequences: paired with the other input after every sequence.
+                    # One input of a blend between two sequences (or of a hub between two sliders): paired with the
+                    # other input after every sequence.
                     blends.setdefault((comp, fld, blend[0]), {})[blend[1]] = (key, factor, extent)
                 else:
                     _add(moving, comp, fld, key, factor, order, extent)
@@ -361,6 +371,29 @@ def _sequences(g, moving, controls, skipped, issues, blends):
 
 def _is_identity(m, tolerance=1e-5):
     return all(abs(m[i][j] - (1.0 if i == j else 0.0)) <= tolerance for i in range(4) for j in range(4))
+
+
+def _drop_repeated_placement(g, comp, entry):
+    """An offset sequence that starts at its parent's place in the car carries that placement a second time (the
+    Evija's spoiler top: (0, 0.733, -2.009) over the spoiler at the same point); taken out of its translation so the
+    part stays on its parent."""
+    from mathutils import Matrix
+    factors = entry["Factors"]
+    if entry["Field"] != "TransformOffset" or len(factors) != 1 or factors[0]["Factor"]["Kind"] != "Tracks":
+        return
+    rest = factor_matrix(factors[0]["Factor"], 0.0)
+    placement = Matrix.Identity(4)
+    for c in reversed(g.ancestors(comp)[1:]):
+        placement = placement @ matrix_from_basis(g.comps[c]["Transform"])
+    p = placement.to_translation()
+    if p.length < 0.05 or (rest.to_translation() - p).length > 1e-3 or not _is_identity(rest.to_3x3().to_4x4(), 1e-5):
+        return
+    factor = dict(factors[0]["Factor"])  # a track can reach several components: change this one's copy
+    factor["Channels"] = {name: [list(k) for k in keys] for name, keys in factor["Channels"].items()}
+    for axis, value in zip("XYZ", p):
+        for k in factor["Channels"].get("Translation" + axis, []):
+            k[1] -= value
+    factors[0] = dict(factors[0], Factor=factor)
 
 
 def _add(moving, comp, fld, key, factor, order, extent):
@@ -382,7 +415,16 @@ def analyse(data):
             if set(sides) != {0, 1}:
                 raise Unsupported("Blend between sequences with one input reached")
             (key_a, factor_a, extent), (key_b, factor_b, _) = sides[0], sides[1]
-            weight = _blend_weight(g, node)
+            if g.type(node) == "TransformHubEntityData":
+                # The hub passes on the input that changed last: the airbrake's pose once its slider leaves 0, else
+                # the wing's.
+                if [key_a, key_b].count("airbrake") != 1:
+                    raise Unsupported("Transform hub between %s and %s" % (key_a, key_b))
+                if key_a == "airbrake":
+                    (key_a, factor_a, extent), (key_b, factor_b, _) = sides[1], sides[0]
+                weight = {"Control": "airbrake", "Scale": 1000.0, "Min": 0.0, "Max": 1.0}
+            else:
+                weight = _blend_weight(g, node)
             factor = {"Kind": "Blend", "A": factor_a, "B": factor_b, "ControlA": key_a, "ControlB": key_b, "Weight": weight}
             entry = moving.setdefault(comp, {"Field": fld, "Factors": []})
             if entry["Field"] != fld:
@@ -391,9 +433,10 @@ def analyse(data):
                                      "Factor": factor, "Order": 0, "Extent": extent})
         except (Unsupported, KeyError, TypeError, ValueError) as exc:
             issues.append("blend %s: %s" % (node.rsplit(":", 1)[-1], exc))
-    for entry in moving.values():
+    for comp, entry in moving.items():
         # Column order: TransformMultiplier In2 is applied after In1 (In1 * In2 in Frostbite's row-vector form).
         entry["Factors"].sort(key=lambda f: f["Order"])
+        _drop_repeated_placement(g, comp, entry)
     controls.sort(key=lambda c: (GROUPS.index(c["Group"]), c["Key"] == "airbrake", c["Label"]))
     return {"Graph": g, "Moving": moving, "Controls": controls, "Skipped": skipped, "Issues": issues}
 
@@ -507,18 +550,25 @@ def build(root):
             m = m @ factor_at(f, values)
         return m
 
-    def world(comp, values):
-        """Car-space transform of a component with the sliders at the given values."""
+    def world(comp, values, modelled=False):
+        """Car-space transform of a component with the sliders at the given values; modelled: with no motion applied
+        (the pose its geometry is modelled in)."""
         m = Matrix.Identity(4)
         for c in reversed(g.ancestors(comp)):
             if c in moving:
                 if moving[c]["Field"] == "TransformOffset":
                     m = m @ matrix_from_basis(g.comps[c]["Transform"])
-                m = m @ local_matrix(c, values)
+                    if not modelled:
+                        m = m @ local_matrix(c, values)
+                else:
+                    # The motion replaces the component's Transform (doors, the Murciélago's vents): their parts are
+                    # modelled in its pose at slider 0, as on every car checked.
+                    m = m @ local_matrix(c, values if not modelled else {})
             else:
                 m = m @ matrix_from_basis(g.comps[c]["Transform"])
         return m
 
+    rest_moves = {}
     # One empty chain per moving component: a fixed base (static transforms since the nearest moving ancestor), then
     # one empty per factor, each keyed over its slider. Ancestors first so parents exist.
     frames_of = {}
@@ -577,7 +627,11 @@ def build(root):
                 _drive_weight(to_b, controls_obj, factor["Weight"])
                 parent = e
             ends[comp] = parent
-            frames_of[comp] = world(comp, {})
+            # Parts are attached in their modelled pose, so at slider 0 they take the game's rest pose. For offsets
+            # (spoilers, wings) the modelled pose is no offset: the Ford GT's wing is modelled raised and its sequences
+            # start 19 cm lower (tucked in). Checked on all 187 cars with assembly data: only the Ford GT differs.
+            frames_of[comp] = world(comp, {}, modelled=True)
+            rest_moves[comp] = not _is_identity(frames_of[comp].inverted() @ world(comp, {}), 1e-6)
         except Exception as exc:
             issues.append("%s: %s" % (comp.rsplit(":", 1)[-1], exc))
     attached = defaultdict(int)
@@ -608,13 +662,14 @@ def build(root):
                 continue
             # The bone moves relative to its imported pose (which already places parts modelled around their own
             # origin, e.g. the Murciélago's vents). A bone's Child Of gives empty(s) @ inverse @ pose basis, so with
-            # inverse = empty(0)^-1 @ bone rest the bone follows the empty's motion since slider 0.
+            # inverse = empty(modelled)^-1 @ bone rest the bone follows the empty's motion from the modelled pose.
             rest = world_matrix(arm) @ bone.bone.matrix_local
             con = bone.constraints.new("CHILD_OF")
             con.name = "An's Garage moving part"
             con.target = ends[comp]
             con.inverse_matrix = (conv @ frames_of[comp] @ inv).inverted() @ rest
             con.set_inverse_pending = False
+            bone["ans_garage_rest_moves"] = rest_moves.get(comp, False)
             attached[comp] += 1
             bones_of[comp].append(bone.name)
     else:
@@ -649,6 +704,7 @@ def build(root):
             if o.parent is None or o.parent.name not in inst.all_objects:
                 matrix = world_matrix(o)
                 o["ans_garage_rest_matrix_json"] = json.dumps([list(r) for r in matrix])
+                o["ans_garage_rest_moves"] = rest_moves.get(comp, False)
                 o.parent = ends[comp]
                 o.matrix_parent_inverse = rest.inverted()
                 o.matrix_basis = matrix

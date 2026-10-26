@@ -280,13 +280,29 @@ static void Run(string[] a) {
   Console.WriteLine("DEFAULTS done");
   return;
  }
+ if(mode=="assemblyall") {
+  // Assembly data only (no meshes, no materials) for every vehicle in the catalog, for checks across all cars:
+  // a[5] = output folder, one subfolder per vehicle.
+  string outRoot=Path.GetFullPath(a[5]);
+  var all=VehicleCatalog.Cached()??VehicleCatalog.BuildAndCache(m=>Console.WriteLine(m));
+  int done=0;
+  foreach(var v in all) {
+   string folder=Path.Combine(outRoot,Core.SafeName(Path.GetFileName(Core.Normalize(v.Blueprint))));
+   Directory.CreateDirectory(folder);
+   var run=new AssemblyRun(new Batch(v.Folder,"",folder).Manifest,folder) {Blueprint=v.Blueprint,Item=v.Item};
+   try { run.Run(); done++; } catch(Exception ex) { run.Issue("run",ex.Message); Console.WriteLine("FAILED "+v.Name+": "+ex.Message); }
+   finally { run.Save(); }
+  }
+  Console.WriteLine("ASSEMBLED "+done+" of "+all.Count);
+  return;
+ }
  if(mode=="assembly") {
   // Re-run assembly on an existing export: a[5] = export folder, a[6] = RaceVehicleBlueprint asset name.
   string folder=Path.GetFullPath(a[5]);
   var manifest=JsonConvert.DeserializeObject<Manifest>(File.ReadAllText(Path.Combine(folder,"manifest.json")));
   var existing=new Batch(manifest.Scope,"",folder);
   existing.Manifest.Meshes.AddRange(manifest.Meshes);
-  var run=new AssemblyRun(existing.Manifest,folder) {Blueprint=a[6]};
+  var run=new AssemblyRun(existing.Manifest,folder) {Blueprint=a[6],Item=manifest.Item};
   var t=NoWindow();
   try {
    run.Run(); manifest.Errors.RemoveAll(e=>e.StartsWith("Assembly:"));
