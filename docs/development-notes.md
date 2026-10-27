@@ -35,7 +35,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 - **Surfaces:** every slot is built from its compiled profile: specialization (`Spec`, `prove_constants`, `settle`), permutation choice (`choose_entry`), node emission (`NodeBuilder`). Unresolved inputs fail closed with a reason in the surface report.
 - **Node trees:** Blender updates a whole tree after every edit, so `NodeBuilder` puts formulas into nested groups of at most `PART_NODE_LIMIT` (120) nodes and passes values between them through group sockets.
 - **Dirt, dust and wet** (`CONDITIONS`, sidebar toggle): rebuilds the slots whose shader reads `Ext_DirtColor_Amt`, `Ext_DustColor_Amt` or `WaterCycle`, with those parameters live and driven by shared "Unbound | Runtime" groups.
-  - The amounts are the sliders.
+  - The amounts are the sliders: custom properties of the scene (`ans_garage_dirt`, `ans_garage_dust`, `ans_garage_wet`, added when a car is imported), read by drivers. A saved car keeps its condition without the add-on, and the sliders stay in Scene Properties > Custom Properties.
   - The colours are the paint shader's own constants (dirt 0.0331, dust 0.139).
   - The rain phase is 0.6 + 0.1 × Wet.
   - The numeric checks (engine constants, view constants, permutations) evaluate them only at slider values 0, 0.5 and 1.
@@ -65,7 +65,7 @@ How the pipeline works and what is still open. Release history: `CHANGELOG.md`. 
 
 ## 4. Validation
 
-`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, `paint`, `liveries`, `rims`, `static`, and `vehicle:<name>` for ten cars covering every moving-part pattern found by the scan of all 200 vehicles. Each vehicle test shows every part option and checks that its parts sit where the assembly placed them.
+`tests/run_all.py`: parallel, skips tests whose inputs are unchanged. `existing` (a 0.5-era scene upgraded in place), `fresh` (install ZIP), `nodes` (Cycles bake vs Python for every selected entry, clean and with dirt/dust/wet live; at most 1% of samples off by more than 1e-3), `tires`, `plates`, `conditions`, `paint`, `liveries`, `rims`, `static`, and `vehicle:<name>` for eleven cars covering every moving-part pattern found by the scan of all 200 vehicles. Each vehicle test shows every part option and checks that its parts sit where the assembly placed them.
 
 ## 5. Open items
 

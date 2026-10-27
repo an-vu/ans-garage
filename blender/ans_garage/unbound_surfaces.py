@@ -270,6 +270,8 @@ def set_conditions_steps(enabled):
     (yields progress, returns (slots, built, failed)). Hidden part options catch up when they are shown."""
     import bpy
     bpy.context.scene["ans_garage_conditions"] = bool(enabled)
+    if enabled:
+        profiles_module().condition_sliders(bpy.context.scene)
     slots = stale_condition_slots()
     built, failed = yield from rebuild_steps(slots)
     return len(slots), built, failed

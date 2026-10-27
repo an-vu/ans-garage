@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 8), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 9), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -557,6 +557,7 @@ def import_steps(filepath, assemble=True, materials=True):
             surface_report = yield from _scaled(surfaces_module().surface_steps(imported_objects, path),
                                                 "Building materials", 25.0, 75.0)
             report.materials(surface_report)
+            surfaces_module().profiles_module().condition_sliders(bpy.context.scene)
         except Exception as exc:
             failures.append("Materials: " + str(exc))
             report.add("Materials", "Not built: " + str(exc))
@@ -1597,7 +1598,8 @@ def register():
                     col.use_property_decorate = False
                     col.enabled = on
                     for slider_text, prop, _ in surfaces_module().profiles_module().CONDITIONS.values():
-                        col.prop(context.scene, prop, text=slider_text, slider=True)
+                        if prop in context.scene:
+                            col.prop(context.scene, '["%s"]' % prop, text=slider_text, slider=True)
 
             notes = car_notes(context, root)
             if notes:
@@ -1752,11 +1754,6 @@ def register():
     for cls in _registered_classes:
         bpy.utils.register_class(cls)
 
-    def condition_update(scene, context):
-        surfaces_module().profiles_module().show_conditions(scene)
-    for label, prop, _ in surfaces_module().profiles_module().CONDITIONS.values():
-        setattr(bpy.types.Scene, prop, FloatProperty(name=label, min=0.0, max=1.0, subtype="FACTOR", update=condition_update,
-                                                     description="0 clean and dry (can be keyframed)"))
     bpy.types.TOPBAR_MT_file_import.append(_menu)
     bpy.types.STATUSBAR_HT_header.prepend(draw_status)
 
@@ -1767,8 +1764,6 @@ def unregister():
     bpy.types.STATUSBAR_HT_header.remove(draw_status)
     for cls in reversed(_registered_classes):
         bpy.utils.unregister_class(cls)
-    for _, prop, _ in surfaces_module().profiles_module().CONDITIONS.values():
-        delattr(bpy.types.Scene, prop)
 
 
 if __name__ == "__main__":

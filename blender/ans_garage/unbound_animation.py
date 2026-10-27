@@ -11,8 +11,9 @@ hashes, resolved below); nothing is posed by hand.
   TransformMultiplierEntityData (In1, then In2) and RealmTransformCombinerEntityData (ClientTransform).
   A TransformBlendEntityData between two sequences (Ford GT: the wing-up pose in In1, the airbrake pose in In2) blends
   them by its BlendValue, read from a Clamp of a Multiply of an animation output and a constant (clamp(3 x airbrake)).
-- Pop-up headlights: two sequences played by light events (no ExternalTime) feed a TransformHubEntityData, which passes
-  on whichever played last. The one starting at rest opens the lights and becomes the slider; the other is its reverse.
+- Pop-up headlights: two sequences played by events (no ExternalTime) feed a TransformHubEntityData, which passes on
+  whichever played last. A switch (CompareBoolEntityData) starts them: the one its OnTrue starts opens the lights and
+  becomes the slider (it also plays PopUpHeadlights_Up); the OnFalse one is its reverse.
 A slider is one source input from 0 to 1: the property's T, or the sequence time across its keys. The game's speed
 logic (when a wing rises) and light switching are not reproduced.
 
@@ -65,6 +66,8 @@ class Graph:
         self.props = [(_ref(c["Source"]), c.get("SourceField"), _ref(c["Target"]), c.get("TargetField"), c.get("SourceFieldId"))
                       for c in root.get("PropertyConnections") or []]
         self.links = [(_ref(c["Source"]), _ref(c["Target"])) for c in root.get("LinkConnections") or []]
+        self.events = [(_ref(c["Source"]), (c.get("SourceEvent") or {}).get("Name"), _ref(c["Target"]),
+                        (c.get("TargetEvent") or {}).get("Name")) for c in root.get("EventConnections") or []]
         self.comps = {c["Node"]: c for c in data.get("Components", [])}
 
     def type(self, node):
@@ -78,6 +81,10 @@ class Graph:
 
     def out(self, node, name):
         return [(t, tf) for s, sf, t, tf, _ in self.props if s == node and sf == field(name)]
+
+    def started_by(self, node):
+        """(source, source event hash) of the events that start a node."""
+        return [(s, se) for s, se, t, te in self.events if t == node and te == field("Start")]
 
     def ancestors(self, comp):
         """The component and its parents, leaf first."""
@@ -333,14 +340,20 @@ def _sequences(g, moving, controls, skipped, issues, blends):
                 raise Unsupported("No component reached")
             events = key is None
             if events:
-                # Event-played sequences come in pairs through a transform hub: the one that starts at rest opens the
-                # part (the slider); the other plays it back closed.
+                # Event-played sequences come in pairs through a transform hub, started by a switch: its OnTrue one
+                # opens the part (the slider), its OnFalse one plays it back closed. In all 13 cars with such pairs the
+                # OnTrue one is also shown first (AutoPlayFirstFrame); it starts at the modelled pose in 12 (BMW M1:
+                # its lights rest turned 2.5 degrees, so slider 0 is that pose).
                 if not all(any(kind == "Hub" for kind, _ in path) for *_, path in reached):
                     skipped.append({"Control": "sequence " + node.rsplit(":", 1)[-1], "Reason": "played by events without a transform hub"})
                     continue
-                if not all(_is_identity(factor_matrix(f, 0.0)) for _, _, f, _ in reached):
+                starts = {e for s, e in g.started_by(node) if g.type(s) == "CompareBoolEntityData"}
+                if starts == {field("OnFalse")}:
                     skipped.append({"Control": "sequence " + node.rsplit(":", 1)[-1] + " (" + ", ".join(sorted(set(names))) + ")",
                                     "Reason": "closing sequence: plays the opening one back"})
+                    continue
+                if starts != {field("OnTrue")}:
+                    skipped.append({"Control": "sequence " + node.rsplit(":", 1)[-1], "Reason": "not started by a switch's OnTrue or OnFalse"})
                     continue
                 if any("headlight" in x for x in names):
                     key, group, label = "popup_headlights", "Lights", "Pop-up headlights"

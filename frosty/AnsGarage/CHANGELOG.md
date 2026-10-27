@@ -1,3 +1,7 @@
+# 1.1.9
+
+- No changes; version kept in step with An's Garage for Blender 1.1.9.
+
 # 1.1.8
 
 - **Vehicle list: a Year column.** The game writes years in several ways ("Lamborghini Aventador S (2016)", "2019 Ford Mustang GT Convertible", "Aston Martin Vulcan 2016", "Porsche 959 S (1987) - Cop Edition", "MINI ... Countryman '17"); the year goes to its own column and the name keeps the rest. Click a header to sort by it, again to reverse.

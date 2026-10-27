@@ -2,6 +2,13 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.1.9
+
+- **BMW M1: pop-up headlights.** Its two light sequences both keep the lights turned 2.5° (they undo the tilt of the lights' hinge), so neither started at the modelled pose, and the rule "the sequence that starts at rest opens the lights" found no opening one. The opening sequence is now the one the light switch's OnTrue starts (CompareBoolEntityData; the other is started by OnFalse); it also plays the game's PopUpHeadlights_Up sound. Checked on all 13 cars with such pairs (12 with pop-up headlights, and the Integra's antenna): the same sequence as before on the other 12.
+- **Dirt, dust and wet stay on a computer without the add-on.** The sliders were settings of the add-on, so a car saved dirty opened clean wherever An's Garage for Blender wasn't installed (the drivers lost what they read). They are now custom properties of the scene: the car keeps its condition, and the sliders work from Scene Properties > Custom Properties. The sidebar is unchanged.
+- Reimport cars to get both.
+- **Tests:** the BMW M1 is the eleventh test car; with the add-on turned off, the scene's sliders still drive the car.
+
 ## 1.1.8
 
 - **Window, headlight and taillight tint,** as in the game's garage: colour controls under Paint and livery, with **Stock tints**. The car's tint keys drive the shaders' `Ext_Glass_Color` (windows), `Ext_Headlight_Color` and `Ext_Taillight_Tint` (lenses), matched by the game's parameter keys; stock values are the car's own (window tint from its vehicle item, light tints from its customization defaults). Light tints show only where the car's lens shaders take them (not on the Evija, Integra or Chiron).

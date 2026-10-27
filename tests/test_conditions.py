@@ -55,6 +55,8 @@ report_name = addon.surfaces_module().last_report()
 clean = built_slots()
 check("Imported clean and dry: no condition controls", clean and not any(g for _, g in clean.values())
       and not bpy.context.scene.get("ans_garage_conditions"), len(clean))
+check("The import adds the Dirt, Dust and Wet sliders (shown greyed out until the controls are on)",
+      all(bpy.context.scene.get(prop) == 0.0 for _, prop, _ in P.CONDITIONS.values()))
 
 bpy.ops.object.ans_garage_plate_text(root=root.name, text="DIRT 1")
 started = time.time()
@@ -100,15 +102,28 @@ check("The car's surface report stays current", addon.surfaces_module().last_rep
 
 groups = {g["unbound_condition"]: g for g in bpy.data.node_groups if g.get("unbound_condition")}
 scene = bpy.context.scene
-scene.ans_garage_dirt, scene.ans_garage_dust, scene.ans_garage_wet = 0.5, 0.25, 1.0
-bpy.context.view_layer.update()
-amounts = {n: round(g.nodes["Amount"].outputs[0].default_value, 6) for n, g in groups.items()}
+sliders = [prop for _, prop, _ in P.CONDITIONS.values()]
+ui = {p: scene.id_properties_ui(p).as_dict() for p in sliders if p in scene}
+check("The sliders are the scene's own custom properties (0-1)",
+      len(ui) == 3 and all(d.get("min") == 0 and d.get("max") == 1 for d in ui.values()), ui)
+
+
+def drive(*values):
+    """Set the sliders as dragging them does (the scene is tagged) and read the shared groups' amounts."""
+    for p, v in zip(sliders, values):
+        scene[p] = v
+    scene.update_tag()
+    bpy.context.view_layer.update()
+    return {n: round(g.nodes["Amount"].outputs[0].default_value, 6) for n, g in groups.items()}
+
+
+amounts = drive(0.5, 0.25, 1.0)
 check("Sliders drive the shared groups", amounts == {"Ext_DirtColor_Amt": 0.5, "Ext_DustColor_Amt": 0.25, "WaterCycle": 1.0},
       amounts)
-scene.ans_garage_wet = 0.0
-scene.keyframe_insert("ans_garage_wet", frame=1)
-scene.ans_garage_wet = 1.0
-scene.keyframe_insert("ans_garage_wet", frame=11)
+scene["ans_garage_wet"] = 0.0
+scene.keyframe_insert('["ans_garage_wet"]', frame=1)
+scene["ans_garage_wet"] = 1.0
+scene.keyframe_insert('["ans_garage_wet"]', frame=11)
 played = []
 for frame in (1, 6, 11):
     scene.frame_set(frame)
@@ -125,6 +140,13 @@ maths = sorted((n.operation, round(n.inputs[1].default_value, 6), round(n.inputs
                for n in wet.nodes if n.type == "MATH")
 check("Wet follows the rising edge of the wet ramp (phase 0.6 + 0.1 x wet, 0 when dry)",
       ("MULTIPLY_ADD", 0.1, 0.6) in maths and any(m[0] == "GREATER_THAN" and m[1] == 0.0 for m in maths), maths)
+# A car saved dirty stays dirty on a computer without the add-on, and its sliders still work there.
+addon.unregister()
+amounts = drive(0.7, 0.3, 0.6)
+valid = all(fc.driver.is_valid for g in groups.values() for fc in g.animation_data.drivers)
+addon.register()
+check("Without the add-on the scene's sliders still drive the car", valid and amounts == {
+      "Ext_DirtColor_Amt": 0.7, "Ext_DustColor_Amt": 0.3, "WaterCycle": 0.6}, {"DriversValid": valid, "Amounts": amounts})
 
 ok = bpy.ops.object.ans_garage_conditions(enable=False) == {"FINISHED"}
 back = built_slots()

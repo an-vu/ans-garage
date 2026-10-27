@@ -1165,6 +1165,16 @@ CONDITIONS = {"Ext_DirtColor_Amt": ("Dirt", "ans_garage_dirt", 0.033104799687862
 WET_PHASE = (0.6, 0.1)
 
 
+def condition_sliders(scene):
+    """The Dirt, Dust and Wet sliders (added when a car is imported): custom properties of the scene, so a saved car
+    keeps its condition (and the sliders stay in Scene Properties > Custom Properties) without the add-on."""
+    for label, prop, _ in CONDITIONS.values():
+        if prop not in scene:
+            scene[prop] = 0.0
+            scene.id_properties_ui(prop).update(min=0.0, max=1.0, soft_min=0.0, soft_max=1.0, subtype="FACTOR",
+                                                description=label + ": 0 clean and dry (can be keyframed)")
+
+
 def finish_value(scope):
     """(material, colour shift, gloss level) of the car's paint now, and of its stock paint."""
     g = runtime_group(scope, "Ext_Carpaint_Material")
@@ -1202,17 +1212,20 @@ def set_finish(scope, finish=None, gloss=None, shift=None, preset=None):
 
 
 def condition_group(name):
-    """Shared control for one vehicle condition parameter; its Amount node is driven by the sidebar slider (a driver, so
-    keyframed sliders play back and render)."""
+    """Shared control for one vehicle condition parameter; its Amount node is driven by the scene's slider (a driver, so
+    keyframed sliders play back and render, with or without the add-on)."""
     import bpy
     label, prop, color = CONDITIONS[name]
     gname = "Unbound | Runtime " + name
     g = bpy.data.node_groups.get(gname)
     if g and g.get("unbound_condition") == name:
         return g
+    scene = bpy.context.scene
+    condition_sliders(scene)
     g = bpy.data.node_groups.new(gname, "ShaderNodeTree")
     g["unbound_condition"] = name
-    g["unbound_note"] = "Vehicle condition set by the game at runtime; the %s slider in the An's Garage sidebar sets it." % label
+    g["unbound_note"] = ("Vehicle condition set by the game at runtime; the %s slider (An's Garage sidebar, or the "
+                         "scene's custom property %s) sets it." % (label, prop))
     for c in "xyzw":
         g.interface.new_socket(name=c, in_out="OUTPUT", socket_type="NodeSocketFloat")
     out = g.nodes.new("NodeGroupOutput")
@@ -1220,11 +1233,11 @@ def condition_group(name):
     amount = g.nodes.new("ShaderNodeValue")
     amount.name = "Amount"
     amount.label = label + " (sidebar slider)"
-    amount.outputs[0].default_value = float(getattr(bpy.context.scene, prop, 0.0))
+    amount.outputs[0].default_value = float(scene[prop])
     driver = amount.outputs[0].driver_add("default_value").driver
     driver.type = "AVERAGE"
     var = driver.variables.new()
-    var.targets[0].id_type, var.targets[0].id, var.targets[0].data_path = "SCENE", bpy.context.scene, prop
+    var.targets[0].id_type, var.targets[0].id, var.targets[0].data_path = "SCENE", scene, '["%s"]' % prop
     if color is None:
         phase = g.nodes.new("ShaderNodeMath")
         phase.operation, phase.label = "MULTIPLY_ADD", "rising edge of the wet ramp"
@@ -1250,16 +1263,6 @@ def condition_group(name):
             g.links.new(rgb.outputs[0], out.inputs[i])
         g.links.new(amount.outputs[0], out.inputs[3])
     return g
-
-
-def show_conditions(scene):
-    """Write the sliders into the condition groups now (dragging); their drivers keep them in step on frame changes and
-    renders."""
-    import bpy
-    for g in bpy.data.node_groups:
-        name = g.get("unbound_condition")
-        if name in CONDITIONS and "Amount" in g.nodes:
-            g.nodes["Amount"].outputs[0].default_value = float(getattr(scene, CONDITIONS[name][1], 0.0))
 
 
 def condition_leaves(live, n=4000):
