@@ -16,6 +16,7 @@ Manual tools in this folder (not run here): render_views.py (studio renders of a
 """
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -128,9 +129,14 @@ def run(test):
     if test == "existing":
         shutil.copy2(DATA / "input-merci-tires-0.5.0.blend", OUT / "work-existing.blend")
     started = time.time()
+    # A Blender config folder of the tests' own: the add-on remembers the shared parts folder there, so the tests never
+    # read or change the one on this machine.
+    # Blender ignores the variable when the folder doesn't exist, so it is created first.
+    (OUT / "blender-config").mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, BLENDER_USER_CONFIG=str(OUT / "blender-config"))
     with open(log, "w", encoding="utf-8") as f:
         r = subprocess.run([BLENDER, "--background", "--factory-startup", "--python-exit-code", "1"] + args,
-                           stdout=f, stderr=subprocess.STDOUT)
+                           stdout=f, stderr=subprocess.STDOUT, env=env)
     text = log.read_text(encoding="utf-8", errors="replace")
     summary = [l for l in text.splitlines() if l.startswith(("PASSED", "FAIL "))]
     return test, r.returncode == 0, time.time() - started, summary[-4:]

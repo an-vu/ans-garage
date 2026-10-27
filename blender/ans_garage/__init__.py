@@ -4,7 +4,7 @@ Imports the manifest's exported FBX files without recentering or applying transf
 Source slots are restored, then surfaces are built from compiled source-shader profiles
 (static state) before vehicle assembly. Shaders without a resolved profile stay unconnected and are reported.
 """
-bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 1, 9), "blender": (4, 1, 0),
+bl_info = {"name": "An's Garage for Blender", "author": "An Vu", "version": (1, 2, 0), "blender": (4, 1, 0),
            "location": "File > Import > An's Garage vehicle; 3D View > Sidebar > An's Garage",
            "description": "Import NFS Unbound vehicles exported with An's Garage for Frosty",
            "category": "Import-Export"}
@@ -162,11 +162,51 @@ def shared_parts(folder, reload=False):
     return found
 
 
+_REMEMBERED = []
+
+
+def remembered_shared_parts(folder=None):
+    """The shared parts folder, kept in a small file in Blender's config folder so it survives updating the add-on
+    (Blender drops an add-on's preferences when the add-on is turned off). With `folder`: remember that one."""
+    import bpy
+    path = Path(bpy.utils.user_resource("CONFIG", path="ans_garage")) / "settings.json"
+    if folder is not None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"SharedParts": folder}, indent=1), encoding="utf-8")
+        except OSError:
+            pass
+        _REMEMBERED[:] = [folder]
+    elif not _REMEMBERED:
+        try:
+            _REMEMBERED[:] = [json.loads(path.read_text(encoding="utf-8")).get("SharedParts", "")]
+        except (OSError, ValueError, AttributeError):
+            _REMEMBERED[:] = [""]
+    return _REMEMBERED[0]
+
+
+def _remember_shared_parts(prefs, context):
+    """The preference's update: remember the folder it is set to."""
+    remembered_shared_parts(prefs.shared_parts)
+
+
+def _restore_shared_parts():
+    """Put the remembered folder back into the add-on's preferences (empty again after an update)."""
+    import bpy
+    addon = bpy.context.preferences.addons.get(__name__)
+    prefs = getattr(addon, "preferences", None) if addon else None
+    if prefs is not None and not prefs.shared_parts and remembered_shared_parts():
+        prefs.shared_parts = remembered_shared_parts()
+    return None
+
+
 def library_folder(context, kind):
-    """A library's folder, found in the shared parts folder (add-on preference, else the scene's); "" if none."""
+    """A library's folder, found in the shared parts folder (add-on preference, else the scene's, else the remembered
+    one); "" if none."""
     addon = context.preferences.addons.get(__name__)
     prefs = getattr(addon, "preferences", None) if addon else None
-    for shared in (getattr(prefs, "shared_parts", ""), context.scene.get("ans_garage_shared_parts", "")):
+    for shared in (getattr(prefs, "shared_parts", ""), context.scene.get("ans_garage_shared_parts", ""),
+                   remembered_shared_parts()):
         if shared and kind in shared_parts(shared):
             return shared_parts(shared)[kind]
     return ""
@@ -250,8 +290,9 @@ class CarReport:
         self.sections.setdefault(section, []).extend(lines)
 
     def materials(self, report):
-        """Record a build pass: a later pass (the wheels, after assembly) replaces what an earlier one said about a slot."""
-        for b in report["Built"]:
+        """Record a build pass: a later pass (the wheels, after assembly) replaces what an earlier one said about a slot.
+        Slots that already had their built material (part copies sharing one) count as built."""
+        for b in report["Built"] + report.get("AlreadyBuilt", []):
             self.slots[(b["Object"], b["Slot"])] = None
         for u in report["Unsupported"] + report["Issues"]:
             self.slots[(u.get("Object", "?"), u.get("Slot", "?"))] = (u.get("Reason") or u.get("Issue") or "unknown reason")[:240]
@@ -545,6 +586,8 @@ def import_steps(filepath, assemble=True, materials=True):
     report = CarReport(vehicle_label(str(path)))
     report.add("Import", "%d of %d meshes imported from %s" % (count, len(records), path.parent.name),
                *["  " + f for f in failures])
+    if materials and not library_folder(bpy.context, "shader"):
+        report.add("Import", "No shared parts folder set: most materials need its shader textures (set it, then reimport)")
     if materials and path.with_name("materials.json").is_file():
         try:
             material_report = yield from _scaled(materials_module().reconstruct_steps(path, imported_objects),
@@ -773,8 +816,23 @@ def register():
         bl_options = {"REGISTER", "UNDO"}
         filename_ext = ".json"
         filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
+        asked: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+        folder_checked: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+        def invoke(self, context, event):
+            if not self.folder_checked and not library_folder(context, "shader"):
+                # No shared parts folder: ask first (most materials need its shader textures), then pick the car.
+                self.asked = True
+                return context.window_manager.invoke_confirm(
+                    self, event, title="No shared parts folder set", confirm_text="Import anyway", icon="WARNING",
+                    message="Most materials need the shader textures in it, so they won't be built. Set it with "
+                            "Set folder... in the sidebar or in the add-on's preferences.")
+            return ImportHelper.invoke(self, context, event)
 
         def execute(self, context):
+            if self.asked:
+                bpy.ops.import_scene.ans_garage_vehicle("INVOKE_DEFAULT", folder_checked=True)
+                return {"FINISHED"}
             # Scripts and background runs import in one go; from the UI the import runs in slices (modal) so
             # Blender keeps drawing: progress bar in the An's Garage sidebar and the status bar.
             if bpy.app.background or not context.window:
@@ -851,7 +909,8 @@ def register():
         bl_idname = __name__
         shared_parts: StringProperty(name="Shared parts folder", subtype="DIR_PATH",
                                      description="The folder Frosty's Tools > An's Garage > Export shared parts... wrote to; "
-                                                 "the shader textures and the tire, rim and plate libraries in it are found by themselves")
+                                                 "the shader textures and the tire, rim and plate libraries in it are found by themselves",
+                                     update=_remember_shared_parts)
         plate_frame: EnumProperty(name="Plate frame for new imports", default="Stock",
                                   items=(("Stock", "Stock (as the game)", "The frame the game shows on the car: none on every car checked"),
                                          ("simple", "Simple", "The game's plain black frame"),
@@ -1756,6 +1815,7 @@ def register():
 
     bpy.types.TOPBAR_MT_file_import.append(_menu)
     bpy.types.STATUSBAR_HT_header.prepend(draw_status)
+    bpy.app.timers.register(_restore_shared_parts, first_interval=0.5)
 
 
 def unregister():

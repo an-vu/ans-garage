@@ -1,3 +1,7 @@
+# 1.2.0
+
+- No changes; version kept in step with An's Garage for Blender 1.2.0.
+
 # 1.1.9
 
 - No changes; version kept in step with An's Garage for Blender 1.1.9.

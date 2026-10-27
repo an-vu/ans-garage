@@ -372,15 +372,19 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
     images = caches[ikey]
     runtime, runtime_notes, assembly_doc = caches[("runtime", str(car))]
 
-    def planned(conditions):
+    tint_fields = {f for f, _ in P.TINT_FIELDS}
+
+    def planned(conditions, tints=True):
         """(plans, permutation notes) for the candidates, or the reason they can't be built."""
         plans = []
         for entry, rename in zip(candidates, renames):
             consts = P.input_constants(entry, obj, assembly_doc)
             live_fields = P.live_fields(entry, runtime)
+            if not tints:
+                live_fields = {k: f for k, f in live_fields.items() if f not in tint_fields}
             pkey = (shader, material.get("unbound_state_key"), str(root), str(car), id(entry), tuple(sorted(consts.items())),
                     tuple(sorted(rename.items())), json.dumps(state.get("TextureOverrides"), sort_keys=True),
-                    json.dumps(state.get("ParameterOverrides"), sort_keys=True), conditions)
+                    json.dumps(state.get("ParameterOverrides"), sort_keys=True), conditions, tints)
             if pkey not in caches:
                 caches[pkey] = P.plan(entry, state, runtime, live_fields, images, root, consts, rename, conditions)
             if caches[pkey]["issues"]:
@@ -396,21 +400,32 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
                 caches[akey] = exc
         return str(caches[akey]) if isinstance(caches[akey], P.Unsupported) else (plans, caches[akey])
 
-    def attempt():
-        result, issue = planned(caches["conditions"]), None
+    def conditioned(tints):
+        result, issue = planned(caches["conditions"], tints), None
         if isinstance(result, str) and caches["conditions"]:
             # Built clean and dry rather than not at all; the reason goes in the surface evidence.
-            result, issue = planned(False), result
+            result, issue = planned(False, tints), result
         return result, issue
+
+    def attempt():
+        """(result, condition issue, tint issue). A tint kept live can leave a value the game sets at runtime in the
+        formula (the light lenses' camera exposure, cb2[44].w); such a slot is built with the car's stock tint."""
+        result, issue = conditioned(True)
+        if isinstance(result, str) and any(f in tint_fields for entry in candidates
+                                           for f in P.live_fields(entry, runtime).values()):
+            fixed, fixed_issue = conditioned(False)
+            if not isinstance(fixed, str):
+                return fixed, fixed_issue, result
+        return result, issue, None
 
     override_issue = None
     try:
-        result, condition_issue = attempt()
+        result, condition_issue, tint_issue = attempt()
         optional = [k for k in state.get("TextureOverrides") or {} if k in P.OPTIONAL_OVERRIDES]
         if isinstance(result, str) and optional:
             state["TextureOverrides"] = {k: v for k, v in state["TextureOverrides"].items() if k not in optional}
             override_issue = {"Overrides": optional, "Reason": result}
-            result, condition_issue = attempt()
+            result, condition_issue, tint_issue = attempt()
     except P.Unsupported as exc:
         result = str(exc)
     if isinstance(result, str):
@@ -493,6 +508,9 @@ def profile_slot(obj, index, slot, material, state, export_path, documents, basi
         entry_report["ViewConstantIndependence"] = p["view"]
     if override_issue:
         entry_report["LiveryNotApplied"] = dict(override_issue, Status="this part keeps its stock look")
+    if tint_issue:
+        entry_report["TintNotLive"] = {"Status": "built with the car's stock tint; the tint controls don't change this part",
+                                       "Reason": tint_issue}
     if condition_issue:
         entry_report["VehicleCondition"] = {"Status": "not applied: built clean and dry", "Reason": condition_issue}
     if p.get("conditions"):

@@ -314,6 +314,9 @@ for o, i in occupied:
 built = sum(b for _, b in by_shader.values())
 check("Visible surfaces built", True, {"Visible": len(occupied), "Built": built, "ByShader(visible,built)": by_shader})
 check("Visible unbuilt surfaces (reasons)", True, dict(unbuilt))
+exposure = {k: n for k, n in unbuilt.items() if k.endswith("after specialization: 44.w")}
+check("No visible surface left unbuilt by the camera exposure alone (a live tint falls back to the stock tint)",
+      not exposure, exposure)
 saved = out_dir / ("vehicle-%s.blend" % label)
 bpy.ops.wm.save_as_mainfile(filepath=str(saved))
 result = {"Version": VERSION, "Vehicle": root.name if root else None, "Checks": checks, "Summary": s,

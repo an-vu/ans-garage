@@ -2,6 +2,15 @@
 
 Older Frosty plugin history: `frosty/AnsGarage/CHANGELOG.md`.
 
+## 1.2.0
+
+- **Headlight and taillight glass is built again** (broken since 1.1.8). Keeping the light tints live left the game's camera exposure (`cb2[44].w`, set at runtime) in many lens formulas, so those lenses weren't built: 5 or 6 per car on the Evija, Chiron, Integra, M3 E46, Taycan and M1, 26 on the 2021 Countach. A lens that can't take its tint live is now built with the car's stock tint (`TintNotLive` in its surface evidence), like dirt, dust and wet and liveries. On the M1, Chiron, Evija and Integra no lens takes it, so they have no headlight or taillight tint control (1.1.8 said their lens shaders don't take the tints: it was this). On the M3 E46 and Taycan the tints change only some lenses. Live tints on every lens need the exposure the game uses in the garage (a frame capture).
+- **The shared parts folder survives updating the add-on.** Blender empties an add-on's preferences when it is turned off (also Remove, then Install), so after an update a car imported without setting the folder again had no shader textures: most of its materials weren't built. The folder is now also remembered in Blender's config folder (`config/ans_garage/settings.json`) and put back.
+- **Importing without a shared parts folder asks first:** "No shared parts folder set", with **Import anyway** or **Cancel**; the car's report says so too.
+- **Report: the slot count counts every part copy.** Copies whose material was already built weren't counted, so the BMW M1 said 742 slots with the folder set and 1333 without; both now say 1517.
+- Reimport cars to get it.
+- **Tests:** a vehicle test fails when a visible surface is left unbuilt by the camera exposure alone. 10 of the 11 test cars now build every visible surface (the M1: 116 of 120, as before 1.1.8). Tests run with a Blender config folder of their own.
+
 ## 1.1.9
 
 - **BMW M1: pop-up headlights.** Its two light sequences both keep the lights turned 2.5° (they undo the tilt of the lights' hinge), so neither started at the modelled pose, and the rule "the sequence that starts at rest opens the lights" found no opening one. The opening sequence is now the one the light switch's OnTrue starts (CompareBoolEntityData; the other is started by OnFalse); it also plays the game's PopUpHeadlights_Up sound. Checked on all 13 cars with such pairs (12 with pop-up headlights, and the Integra's antenna): the same sequence as before on the other 12.
